@@ -2,12 +2,14 @@ from app.db.supabase import get_supabase_client
 from app.schemas.document import DocumentStatus
 
 
-def create_document(file_name: str, storage_path: str):
+def create_document(file_name: str, storage_path: str, file_size: int = 0, mime_type: str = "application/pdf"):
     supabase = get_supabase_client()
     response = supabase.table("documents").insert({
         "file_name": file_name,
         "storage_path": storage_path,
         "status": DocumentStatus.UPLOADED,
+        "file_size": file_size,
+        "mime_type": mime_type,
     }).execute()
     return response.data[0] if response.data else None
 

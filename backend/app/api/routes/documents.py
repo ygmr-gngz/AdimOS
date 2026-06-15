@@ -7,7 +7,8 @@ router = APIRouter()
 @router.post("")
 async def upload_document(file: UploadFile = File(...)):
     content = await file.read()
-    return process_document(file.filename, content)
+    mime_type = file.content_type or "application/pdf"
+    return process_document(file.filename or "upload", content, mime_type)
 
 
 @router.get("")

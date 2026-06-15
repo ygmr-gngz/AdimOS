@@ -9,8 +9,8 @@ from app.schemas.document import DocumentStatus
 BUCKET = "documents"
 
 
-def process_document(file_name: str, file_bytes: bytes) -> dict:
-    doc = create_document(file_name, f"{BUCKET}/{file_name}")
+def process_document(file_name: str, file_bytes: bytes, mime_type: str = "application/pdf") -> dict:
+    doc = create_document(file_name, f"{BUCKET}/{file_name}", len(file_bytes), mime_type)
     document_id = doc["id"]
 
     try:
@@ -29,8 +29,8 @@ def process_document(file_name: str, file_bytes: bytes) -> dict:
         ]
 
         insert_chunks(document_id, chunks_with_embeddings)
-        update_document_status(document_id, DocumentStatus.INDEXED)
-        return doc
+        final_doc = update_document_status(document_id, DocumentStatus.INDEXED)
+        return final_doc or doc
 
     except Exception as e:
         update_document_status(document_id, DocumentStatus.FAILED)
