@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.routes import health, documents, chat, voice, agents, dashboard, crm, academy, automation
+from app.api.routes import health, documents, chat, voice, agents, dashboard, crm, academy, automation, content
 
 router = APIRouter()
 
@@ -12,3 +12,4 @@ router.include_router(dashboard.router,  prefix="/dashboard",   tags=["dashboard
 router.include_router(crm.router,        prefix="/crm",         tags=["crm"])
 router.include_router(academy.router,    prefix="/academy",     tags=["academy"])
 router.include_router(automation.router, prefix="/automation",  tags=["automation"])
+router.include_router(content.router,    prefix="/content",     tags=["content"])

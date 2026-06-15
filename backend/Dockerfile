@@ -5,6 +5,8 @@ WORKDIR /app
 # Sistem bağımlılıkları (pypdf ve diğerleri için)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    ffmpeg \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Önce requirements — Docker cache için
