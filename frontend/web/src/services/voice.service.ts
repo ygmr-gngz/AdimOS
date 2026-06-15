@@ -3,11 +3,10 @@ import type { VoiceResponse } from '@/types/voice'
 
 export const voiceService = {
   async sendAudio(audioBlob: Blob): Promise<VoiceResponse> {
-    const arrayBuffer = await audioBlob.arrayBuffer()
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
-    const { data } = await apiClient.post('/voice', {
-      audio_base64: base64,
-      format: 'webm',
+    const formData = new FormData()
+    formData.append('audio', audioBlob, 'audio.webm')
+    const { data } = await apiClient.post('/voice', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
     })
     return data
   },
