@@ -2,27 +2,73 @@ import apiClient from '@/lib/api-client'
 import type {
   ContentPiece,
   GenerateContentRequest,
+  ApproveContentRequest,
   PublishResult,
 } from '@/types/automation'
 
+const TYPE_TO_BACKEND: Record<string, string> = {
+  video: 'video',
+  short: 'short',
+  reel: 'short',
+  post: 'post',
+  story: 'post',
+}
+
+const PLATFORM_TO_BACKEND: Record<string, string> = {
+  youtube: 'video',
+  youtube_shorts: 'short',
+  instagram: 'post',
+  tiktok: 'short',
+}
+
 export const automationService = {
-  async generateContent(request: GenerateContentRequest): Promise<{ content_id: string; status: string }> {
-    const type = request.type ?? 'video'
-    const { data } = await apiClient.post(`/content/${type}/generate`, {
+  async generateContent(request: GenerateContentRequest): Promise<ContentPiece> {
+    const backendType =
+      TYPE_TO_BACKEND[request.content_type] ??
+      PLATFORM_TO_BACKEND[request.platform] ??
+      'video'
+    const durationMinutes = request.duration_seconds
+      ? Math.ceil(request.duration_seconds / 60)
+      : 5
+    const { data } = await apiClient.post(`/content/${backendType}/generate`, {
       topic: request.topic,
-      duration_minutes: request.duration_minutes ?? 5,
+      duration_minutes: durationMinutes,
     })
-    return data
+    return {
+      id: data.content_id,
+      title: request.topic,
+      hashtags: [],
+      platform: request.platform,
+      content_type: request.content_type,
+      status: 'draft',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      generated_by: 'ai',
+    }
   },
 
-  async listContent(): Promise<ContentPiece[]> {
+  async listContent(filter?: string): Promise<ContentPiece[]> {
     const { data } = await apiClient.get('/content')
-    return Array.isArray(data) ? data : []
+    const items = (Array.isArray(data) ? data : []) as ContentPiece[]
+    return filter ? items.filter((c) => c.status === filter) : items
   },
 
   async getContent(contentId: string): Promise<ContentPiece> {
     const { data } = await apiClient.get(`/content/${contentId}`)
-    return data
+    return data as ContentPiece
+  },
+
+  async approveContent(req: ApproveContentRequest): Promise<ContentPiece> {
+    const { data } = await apiClient.patch(`/content/${req.content_id}/approve`, {
+      action: req.action,
+      notes: req.notes ?? '',
+    })
+    return data as ContentPiece
+  },
+
+  async publishContent(contentId: string): Promise<PublishResult> {
+    const { data } = await apiClient.post(`/content/${contentId}/publish`)
+    return data as PublishResult
   },
 
   async publishToYoutube(contentId: string): Promise<PublishResult> {

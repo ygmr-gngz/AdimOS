@@ -28,7 +28,7 @@ export default function AutomationPage() {
   const fetchContent = useCallback(async () => {
     try {
       const data = await automationService.listContent(filter || undefined)
-      setContent(data.content)
+      setContent(data)
     } catch {
       toast.error('İçerikler yüklenemedi')
     } finally {
