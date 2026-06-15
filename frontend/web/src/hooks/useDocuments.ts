@@ -14,7 +14,7 @@ export function useDocuments() {
     setIsLoading(true)
     try {
       const response = await documentService.list()
-      setDocuments(Array.isArray(response) ? response : (response as any).documents ?? [])
+      setDocuments(response)
     } catch {
       toast.error('Dokümanlar yüklenemedi')
     } finally {
@@ -26,8 +26,7 @@ export function useDocuments() {
     setIsUploading(true)
     try {
       const response = await documentService.upload(file)
-      const doc = (response as any).document ?? response
-      setDocuments((prev) => [doc, ...prev])
+      setDocuments((prev) => [response.document, ...prev])
       toast.success(`${file.name} yüklendi`)
       return response.document
     } catch {

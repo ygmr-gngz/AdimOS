@@ -11,9 +11,9 @@ export const documentService = {
     return data
   },
 
-  async list(): Promise<ListDocumentsResponse> {
+  async list(): Promise<Document[]> {
     const { data } = await apiClient.get('/documents')
-    return data
+    return Array.isArray(data) ? data : data.documents ?? []
   },
 
   async getById(id: string): Promise<Document> {
