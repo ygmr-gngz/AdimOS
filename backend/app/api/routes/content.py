@@ -17,6 +17,11 @@ class ContentRequest(BaseModel):
     duration_minutes: int = 5
 
 
+class ApproveRequest(BaseModel):
+    action: str  # "approve" | "reject"
+    notes: str = ""
+
+
 def _background_generate(content_id: str, fn, *args):
     try:
         result = fn(*args)
@@ -85,6 +90,36 @@ def publish_instagram(content_id: str):
     _store[content_id]["instagram"] = result
     _store[content_id]["status"] = "published"
     return result
+
+
+@router.patch("/{content_id}/approve")
+def approve_content(content_id: str, req: ApproveRequest):
+    item = _store.get(content_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="İçerik bulunamadı")
+    new_status = "approved" if req.action == "approve" else "rejected"
+    _store[content_id]["status"] = new_status
+    if req.notes:
+        _store[content_id]["approval_notes"] = req.notes
+    return _store[content_id]
+
+
+@router.post("/{content_id}/publish")
+def publish_content(content_id: str):
+    item = _store.get(content_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="İçerik bulunamadı")
+    content_type = item.get("type", "video")
+    if content_type in ("video", "short"):
+        result = publish_to_youtube(item)
+        _store[content_id]["youtube"] = result
+        platform = "youtube"
+    else:
+        result = publish_to_instagram(item)
+        _store[content_id]["instagram"] = result
+        platform = "instagram"
+    _store[content_id]["status"] = "published"
+    return {"content_id": content_id, "platform": platform, "status": "published"}
 
 
 @router.delete("/{content_id}")
