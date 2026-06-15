@@ -25,10 +25,10 @@ export function useDocuments() {
   const uploadDocument = useCallback(async (file: File) => {
     setIsUploading(true)
     try {
-      const response = await documentService.upload(file)
-      setDocuments((prev) => [response.document, ...prev])
+      const doc = await documentService.upload(file)
+      setDocuments((prev) => [doc, ...prev])
       toast.success(`${file.name} yüklendi`)
-      return response.document
+      return doc
     } catch {
       toast.error('Dosya yüklenemedi')
       return null

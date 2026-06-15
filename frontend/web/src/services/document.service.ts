@@ -1,8 +1,8 @@
 import apiClient from '@/lib/api-client'
-import type { Document, ListDocumentsResponse, UploadDocumentResponse } from '@/types/document'
+import type { Document } from '@/types/document'
 
 export const documentService = {
-  async upload(file: File): Promise<UploadDocumentResponse> {
+  async upload(file: File): Promise<Document> {
     const formData = new FormData()
     formData.append('file', file)
     const { data } = await apiClient.post('/documents', formData, {
