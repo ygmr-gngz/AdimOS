@@ -1,0 +1,63 @@
+version: '3.9'
+
+services:
+  # ── Frontend (Next.js) ──────────────────────────────────────
+  web:
+    build:
+      context: ./frontend/web
+      dockerfile: Dockerfile
+    container_name: adimos-web
+    ports:
+      - '3000:3000'
+    environment:
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - NEXT_PUBLIC_API_BASE_URL=http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - adimos-net
+
+  # ── Backend (FastAPI) ───────────────────────────────────────
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: adimos-api
+    ports:
+      - '8000:8000'
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - adimos-net
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+
+  # ── Redis (queue / cache — ileride kullanılır) ──────────────
+  redis:
+    image: redis:7-alpine
+    container_name: adimos-redis
+    ports:
+      - '6379:6379'
+    restart: unless-stopped
+    networks:
+      - adimos-net
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+
+networks:
+  adimos-net:
+    driver: bridge
+
+volumes:
+  redis-data:

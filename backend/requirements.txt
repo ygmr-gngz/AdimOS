@@ -1,0 +1,46 @@
+# ── Web Framework ─────────────────────────────────────────────
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.19
+
+# ── Supabase ──────────────────────────────────────────────────
+supabase==2.10.0
+httpx==0.27.2
+
+# ── OpenAI ───────────────────────────────────────────────────
+openai==1.57.4
+
+# ── LangGraph / LangChain ─────────────────────────────────────
+langgraph==0.2.59
+langchain==0.3.12
+langchain-openai==0.2.12
+langchain-community==0.3.12
+
+# ── PDF & Doküman İşleme ──────────────────────────────────────
+pypdf==5.1.0
+python-docx==1.1.2
+tiktoken==0.8.0
+
+# ── Ortam & Config ────────────────────────────────────────────
+python-dotenv==1.0.1
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# ── Sosyal Medya (İçerik Otomasyonu) ─────────────────────────
+google-api-python-client==2.155.0
+google-auth==2.37.0
+google-auth-oauthlib==1.2.1
+# instagram-graph-api için requests yeterli (Meta Graph API HTTP üzerinden)
+requests==2.32.3
+
+# ── Görev Kuyruğu / Zamanlama ─────────────────────────────────
+celery==5.4.0
+redis==5.2.1
+apscheduler==3.10.4
+
+# ── Logging & Monitoring ─────────────────────────────────────
+loguru==0.7.3
+
+# ── Test ─────────────────────────────────────────────────────
+pytest==8.3.4
+pytest-asyncio==0.24.0
