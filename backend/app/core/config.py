@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     INSTAGRAM_BUSINESS_ACCOUNT_ID: str = ""
 
     class Config:
-        env_file = ".env"
+        env_file = (".env", "../.env")
         extra = "ignore"
 
 
