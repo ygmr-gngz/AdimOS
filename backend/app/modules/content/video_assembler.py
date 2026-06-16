@@ -1,8 +1,10 @@
 from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
+from app.db.supabase import get_supabase_client
 import os
 import uuid
 
-_OUTPUT_DIR = "outputs/videos"
+_OUTPUT_DIR = "/tmp/outputs/videos"
+_BUCKET = "content"
 
 
 def assemble_video(slide_paths: list[str], audio_path: str) -> str:
@@ -19,9 +21,9 @@ def assemble_video(slide_paths: list[str], audio_path: str) -> str:
     video = concatenate_videoclips(clips, method="compose")
     video = video.set_audio(audio)
 
-    output_path = os.path.join(_OUTPUT_DIR, f"{uuid.uuid4()}.mp4")
+    local_path = os.path.join(_OUTPUT_DIR, f"{uuid.uuid4()}.mp4")
     video.write_videofile(
-        output_path,
+        local_path,
         fps=24,
         codec="libx264",
         audio_codec="aac",
@@ -32,4 +34,25 @@ def assemble_video(slide_paths: list[str], audio_path: str) -> str:
     audio.close()
     video.close()
 
-    return output_path
+    public_url = _upload_to_supabase(local_path)
+
+    try:
+        os.remove(local_path)
+    except OSError:
+        pass
+
+    return public_url
+
+
+def _upload_to_supabase(local_path: str) -> str:
+    supabase = get_supabase_client()
+    file_name = f"videos/{uuid.uuid4()}.mp4"
+
+    with open(local_path, "rb") as f:
+        supabase.storage.from_(_BUCKET).upload(
+            file_name,
+            f,
+            {"content-type": "video/mp4"},
+        )
+
+    return supabase.storage.from_(_BUCKET).get_public_url(file_name)
