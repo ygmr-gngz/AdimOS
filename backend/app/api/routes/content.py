@@ -39,6 +39,10 @@ def _background_generate(content_id: str, fn, *args):
             updates["title"] = result["title"]
         if result.get("caption"):
             updates["caption"] = result["caption"]
+        if result.get("script"):
+            updates["script"] = result["script"]
+        if result.get("audio_base64"):
+            updates["audio_base64"] = result["audio_base64"]
         update_content(content_id, updates)
         logger.info(f"[content] üretim tamamlandı id={content_id}")
     except Exception as e:
