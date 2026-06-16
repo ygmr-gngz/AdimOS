@@ -32,10 +32,17 @@ export function useVoice() {
           const response = await voiceService.sendAudio(blob)
           setTranscript(response.transcript)
           setLastResponse(response)
+          if (!response.answer_audio_base64) {
+            toast.error('Ses yanıtı boş geldi')
+            setVoiceState('idle')
+            return
+          }
           setVoiceState('playing')
-          const audio = voiceService.playAudioBase64(response.answer_audio_base64)
+          const audio = new Audio(`data:audio/mp3;base64,${response.answer_audio_base64}`)
           audioRef.current = audio
           audio.onended = () => setVoiceState('idle')
+          audio.onerror = () => { toast.error('Ses oynatılamadı'); setVoiceState('idle') }
+          await audio.play().catch((e: Error) => { throw e })
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : JSON.stringify(err)
           toast.error(`Ses hatası: ${msg}`, { duration: 8000 })
