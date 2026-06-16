@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import ContentCard from '@/components/automation/ContentCard'
 import GenerateContentModal from '@/components/automation/GenerateContentModal'
@@ -24,11 +24,16 @@ export default function AutomationPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [filter, setFilter] = useState('')
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const fetchContent = useCallback(async () => {
     try {
       const data = await automationService.listContent(filter || undefined)
       setContent(data)
+      const hasGenerating = data.some((c) => c.status === 'generating')
+      if (hasGenerating) {
+        pollRef.current = setTimeout(fetchContent, 12000)
+      }
     } catch {
       toast.error('İçerikler yüklenemedi')
     } finally {
@@ -36,7 +41,10 @@ export default function AutomationPage() {
     }
   }, [filter])
 
-  useEffect(() => { fetchContent() }, [fetchContent])
+  useEffect(() => {
+    fetchContent()
+    return () => { if (pollRef.current) clearTimeout(pollRef.current) }
+  }, [fetchContent])
 
   const handleGenerate = async (request: GenerateContentRequest) => {
     const piece = await automationService.generateContent(request)

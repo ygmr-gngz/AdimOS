@@ -27,7 +27,10 @@ def create_normal_video(topic: str, duration_minutes: int = 5) -> dict:
 
     script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in script["sections"])
     preview_text = script["sections"][0]["content"] if script["sections"] else script["title"]
-    audio_base64 = synthesize(preview_text[:1200], voice="onyx")
+    try:
+        audio_base64 = synthesize(preview_text[:1200], voice="onyx")
+    except Exception:
+        audio_base64 = None
 
     return {
         "type": "video",
@@ -57,7 +60,10 @@ def create_short_video(topic: str) -> dict:
     video_path = assemble_video([slide_path], audio_path)
 
     script_text = f"{script['hook']}\n\n{script['content']}\n\n{script['cta']}"
-    audio_base64 = synthesize(full_text[:1200], voice="nova")
+    try:
+        audio_base64 = synthesize(full_text[:1200], voice="nova")
+    except Exception:
+        audio_base64 = None
 
     return {
         "type": "short",
@@ -84,7 +90,10 @@ def create_post(topic: str) -> dict:
     )
 
     script_text = content["question"] + "\n\n" + "\n".join(f"• {p}" for p in points) + "\n\n" + content["caption"]
-    audio_base64 = synthesize(script_text[:1200], voice="alloy")
+    try:
+        audio_base64 = synthesize(script_text[:1200], voice="alloy")
+    except Exception:
+        audio_base64 = None
 
     return {
         "type": "post",

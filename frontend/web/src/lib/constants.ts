@@ -30,12 +30,14 @@ export const AGENT_STATUS_LABELS: Record<string, string> = {
 
 export const CONTENT_STATUS_LABELS: Record<string, string> = {
   draft: 'Taslak',
+  generating: 'Üretiliyor...',
   pending_approval: 'Onay Bekliyor',
   approved: 'Onaylandı',
   rejected: 'Reddedildi',
   scheduled: 'Planlandı',
   published: 'Yayınlandı',
   failed: 'Hata',
+  error: 'Hata',
 }
 
 export const PLATFORM_LABELS: Record<string, string> = {

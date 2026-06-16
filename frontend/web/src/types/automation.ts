@@ -2,12 +2,14 @@ export type ContentPlatform = 'youtube' | 'instagram' | 'tiktok' | 'youtube_shor
 export type ContentType = 'video' | 'reel' | 'short' | 'post' | 'story'
 export type ContentStatus =
   | 'draft'
+  | 'generating'
   | 'pending_approval'
   | 'approved'
   | 'rejected'
   | 'scheduled'
   | 'published'
   | 'failed'
+  | 'error'
 
 export interface ContentPiece {
   id: string

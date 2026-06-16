@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { PlayCircle, Camera, Video, Check, X, Calendar, Trash2, Play, Square, ChevronDown, ChevronUp, FileText } from 'lucide-react'
+import { PlayCircle, Camera, Video, Check, X, Calendar, Trash2, Play, Square, ChevronDown, ChevronUp, FileText, AlertCircle, Loader2 } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import type { ContentPiece, ContentStatus, ContentPlatform } from '@/types/automation'
@@ -17,12 +17,14 @@ const platformIcons: Record<ContentPlatform, React.ReactNode> = {
 
 const statusVariant: Record<ContentStatus, 'success' | 'warning' | 'error' | 'info' | 'default' | 'purple'> = {
   draft: 'default',
+  generating: 'default',
   pending_approval: 'warning',
   approved: 'info',
   rejected: 'error',
   scheduled: 'purple',
   published: 'success',
   failed: 'error',
+  error: 'error',
 }
 
 interface ContentCardProps {
@@ -41,6 +43,9 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
   const hasAudio = !!content.audio_base64
   const hasScript = !!(content.script || content.description)
   const scriptText = content.script || content.description || ''
+  const isGenerating = content.status === 'generating'
+  const isError = content.status === 'error' || content.status === 'failed'
+  const hasVideo = !!(content.video_url && !content.video_url.startsWith('/tmp'))
 
   const handlePlayPause = () => {
     if (!content.audio_base64) return
@@ -67,8 +72,8 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
             <span className="text-gray-600">·</span>
             <span className="text-xs text-gray-500">{content.content_type}</span>
           </div>
-          <Badge variant={statusVariant[content.status]} dot>
-            {CONTENT_STATUS_LABELS[content.status]}
+          <Badge variant={statusVariant[content.status] ?? 'default'} dot>
+            {CONTENT_STATUS_LABELS[content.status] ?? content.status}
           </Badge>
         </div>
 
@@ -84,7 +89,30 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
           </div>
         )}
 
-        {/* Audio preview */}
+        {isGenerating && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-surface-100 border border-surface-200 rounded-lg mb-3">
+            <Loader2 size={12} className="animate-spin text-brand-400" />
+            <span className="text-xs text-gray-400">İçerik üretiliyor, sayfayı yenileyin...</span>
+          </div>
+        )}
+
+        {isError && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg mb-3">
+            <AlertCircle size={12} className="text-red-400" />
+            <span className="text-xs text-red-300">Üretim başarısız. Yeniden deneyin.</span>
+          </div>
+        )}
+
+        {hasVideo && (
+          <div className="mb-3">
+            <video
+              src={content.video_url}
+              controls
+              className="w-full rounded-lg max-h-40 bg-black"
+            />
+          </div>
+        )}
+
         {hasAudio && (
           <button
             onClick={handlePlayPause}
@@ -100,7 +128,6 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
           </button>
         )}
 
-        {/* Script expandable */}
         {hasScript && (
           <div className="mb-3">
             <button
