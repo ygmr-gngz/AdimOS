@@ -4,12 +4,14 @@ from app.modules.knowledge.retriever import retrieve
 
 _client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
-_SYSTEM = """Sen AdimOS'un bilgi asistanısın. Yalnızca sağlanan bağlam içindeki bilgileri kullanarak Türkçe cevap ver.
-Bağlamda cevap yoksa "Bu konuda bilgim bulunmuyor." de. Cevabını kısa ve net tut."""
+_SYSTEM = """Sen AdimOS'un muhasebe ve danışmanlık asistanısın. Sağlanan bağlam parçalarını kullanarak kullanıcıya Türkçe yardım et.
+Bağlam sınav soruları veya belge parçaları içeriyorsa bile bu bilgileri kullanarak kapsamlı bir cevap üret.
+Bağlamda hiç ilgili bilgi yoksa ve kendi bilginle de cevaplayamıyorsan "Bu konuda yeterli bilgim bulunmuyor." de.
+Muhasebe, vergi, SGK, mali tablolar gibi mesleki konularda genel bilginle de destekleyerek cevap ver."""
 
 
 def query(user_message: str, conversation_history: list[dict] | None = None) -> dict:
-    chunks = retrieve(user_message)
+    chunks = retrieve(user_message, match_count=10)
     context = "\n\n".join([c["chunk_data"] for c in chunks])
 
     messages = [{"role": "system", "content": _SYSTEM + f"\n\nBağlam:\n{context}"}]
