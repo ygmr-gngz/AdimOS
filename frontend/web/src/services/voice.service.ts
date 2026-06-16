@@ -5,7 +5,7 @@ export const voiceService = {
   async sendAudio(audioBlob: Blob): Promise<VoiceResponse> {
     const formData = new FormData()
     formData.append('audio', audioBlob, 'audio.webm')
-    const { data } = await apiClient.post('/voice', formData)
+    const { data } = await apiClient.post('/voice', formData, { timeout: 90000 })
     return data
   },
 
