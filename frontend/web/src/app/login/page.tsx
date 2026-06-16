@@ -28,8 +28,9 @@ function LoginForm() {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
       router.replace(searchParams.get('redirect') ?? '/dashboard')
-    } catch {
-      toast.error('E-posta veya şifre hatalı')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : JSON.stringify(err)
+      toast.error(msg, { duration: 8000 })
     } finally {
       setIsLoading(false)
     }
