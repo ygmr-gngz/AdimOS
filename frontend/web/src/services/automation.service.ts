@@ -64,6 +64,7 @@ export const automationService = {
       content_type: (item.type as ContentPiece['content_type']) ?? 'video',
       status: (item.status as ContentPiece['status']) ?? 'draft',
       video_url: item.video_url ? String(item.video_url) : undefined,
+      image_url: item.image_url ? String(item.image_url) : undefined,
       created_at: String(item.created_at ?? new Date().toISOString()),
       updated_at: String(item.updated_at ?? item.created_at ?? new Date().toISOString()),
       generated_by: 'ai',

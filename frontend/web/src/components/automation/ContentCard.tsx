@@ -45,7 +45,8 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
   const scriptText = content.script || content.description || ''
   const isGenerating = content.status === 'generating'
   const isError = content.status === 'error' || content.status === 'failed'
-  const hasVideo = !!(content.video_url && !content.video_url.startsWith('/tmp'))
+  const hasVideo = !!(content.video_url && content.video_url.startsWith('http'))
+  const hasImage = !!(content.image_url && content.image_url.startsWith('http'))
 
   const handlePlayPause = () => {
     if (!content.audio_base64) return
@@ -109,6 +110,16 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
               src={content.video_url}
               controls
               className="w-full rounded-lg max-h-40 bg-black"
+            />
+          </div>
+        )}
+
+        {hasImage && (
+          <div className="mb-3">
+            <img
+              src={content.image_url}
+              alt={content.title}
+              className="w-full rounded-lg max-h-48 object-cover"
             />
           </div>
         )}

@@ -23,6 +23,7 @@ export interface ContentPiece {
   audio_base64?: string
   thumbnail_url?: string
   video_url?: string
+  image_url?: string
   scheduled_at?: string
   published_at?: string
   created_at: string
