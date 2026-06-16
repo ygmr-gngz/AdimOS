@@ -18,6 +18,7 @@ export interface ContentPiece {
   platform: ContentPlatform
   content_type: ContentType
   status: ContentStatus
+  audio_base64?: string
   thumbnail_url?: string
   video_url?: string
   scheduled_at?: string
