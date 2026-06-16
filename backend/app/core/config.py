@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_ROLE_KEY: str = ""
 
     OPENAI_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
 
     # YouTube
     YOUTUBE_CLIENT_ID: str = ""

@@ -4,7 +4,8 @@ from app.modules.content.slide_generator import create_slide, create_shorts_slid
 from app.modules.content.video_assembler import assemble_video
 from app.modules.content.youtube_uploader import upload_to_youtube, make_public
 from app.modules.content.instagram_poster import post_image_to_instagram, post_reel_to_instagram
-from app.modules.content.storage import upload_video, upload_image
+from app.modules.content.storage import upload_image
+from app.modules.content.gemini_image import generate_post_image_with_gemini
 from app.modules.voice.tts import synthesize
 
 
@@ -26,15 +27,10 @@ def create_normal_video(topic: str, duration_minutes: int = 5) -> dict:
 
     video_path = assemble_video(slides, audio_path)
 
-    try:
-        video_url = upload_video(video_path)
-    except Exception:
-        video_url = None
-
     script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in script["sections"])
     preview_text = script["sections"][0]["content"] if script["sections"] else script["title"]
     try:
-        audio_base64 = synthesize(preview_text[:1200], voice="onyx")
+        audio_base64 = synthesize(preview_text[:1200], voice="nova")
     except Exception:
         audio_base64 = None
 
@@ -44,7 +40,7 @@ def create_normal_video(topic: str, duration_minutes: int = 5) -> dict:
         "title": script["title"],
         "description": script["description"],
         "tags": script["tags"],
-        "video_path": video_url or video_path,
+        "video_path": video_path,
         "script": script_text,
         "audio_base64": audio_base64,
         "status": "pending_approval",
@@ -65,11 +61,6 @@ def create_short_video(topic: str) -> dict:
 
     video_path = assemble_video([slide_path], audio_path)
 
-    try:
-        video_url = upload_video(video_path)
-    except Exception:
-        video_url = None
-
     script_text = f"{script['hook']}\n\n{script['content']}\n\n{script['cta']}"
     try:
         audio_base64 = synthesize(full_text[:1200], voice="nova")
@@ -82,7 +73,7 @@ def create_short_video(topic: str) -> dict:
         "title": script["title"],
         "caption": script["caption"],
         "tags": script["tags"],
-        "video_path": video_url or video_path,
+        "video_path": video_path,
         "script": script_text,
         "audio_base64": audio_base64,
         "status": "pending_approval",
@@ -90,32 +81,26 @@ def create_short_video(topic: str) -> dict:
 
 
 def create_post(topic: str) -> dict:
-    content = generate_post_content(topic)
-
-    points = content.get("answer_points", [])
-
-    image_path = create_post_image(
-        question=content["question"],
-        answer_points=points,
-        image_text=content.get("image_text", ""),
-    )
+    image_path, script_text = generate_post_image_with_gemini(topic)
 
     try:
         image_url = upload_image(image_path)
     except Exception:
         image_url = None
 
-    script_text = content["question"] + "\n\n" + "\n".join(f"• {p}" for p in points) + "\n\n" + content["caption"]
+    title = topic
+    caption = script_text.split("\n\n")[-1] if "\n\n" in script_text else script_text[:200]
+
     try:
-        audio_base64 = synthesize(script_text[:1200], voice="alloy")
+        audio_base64 = synthesize(script_text[:1200], voice="nova")
     except Exception:
         audio_base64 = None
 
     return {
         "type": "post",
         "topic": topic,
-        "title": content["title"],
-        "caption": content["caption"],
+        "title": title,
+        "caption": caption,
         "image_path": image_url or image_path,
         "script": script_text,
         "audio_base64": audio_base64,

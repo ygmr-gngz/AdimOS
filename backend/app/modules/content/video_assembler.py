@@ -4,7 +4,7 @@ import os
 import uuid
 
 _OUTPUT_DIR = "/tmp/outputs/videos"
-_BUCKET = "content"
+_BUCKET = "content-videos"
 
 
 def assemble_video(slide_paths: list[str], audio_path: str) -> str:

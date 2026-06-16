@@ -38,14 +38,18 @@ Kurallar:
 def generate_shorts_script(topic: str) -> dict:
     prompt = f""""{topic}" konusunda 50-60 saniyelik YouTube Shorts / Instagram Reels için Türkçe script yaz.
 
+Hedef kitle: SGS/YMM/SMMM sınavına hazırlanan adaylar ve muhasebe meraklıları.
+İçerik tonu: Samimi, enerjik, motivasyonel VEYA "en çok yapılan hata / dikkat et" formatında olsun.
+Hook çok güçlü olsun — ilk 3 saniyede izleyici duraksın.
+
 JSON formatında döndür:
 {{
-    "title": "Dikkat çekici soru başlığı",
-    "hook": "İlk 3 saniyede söylenecek dikkat çekici cümle",
-    "content": "Ana içerik (max 80 kelime, akıcı konuşma dili)",
-    "cta": "Sona eklenen çağrı (abone ol, yorum yap vb.)",
-    "caption": "Instagram/YouTube caption (emoji + hashtag)",
-    "tags": ["tag1", "tag2"]
+    "title": "Merak uyandıran, kısa soru başlığı (max 8 kelime)",
+    "hook": "İlk 3 saniyede söylenecek şok edici / merak uyandırıcı cümle",
+    "content": "Ana içerik (max 80 kelime, konuşma dili, liste veya ipuçları formatında)",
+    "cta": "Sona eklenen güçlü çağrı",
+    "caption": "Instagram/YouTube caption (emoji + hashtag, max 200 karakter)",
+    "tags": ["tag1", "tag2", "tag3"]
 }}"""
 
     response = _client.chat.completions.create(
