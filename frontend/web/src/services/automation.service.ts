@@ -78,7 +78,22 @@ export const automationService = {
       action: req.action,
       notes: req.notes ?? '',
     })
-    return data as ContentPiece
+    const item = data as Record<string, unknown>
+    return {
+      id: String(item.id ?? req.content_id),
+      title: String(item.title ?? item.topic ?? 'İsimsiz'),
+      description: item.caption ? String(item.caption) : undefined,
+      hashtags: Array.isArray(item.hashtags) ? item.hashtags : [],
+      platform: (item.platform as ContentPiece['platform']) ?? 'youtube',
+      content_type: (item.type as ContentPiece['content_type']) ?? 'video',
+      status: (item.status as ContentPiece['status']) ?? (req.action === 'approve' ? 'approved' : 'rejected'),
+      video_url: item.video_url ? String(item.video_url) : undefined,
+      audio_url: item.audio_url ? String(item.audio_url) : undefined,
+      created_at: String(item.created_at ?? new Date().toISOString()),
+      updated_at: String(item.updated_at ?? new Date().toISOString()),
+      generated_by: 'ai',
+      approval_notes: item.approval_notes ? String(item.approval_notes) : undefined,
+    }
   },
 
   async publishContent(contentId: string): Promise<PublishResult> {
