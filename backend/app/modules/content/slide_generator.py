@@ -2,7 +2,7 @@ from PIL import Image, ImageDraw, ImageFont
 import os
 import uuid
 
-_OUTPUT_DIR = "outputs/slides"
+_OUTPUT_DIR = "/tmp/slides"
 
 # Renk paleti
 _BG = (15, 23, 42)

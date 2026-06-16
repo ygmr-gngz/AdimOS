@@ -4,7 +4,7 @@ import os
 import uuid
 
 _client = OpenAI(api_key=settings.OPENAI_API_KEY)
-_OUTPUT_DIR = "outputs/audio"
+_OUTPUT_DIR = "/tmp/audio"
 
 
 def generate_audio(text: str, voice: str = "onyx") -> str:
