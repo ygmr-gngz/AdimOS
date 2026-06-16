@@ -1,18 +1,19 @@
 export type MessageRole = 'user' | 'assistant' | 'system'
 
+export interface ChatSource {
+  document_id: string
+  filename: string
+  content_preview: string
+  similarity: number
+}
+
 export interface Message {
   id: string
   role: MessageRole
   content: string
   created_at: string
-  citations?: Citation[]
-}
-
-export interface Citation {
-  document_id: string
-  document_name: string
-  chunk_content: string
-  similarity_score: number
+  sources?: ChatSource[]
+  used_rag?: boolean
 }
 
 export interface ChatRequest {
@@ -21,15 +22,16 @@ export interface ChatRequest {
 }
 
 export interface ChatResponse {
+  success: boolean
   answer: string
-  citations: Citation[]
-  conversation_id: string
+  sources: ChatSource[]
+  used_rag: boolean
+  conversation_id: string | null
 }
 
 export interface Conversation {
   id: string
   title: string
-  messages: Message[]
   created_at: string
   updated_at: string
 }

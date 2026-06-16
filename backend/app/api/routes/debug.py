@@ -1,15 +1,15 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from app.db.supabase import get_supabase_client
 from app.core.config import settings
 from app.modules.knowledge.embeddings import embed_text
-from app.db.repositories.chunks_repo import search_similar_chunks
+from app.db.repositories.chunks_repo import search_similar_chunks, get_total_chunks
+from app.core.auth import require_admin
 
 router = APIRouter()
 
 
 @router.get("/rag")
-def debug_rag(q: str = "mali tablolar nedir"):
-    """RAG pipeline'ını test eder: embed → match_chunks → sonuçları döndür"""
+def debug_rag(q: str = "mali tablolar nedir", _admin=Depends(require_admin)):
     result = {}
     try:
         embedding = embed_text(q)
@@ -19,16 +19,53 @@ def debug_rag(q: str = "mali tablolar nedir"):
         result["embed_ok"] = False
         result["embed_error"] = str(e)
         return result
-
     try:
-        chunks = search_similar_chunks(embedding, 5)
+        chunks = search_similar_chunks(embedding, 5, 0.3)
         result["chunks_found"] = len(chunks)
         result["chunks"] = [
-            {"chunk_data": c.get("chunk_data", "")[:120], "similarity": c.get("similarity")}
+            {"content": (c.get("content") or c.get("chunk_data", ""))[:120], "similarity": c.get("similarity")}
             for c in chunks
         ]
     except Exception as e:
         result["chunks_error"] = str(e)
+    return result
+
+
+@router.get("/chat")
+def debug_chat(_admin=Depends(require_admin)):
+    supabase = get_supabase_client()
+    result: dict = {
+        "openai_key_loaded": bool(settings.OPENAI_API_KEY),
+        "supabase_connected": False,
+        "chunks_count": 0,
+        "documents_count": 0,
+        "match_chunks_rpc": False,
+        "chat_tables_exist": False,
+    }
+    try:
+        chunks_count = get_total_chunks()
+        result["supabase_connected"] = True
+        result["chunks_count"] = chunks_count
+        docs = supabase.table("documents").select("*", count="exact").limit(0).execute()
+        result["documents_count"] = docs.count or 0
+    except Exception as e:
+        result["supabase_error"] = str(e)
+
+    try:
+        dummy = [0.0] * 1536
+        rpc_resp = supabase.rpc("match_chunks", {"query_embedding": dummy, "match_count": 1, "match_threshold": 0.99}).execute()
+        result["match_chunks_rpc"] = True
+        result["rpc_columns"] = list(rpc_resp.data[0].keys()) if rpc_resp.data else []
+    except Exception as e:
+        result["match_chunks_rpc"] = False
+        result["rpc_error"] = str(e)
+
+    try:
+        supabase.table("chat_conversations").select("*", count="exact").limit(0).execute()
+        supabase.table("chat_messages").select("*", count="exact").limit(0).execute()
+        result["chat_tables_exist"] = True
+    except Exception as e:
+        result["chat_tables_error"] = str(e)
 
     return result
 

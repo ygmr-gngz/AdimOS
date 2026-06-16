@@ -2,15 +2,20 @@ from pydantic import BaseModel
 
 
 class ChatRequest(BaseModel):
-    message:str
-    conversation_id:str | None = None
+    message: str
+    conversation_id: str | None = None
 
-class Citation(BaseModel):
-    document_name:str
-    page: int | None = None
-    passage: str
+
+class ChatSource(BaseModel):
+    document_id: str
+    filename: str
+    content_preview: str
+    similarity: float
+
 
 class ChatResponse(BaseModel):
-    answer:str
-    citations: list[Citation]
-    conversation_id:str
+    success: bool
+    answer: str
+    sources: list[ChatSource] = []
+    used_rag: bool = False
+    conversation_id: str | None = None
