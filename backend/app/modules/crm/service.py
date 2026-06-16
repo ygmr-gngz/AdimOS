@@ -4,7 +4,7 @@ from app.schemas.crm import LeadCreate, LeadUpdate
 
 
 def add_lead(data: LeadCreate) -> dict:
-    return create_lead(data.name, data.email, data.phone, data.status.value)
+    return create_lead(data.name, data.email, data.phone, data.status.value, data.source, data.notes)
 
 
 def list_leads() -> list[dict]:

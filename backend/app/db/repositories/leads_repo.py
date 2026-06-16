@@ -1,14 +1,12 @@
 from app.db.supabase import get_supabase_client
 
 
-def create_lead(name: str, email: str, phone: str | None, status: str) -> dict | None:
+def create_lead(name: str, email: str, phone: str | None, status: str, source: str | None = None, notes: str | None = None) -> dict | None:
     supabase = get_supabase_client()
-    response = supabase.table("leads").insert({
-        "name": name,
-        "email": email,
-        "phone": phone,
-        "status": status,
-    }).execute()
+    row = {"name": name, "email": email, "phone": phone, "status": status}
+    if source: row["source"] = source
+    if notes: row["notes"] = notes
+    response = supabase.table("leads").insert(row).execute()
     return response.data[0] if response.data else None
 
 

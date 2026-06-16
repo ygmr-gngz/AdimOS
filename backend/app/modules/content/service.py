@@ -9,20 +9,31 @@ from app.modules.content.gemini_image import generate_post_image_with_gemini
 from app.modules.voice.tts import synthesize
 
 
+def _sub_slides(sections: list[dict], words_per_slide: int = 35) -> list[dict]:
+    result = []
+    for sec in sections:
+        words = sec["content"].split()
+        chunks = [words[i:i + words_per_slide] for i in range(0, len(words), words_per_slide)]
+        for idx, chunk in enumerate(chunks):
+            result.append({"title": sec["title"] if idx == 0 else "", "content": " ".join(chunk)})
+    return result
+
+
 def create_normal_video(topic: str, duration_minutes: int = 5) -> dict:
     script = generate_video_script(topic, duration_minutes)
 
     full_text = " ".join(s["content"] for s in script["sections"])
-    audio_path = generate_audio(full_text, voice="onyx")
+    audio_path = generate_audio(full_text, voice="nova")
 
+    sub = _sub_slides(script["sections"])
     slides = [
         create_slide(
             section_title=s["title"],
             content=s["content"],
             section_num=i + 1,
-            total_sections=len(script["sections"]),
+            total_sections=len(sub),
         )
-        for i, s in enumerate(script["sections"])
+        for i, s in enumerate(sub)
     ]
 
     video_path = assemble_video(slides, audio_path)
@@ -53,13 +64,11 @@ def create_short_video(topic: str) -> dict:
     full_text = f"{script['hook']} {script['content']} {script['cta']}"
     audio_path = generate_audio(full_text, voice="nova")
 
-    slide_path = create_shorts_slide(
-        title=script["title"],
-        content=script["content"],
-        hook=script["hook"],
-    )
+    slide_hook = create_shorts_slide(title=script["title"], content="", hook=script["hook"])
+    slide_main = create_shorts_slide(title=script["title"], content=script["content"], hook="")
+    slide_cta  = create_shorts_slide(title="", content=script["cta"], hook="")
 
-    video_path = assemble_video([slide_path], audio_path)
+    video_path = assemble_video([slide_hook, slide_main, slide_cta], audio_path)
 
     script_text = f"{script['hook']}\n\n{script['content']}\n\n{script['cta']}"
     try:

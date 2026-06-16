@@ -13,7 +13,9 @@ class LeadCreate(BaseModel):
     name: str
     email: str
     phone: str | None = None
-    status: LeadStatus
+    status: LeadStatus = LeadStatus.NEW
+    source: str | None = None
+    notes: str | None = None
     
 
 class LeadResponse(BaseModel):
