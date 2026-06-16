@@ -17,7 +17,7 @@ function LoginForm() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) router.replace(searchParams.get('redirect') ?? '/dashboard')
+      if (session) window.location.replace(searchParams.get('redirect') ?? '/dashboard')
     })
   }, [router, searchParams])
 
@@ -27,7 +27,7 @@ function LoginForm() {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
-      router.replace(searchParams.get('redirect') ?? '/dashboard')
+      window.location.replace(searchParams.get('redirect') ?? '/dashboard')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : JSON.stringify(err)
       toast.error(msg, { duration: 8000 })
