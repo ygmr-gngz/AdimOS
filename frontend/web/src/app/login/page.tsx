@@ -1,28 +1,35 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
 import { Zap, Mail, Lock } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const { signIn } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) router.replace(searchParams.get('redirect') ?? '/dashboard')
+    })
+  }, [router, searchParams])
+
+  const handleSubmit = async (e: { preventDefault: () => void }) => {
     e.preventDefault()
     setIsLoading(true)
     try {
-      await signIn(email, password)
-      router.push('/dashboard')
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) throw error
+      router.replace(searchParams.get('redirect') ?? '/dashboard')
     } catch {
-      toast.error('Email veya şifre hatalı')
+      toast.error('E-posta veya şifre hatalı')
     } finally {
       setIsLoading(false)
     }
@@ -71,5 +78,13 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   )
 }

@@ -1,16 +1,16 @@
 'use client'
 
-import { Youtube, Instagram, Video, Check, X, Calendar, Trash2 } from 'lucide-react'
+import { PlayCircle, Camera, Video, Check, X, Calendar, Trash2 } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import type { ContentPiece, ContentStatus, ContentPlatform } from '@/types/automation'
 import { CONTENT_STATUS_LABELS, PLATFORM_LABELS } from '@/lib/constants'
 
 const platformIcons: Record<ContentPlatform, React.ReactNode> = {
-  youtube: <Youtube size={14} className="text-red-400" />,
-  instagram: <Instagram size={14} className="text-pink-400" />,
+  youtube: <PlayCircle size={14} className="text-red-400" />,
+  instagram: <Camera size={14} className="text-pink-400" />,
   tiktok: <Video size={14} className="text-cyan-400" />,
-  youtube_shorts: <Youtube size={14} className="text-red-400" />,
+  youtube_shorts: <PlayCircle size={14} className="text-red-400" />,
 }
 
 const statusVariant: Record<ContentStatus, 'success' | 'warning' | 'error' | 'info' | 'default' | 'purple'> = {
@@ -52,7 +52,7 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
         <p className="text-xs text-gray-500 mb-3 line-clamp-2">{content.description}</p>
       )}
 
-      {content.hashtags.length > 0 && (
+      {(content.hashtags ?? []).length > 0 && (
         <div className="flex flex-wrap gap-1 mb-3">
           {content.hashtags.slice(0, 5).map((tag) => (
             <span key={tag} className="text-xs bg-surface-100 text-gray-500 px-2 py-0.5 rounded-full">

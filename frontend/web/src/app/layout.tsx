@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import { Toaster } from 'react-hot-toast'
+import { AuthProvider } from '@/contexts/AuthContext'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -12,7 +13,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="tr" className="dark">
       <body className="antialiased bg-surface text-gray-100">
+        <AuthProvider>
         {children}
+        </AuthProvider>
         <Toaster
           position="top-right"
           toastOptions={{

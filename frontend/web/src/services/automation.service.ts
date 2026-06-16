@@ -49,7 +49,22 @@ export const automationService = {
 
   async listContent(filter?: string): Promise<ContentPiece[]> {
     const { data } = await apiClient.get('/content')
-    const items = (Array.isArray(data) ? data : []) as ContentPiece[]
+    const raw = Array.isArray(data) ? data : []
+    const items: ContentPiece[] = raw.map((item: Record<string, unknown>) => ({
+      id: String(item.id ?? ''),
+      title: String(item.title ?? item.topic ?? 'İsimsiz'),
+      description: item.caption ? String(item.caption) : undefined,
+      hashtags: Array.isArray(item.hashtags) ? item.hashtags : [],
+      platform: (item.platform as ContentPiece['platform']) ?? 'youtube',
+      content_type: (item.type as ContentPiece['content_type']) ?? 'video',
+      status: (item.status as ContentPiece['status']) ?? 'draft',
+      video_url: item.video_url ? String(item.video_url) : undefined,
+      audio_url: item.audio_url ? String(item.audio_url) : undefined,
+      created_at: String(item.created_at ?? new Date().toISOString()),
+      updated_at: String(item.updated_at ?? item.created_at ?? new Date().toISOString()),
+      generated_by: 'ai',
+      approval_notes: item.approval_notes ? String(item.approval_notes) : undefined,
+    }))
     return filter ? items.filter((c) => c.status === filter) : items
   },
 

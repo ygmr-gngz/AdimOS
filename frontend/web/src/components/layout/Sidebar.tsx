@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { clsx } from 'clsx'
 import {
   LayoutDashboard,
@@ -13,7 +13,9 @@ import {
   BarChart2,
   Globe,
   Settings,
+  LogOut,
 } from 'lucide-react'
+import { useAuth } from '@/hooks/useAuth'
 
 const navItems = [
   { href: '/dashboard', label: 'Kontrol Merkezi', icon: LayoutDashboard },
@@ -28,6 +30,16 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+  const { user, profile, signOut } = useAuth()
+
+  const handleSignOut = async () => {
+    await signOut()
+    router.push('/login')
+  }
+
+  const displayName = profile?.display_name ?? user?.email?.split('@')[0] ?? 'Kullanıcı'
+  const roleLabel = profile?.role === 'admin' ? 'Admin' : 'Editör'
 
   return (
     <aside className="w-64 flex-shrink-0 bg-surface-50 border-r border-surface-200 flex flex-col h-full">
@@ -66,6 +78,20 @@ export default function Sidebar() {
       </nav>
 
       <div className="p-3 border-t border-surface-200">
+        {profile?.role === 'admin' && (
+          <Link
+            href="/settings/users"
+            className={clsx(
+              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 mb-1',
+              pathname === '/settings/users'
+                ? 'bg-brand-600/20 text-brand-400 border border-brand-600/30'
+                : 'text-gray-400 hover:text-gray-200 hover:bg-surface-100'
+            )}
+          >
+            <Users size={17} className={pathname === '/settings/users' ? 'text-brand-400' : ''} />
+            Kullanıcılar
+          </Link>
+        )}
         <Link
           href="/settings"
           className={clsx(
@@ -79,13 +105,20 @@ export default function Sidebar() {
           Ayarlar
         </Link>
         <div className="flex items-center gap-2.5 px-3 py-2 mt-1">
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-500/40 to-brand-700/40 border border-brand-600/30 flex items-center justify-center text-xs font-bold text-brand-400">
-            A
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-500/40 to-brand-700/40 border border-brand-600/30 flex items-center justify-center text-xs font-bold text-brand-400 flex-shrink-0">
+            {displayName[0]?.toUpperCase() ?? 'U'}
           </div>
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-gray-300 truncate">Adım Müşavirlik</p>
-            <p className="text-xs text-gray-500 truncate">Admin</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-gray-300 truncate">{displayName}</p>
+            <p className="text-xs text-gray-500 truncate">{roleLabel}</p>
           </div>
+          <button
+            onClick={handleSignOut}
+            title="Çıkış Yap"
+            className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0"
+          >
+            <LogOut size={14} />
+          </button>
         </div>
       </div>
     </aside>
