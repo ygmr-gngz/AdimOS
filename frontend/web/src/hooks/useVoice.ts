@@ -36,8 +36,9 @@ export function useVoice() {
           const audio = voiceService.playAudioBase64(response.answer_audio_base64)
           audioRef.current = audio
           audio.onended = () => setVoiceState('idle')
-        } catch {
-          toast.error('Ses işlenemedi')
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : JSON.stringify(err)
+          toast.error(`Ses hatası: ${msg}`, { duration: 8000 })
           setVoiceState('error')
           setTimeout(() => setVoiceState('idle'), 2000)
         }
