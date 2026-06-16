@@ -76,11 +76,14 @@ export default function AssistantWidget({ isOpen, onOpen, onClose }: Props) {
           addMsg('user', res.transcript, 'voice')
           addMsg('assistant', res.answer_text, 'voice')
           if (res.answer_audio_base64) {
-            const audio = voiceService.playAudioBase64(res.answer_audio_base64)
+            const audio = new Audio(`data:audio/mp3;base64,${res.answer_audio_base64}`)
             audioRef.current = audio
+            audio.onerror = () => toast.error('Ses oynatılamadı')
+            audio.play().catch(() => {})
           }
-        } catch {
-          toast.error('Ses işlenemedi')
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err)
+          toast.error(`Ses hatası: ${msg}`, { duration: 8000 })
         } finally {
           setVoiceState('idle')
         }
