@@ -20,20 +20,20 @@ def process_voice(audio_bytes: bytes) -> dict:
     agent = _agents.get(agent_type, _agents["knowledge"])
 
     if agent_type in ("knowledge", "learning"):
-        result = agent.ask(transcript) if hasattr(agent, "ask") else {"answer": agent.chat(transcript), "citations": []}
+        result = agent.ask(transcript) if hasattr(agent, "ask") else {"answer": agent.chat(transcript), "sources": []}
         answer_text = result["answer"]
-        citations = result.get("citations", [])
+        sources = result.get("sources", [])
     elif agent_type == "ceo":
         answer_text = agent.ask(transcript)
-        citations = []
+        sources = []
     else:
         answer_text = agent.chat(transcript)
-        citations = []
+        sources = []
 
     return {
         "transcript": transcript,
         "answer_text": answer_text,
         "answer_audio_base64": synthesize(answer_text),
         "agent_used": agent_type,
-        "citations": citations,
+        "sources": sources,
     }
