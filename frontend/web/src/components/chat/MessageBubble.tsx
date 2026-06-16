@@ -1,3 +1,5 @@
+'use client'
+
 import { Bot, User, FileText, ChevronDown, ChevronUp } from 'lucide-react'
 import { useState } from 'react'
 import type { Message } from '@/types/chat'
