@@ -1,5 +1,5 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from app.modules.knowledge.service import process_document, list_documents, fetch_document, remove_document
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
+from app.modules.knowledge.service import process_document, list_documents, fetch_document, remove_document, reindex_document
 
 router = APIRouter()
 
@@ -22,6 +22,15 @@ def get_document(document_id: str):
     if not doc:
         raise HTTPException(status_code=404, detail="Döküman bulunamadı")
     return doc
+
+
+@router.post("/{document_id}/reindex")
+def reindex_doc(document_id: str, bg: BackgroundTasks):
+    doc = fetch_document(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Döküman bulunamadı")
+    bg.add_task(reindex_document, document_id, doc["storage_path"], doc["file_name"])
+    return {"message": "Yeniden işleme başlatıldı", "document_id": document_id}
 
 
 @router.delete("/{document_id}")

@@ -22,7 +22,8 @@ export const DOCUMENT_STATUS_LABELS: Record<string, string> = {
 }
 
 export const AGENT_STATUS_LABELS: Record<string, string> = {
-  idle: 'Bekliyor',
+  idle: 'Pasif',
+  ready: 'Hazır',
   running: 'Çalışıyor',
   completed: 'Tamamlandı',
   failed: 'Hata',

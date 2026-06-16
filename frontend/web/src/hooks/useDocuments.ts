@@ -51,5 +51,16 @@ export function useDocuments() {
     fetchDocuments()
   }, [fetchDocuments])
 
-  return { documents, isLoading, isUploading, uploadDocument, deleteDocument, refetch: fetchDocuments }
+  const reindexDocument = useCallback(async (id: string) => {
+    try {
+      setDocuments((prev) => prev.map((d) => d.id === id ? { ...d, status: 'processing' as const } : d))
+      await documentService.reindex(id)
+      toast.success('Yeniden işleme başlatıldı — birkaç dakika sürebilir')
+      setTimeout(fetchDocuments, 10000)
+    } catch {
+      toast.error('Yeniden işleme başlatılamadı')
+    }
+  }, [fetchDocuments])
+
+  return { documents, isLoading, isUploading, uploadDocument, deleteDocument, reindexDocument, refetch: fetchDocuments }
 }

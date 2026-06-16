@@ -22,4 +22,8 @@ export const documentService = {
   async delete(id: string): Promise<void> {
     await apiClient.delete(`/documents/${id}`)
   },
+
+  async reindex(id: string): Promise<void> {
+    await apiClient.post(`/documents/${id}/reindex`)
+  },
 }

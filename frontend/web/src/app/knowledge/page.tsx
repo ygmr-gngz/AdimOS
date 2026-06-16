@@ -7,7 +7,7 @@ import { useDocuments } from '@/hooks/useDocuments'
 import { FileSearch } from 'lucide-react'
 
 export default function KnowledgePage() {
-  const { documents, isLoading, isUploading, uploadDocument, deleteDocument } = useDocuments()
+  const { documents, isLoading, isUploading, uploadDocument, deleteDocument, reindexDocument } = useDocuments()
 
   return (
     <AppShell>
@@ -43,7 +43,7 @@ export default function KnowledgePage() {
           ) : (
             <div className="space-y-2">
               {documents.map((doc) => (
-                <DocumentCard key={doc.id} document={doc} onDelete={deleteDocument} />
+                <DocumentCard key={doc.id} document={doc} onDelete={deleteDocument} onReindex={reindexDocument} />
               ))}
             </div>
           )}

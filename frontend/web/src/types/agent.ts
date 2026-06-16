@@ -1,4 +1,4 @@
-export type AgentStatus = 'idle' | 'running' | 'completed' | 'failed'
+export type AgentStatus = 'idle' | 'ready' | 'running' | 'completed' | 'failed'
 
 export type AgentType =
   | 'knowledge_agent'

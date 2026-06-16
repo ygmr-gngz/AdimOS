@@ -60,3 +60,36 @@ def fetch_document(document_id: str) -> dict | None:
 def remove_document(document_id: str, storage_path: str):
     delete_chunks_by_document_id(document_id)
     delete_file(BUCKET, storage_path)
+
+
+def reindex_document(document_id: str, storage_path: str, file_name: str):
+    logger.info(f"[knowledge] yeniden indeksleme başladı: {document_id}")
+    try:
+        update_document_status(document_id, DocumentStatus.PROCESSING)
+        delete_chunks_by_document_id(document_id)
+
+        from app.db.storage import download_file
+        import tempfile, os
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp_path = tmp.name
+        clean_path = storage_path.replace(f"{BUCKET}/", "", 1)
+        download_file(BUCKET, clean_path, tmp_path)
+
+        with open(tmp_path, "rb") as f:
+            file_bytes = f.read()
+        os.unlink(tmp_path)
+
+        text = load_pdf(file_bytes)
+        raw_chunks = split_into_chunks(text)
+        texts = [c["text"] for c in raw_chunks]
+        embeddings = embed_texts(texts)
+        chunks_with_embeddings = [
+            {"text": c["text"], "embedding": embeddings[i]}
+            for i, c in enumerate(raw_chunks)
+        ]
+        insert_chunks(document_id, chunks_with_embeddings)
+        update_document_status(document_id, DocumentStatus.INDEXED)
+        logger.info(f"[knowledge] yeniden indeksleme tamamlandı: {document_id}")
+    except Exception as e:
+        logger.error(f"[knowledge] yeniden indeksleme hatası: {document_id} — {e}")
+        update_document_status(document_id, DocumentStatus.FAILED)

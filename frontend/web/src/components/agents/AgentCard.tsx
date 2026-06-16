@@ -13,10 +13,11 @@ const agentIcons: Record<string, LucideIcon> = {
   automation_agent: Video,
 }
 
-const statusVariant: Record<AgentStatus, 'success' | 'warning' | 'error' | 'default'> = {
+const statusVariant: Record<AgentStatus, 'success' | 'warning' | 'error' | 'default' | 'info'> = {
   idle: 'default',
+  ready: 'success',
   running: 'warning',
-  completed: 'success',
+  completed: 'info',
   failed: 'error',
 }
 
@@ -27,14 +28,15 @@ interface AgentCardProps {
 export default function AgentCard({ agent }: AgentCardProps) {
   const Icon = agentIcons[agent.id] || Brain
   const isRunning = agent.status === 'running'
+  const isReady = agent.status === 'ready'
 
   return (
     <div className="bg-surface-50 rounded-xl p-5 border border-surface-200 hover:border-surface-300 transition-colors">
       <div className="flex items-start justify-between mb-3">
-        <div className={`p-2.5 rounded-lg ${isRunning ? 'bg-brand-600/20 animate-pulse-slow' : 'bg-surface-100'}`}>
-          <Icon size={20} className={isRunning ? 'text-brand-400' : 'text-gray-400'} />
+        <div className={`p-2.5 rounded-lg ${isRunning ? 'bg-brand-600/20 animate-pulse-slow' : isReady ? 'bg-green-500/10' : 'bg-surface-100'}`}>
+          <Icon size={20} className={isRunning ? 'text-brand-400' : isReady ? 'text-green-400' : 'text-gray-400'} />
         </div>
-        <Badge variant={statusVariant[agent.status]} dot>
+        <Badge variant={statusVariant[agent.status] ?? 'default'} dot>
           {AGENT_STATUS_LABELS[agent.status]}
         </Badge>
       </div>
