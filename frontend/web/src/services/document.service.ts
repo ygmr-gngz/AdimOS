@@ -5,9 +5,7 @@ export const documentService = {
   async upload(file: File): Promise<Document> {
     const formData = new FormData()
     formData.append('file', file)
-    const { data } = await apiClient.post('/documents', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
+    const { data } = await apiClient.post('/documents', formData)
     return data
   },
 
