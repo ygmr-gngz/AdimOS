@@ -48,8 +48,17 @@ export function useDocuments() {
   }, [])
 
   useEffect(() => {
-    fetchDocuments()
-  }, [fetchDocuments])
+    fetchDocuments().then(() => {
+      setDocuments((prev) => {
+        const failed = prev.filter((d) => d.status === 'failed' || d.status === 'uploaded')
+        failed.forEach((d) => {
+          documentService.reindex(d.id).catch(() => {})
+        })
+        return prev
+      })
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const reindexDocument = useCallback(async (id: string) => {
     try {
