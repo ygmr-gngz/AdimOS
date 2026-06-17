@@ -1,14 +1,14 @@
 import logging
+from moviepy.editor import AudioFileClip
 from app.modules.content.script_generator import (
     generate_video_script, generate_shorts_script, generate_post_content,
     generate_question_solution_script, generate_topic_explanation_script,
 )
 from app.modules.content.audio_generator import generate_audio
-from app.modules.content.slide_generator import (
-    create_slide, create_intro_slide, create_cta_slide,
-    create_shorts_slide, create_shorts_cta_slide,
-    create_post_image, create_question_slide, create_answer_slide,
-    create_summary_slide,
+from app.modules.content.scene_engine import (
+    render_intro_scene, render_content_scene, render_question_scene,
+    render_answer_scene, render_exam_tip_scene, render_summary_scene,
+    render_cta_scene, render_shorts_scene,
 )
 from app.modules.content.video_assembler import assemble_video
 from app.modules.content.youtube_uploader import upload_to_youtube, make_public
@@ -19,15 +19,15 @@ from app.modules.voice.tts import synthesize
 
 logger = logging.getLogger(__name__)
 
+_INTRO_DUR = 4.5
+_CTA_DUR   = 4.0
 
-def _sub_slides(sections: list[dict], words_per_slide: int = 35) -> list[dict]:
-    result = []
-    for sec in sections:
-        words = sec["content"].split()
-        chunks = [words[i:i + words_per_slide] for i in range(0, len(words), words_per_slide)]
-        for idx, chunk in enumerate(chunks):
-            result.append({"title": sec["title"] if idx == 0 else "", "content": " ".join(chunk)})
-    return result
+
+def _audio_duration(path: str) -> float:
+    c = AudioFileClip(path)
+    d = c.duration
+    c.close()
+    return d
 
 
 def _try_tts(text: str) -> str | None:
@@ -38,11 +38,18 @@ def _try_tts(text: str) -> str | None:
 
 
 def _stage(name: str, fn, *args, **kwargs):
-    """Run fn(*args, **kwargs) and re-raise with stage name prepended on failure."""
     try:
         return fn(*args, **kwargs)
     except Exception as e:
         raise RuntimeError(f"[{name}] {e}") from e
+
+
+def _split_lines(content: str, max_per_scene: int = 5) -> list[str]:
+    """Split a section body into bullet lines for scene_engine."""
+    sents = [s.strip() for s in content.replace(". ", ".\n").split("\n") if s.strip()]
+    if not sents:
+        sents = [content.strip()]
+    return sents[:max_per_scene]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -56,30 +63,35 @@ def create_normal_video(topic: str, duration_minutes: int = 5) -> dict:
     audio_path = _stage("audio", generate_audio, full_text, voice="nova")
     logger.info("[video] ses hazır")
 
-    slides, stypes = [], []
-    slides.append(create_intro_slide(script["title"], script.get("description", "")[:80]))
-    stypes.append("intro")
-    sub = _sub_slides(script["sections"])
-    for i, s in enumerate(sub):
-        slides.append(_stage("slide", create_slide, s["title"], s["content"], i + 1, len(sub)))
-        stypes.append("content")
-    slides.append(create_cta_slide())
-    stypes.append("cta")
-    logger.info(f"[video] {len(slides)} slayt hazır")
+    ad = _audio_duration(audio_path)
+    sections = script["sections"]
+    n_sec = max(len(sections), 1)
+    sec_dur = max(3.5, (ad - _INTRO_DUR - _CTA_DUR) / n_sec)
 
-    video_path = _stage("video-assemble", assemble_video, slides, audio_path, stypes)
+    clips = []
+    clips.append(_stage("scene-intro", render_intro_scene,
+                         script["title"], script.get("description", "")[:80], _INTRO_DUR))
+
+    for i, sec in enumerate(sections):
+        lines = _split_lines(sec["content"])
+        clips.append(_stage(f"scene-{i}", render_content_scene,
+                             sec["title"], lines, i + 1, n_sec, sec_dur))
+
+    clips.append(_stage("scene-cta", render_cta_scene, _CTA_DUR))
+    logger.info(f"[video] {len(clips)} sahne hazır, audio={ad:.1f}s")
+
+    video_path = _stage("video-assemble", assemble_video, clips, audio_path)
     logger.info(f"[video] video hazır: {video_path}")
 
-    script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in script["sections"])
+    script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in sections)
     return {
-        "type": "video",
-        "topic": topic,
+        "type": "video", "topic": topic,
         "title": script["title"],
         "description": script.get("description", ""),
         "tags": script.get("tags", []),
         "video_path": video_path,
         "script": script_text,
-        "audio_base64": _try_tts(script["sections"][0]["content"] if script["sections"] else topic),
+        "audio_base64": _try_tts(sections[0]["content"] if sections else topic),
         "status": "pending_approval",
     }
 
@@ -95,24 +107,22 @@ def create_short_video(topic: str) -> dict:
     audio_path = _stage("audio", generate_audio, full_text, voice="nova")
     logger.info("[short] ses hazır")
 
-    slides = [
-        create_shorts_slide(title=script["title"], content="", hook=script["hook"]),
-        create_shorts_slide(title=script["title"], content=script["content"], hook=""),
-        create_shorts_cta_slide(),
+    clips = [
+        _stage("scene-hook",    render_shorts_scene, script["title"], script["hook"], "", 4.0),
+        _stage("scene-content", render_shorts_scene, script["title"], "", script["content"], 5.0),
+        _stage("scene-cta",     render_cta_scene, 3.5),
     ]
-    stypes = ["intro", "content", "cta"]
-    video_path = _stage("video-assemble", assemble_video, slides, audio_path, stypes)
+
+    video_path = _stage("video-assemble", assemble_video, clips, audio_path)
     logger.info(f"[short] video hazır: {video_path}")
-    script_text = f"{script['hook']}\n\n{script['content']}\n\n{script['cta']}"
 
     return {
-        "type": "short",
-        "topic": topic,
+        "type": "short", "topic": topic,
         "title": script["title"],
-        "caption": script["caption"],
+        "caption": script.get("caption", ""),
         "tags": script.get("tags", []),
         "video_path": video_path,
-        "script": script_text,
+        "script": f"{script['hook']}\n\n{script['content']}\n\n{script['cta']}",
         "audio_base64": _try_tts(full_text),
         "status": "pending_approval",
     }
@@ -129,46 +139,56 @@ def create_question_solution_video(topic: str, question_text: str = "") -> dict:
     audio_path = _stage("audio", generate_audio, full_text or topic, voice="nova")
     logger.info("[soru-cozum] ses hazır")
 
-    slides, stypes = [], []
+    ad = _audio_duration(audio_path)
+    sections = script.get("sections", [])
+    options  = script.get("options", [])
+    correct  = script.get("correct_option", "A")
+    puf      = script.get("puf_nokta", "")
+
+    # Fixed scene times
+    q_dur   = 8.0
+    ans_dur = 6.5
+    puf_dur = 5.0 if puf else 0.0
+    n_sec   = max(len(sections), 1)
+    sec_dur = max(3.5, (ad - q_dur - ans_dur - puf_dur - _CTA_DUR) / n_sec)
+
+    clips = []
 
     # Soru slaytı
     q_text = script.get("question_text") or question_text or f"{topic} sorusu"
-    slides.append(create_question_slide(q_text, topic)); stypes.append("question")
+    clips.append(_stage("scene-question", render_question_scene, q_text, options, q_dur))
 
-    # İçerik slaytları
-    sections = script.get("sections", [])
-    for i, s in enumerate(sections):
-        sub = _sub_slides([s])
-        for j, ss in enumerate(sub):
-            slides.append(create_slide(ss["title"], ss["content"], i + 1, len(sections)))
-            stypes.append("content")
+    # İçerik slaytları (kavram, şık analizi)
+    for i, sec in enumerate(sections):
+        lines = _split_lines(sec["content"])
+        clips.append(_stage(f"scene-{i}", render_content_scene,
+                             sec["title"], lines, i + 1, n_sec, sec_dur))
 
-    # Cevap slaytı
-    correct = script.get("correct_option", "")
+    # Cevap slaytı — explanation from last content section
     explanation = ""
-    for s in sections:
-        if "doğru" in s.get("title", "").lower() or "cevap" in s.get("title", "").lower():
-            explanation = s.get("content", "")
+    for sec in sections:
+        t = sec.get("title", "").lower()
+        if "doğru" in t or "cevap" in t or "açıkla" in t:
+            explanation = sec.get("content", "")
             break
     if not explanation and sections:
-        explanation = sections[-2]["content"] if len(sections) >= 2 else sections[0]["content"]
-    slides.append(create_answer_slide(explanation, correct)); stypes.append("answer")
+        explanation = sections[-1]["content"]
 
-    # Özet / puf nokta
-    puf = script.get("puf_nokta", "")
+    clips.append(_stage("scene-answer", render_answer_scene, options, correct, explanation, ans_dur))
+
+    # Puf nokta
     if puf:
-        slides.append(create_slide("Sınavda Dikkat!", puf, len(sections), len(sections)))
-        stypes.append("puf")
+        clips.append(_stage("scene-tip", render_exam_tip_scene, puf, puf_dur))
 
-    slides.append(create_cta_slide()); stypes.append("cta")
-    logger.info(f"[soru-cozum] {len(slides)} slayt hazır")
-    video_path = _stage("video-assemble", assemble_video, slides, audio_path, stypes)
+    clips.append(_stage("scene-cta", render_cta_scene, _CTA_DUR))
+    logger.info(f"[soru-cozum] {len(clips)} sahne hazır, audio={ad:.1f}s")
+
+    video_path = _stage("video-assemble", assemble_video, clips, audio_path)
     logger.info(f"[soru-cozum] video hazır: {video_path}")
-    script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in sections)
 
+    script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in sections)
     return {
-        "type": "question_solution",
-        "topic": topic,
+        "type": "question_solution", "topic": topic,
         "title": script.get("title", f"{topic} — Soru Çözümü"),
         "description": script.get("description", ""),
         "tags": script.get("tags", []),
@@ -190,32 +210,35 @@ def create_topic_explanation_video(topic: str) -> dict:
     audio_path = _stage("audio", generate_audio, full_text or topic, voice="nova")
     logger.info("[konu-anlatim] ses hazır")
 
-    slides, stypes = [], []
-    slides.append(create_intro_slide(script.get("title", topic), f"Konu Anlatımı: {topic}"))
-    stypes.append("intro")
-
-    sections = script.get("sections", [])
-    for i, s in enumerate(sections):
-        sub = _sub_slides([s])
-        for ss in sub:
-            slides.append(create_slide(ss["title"], ss["content"], i + 1, len(sections)))
-            stypes.append("content")
-
-    # Özet tablo slaytı
+    ad = _audio_duration(audio_path)
+    sections     = script.get("sections", [])
     summary_rows = script.get("summary_table", [])
+    n_sec = max(len(sections), 1)
+    sum_dur = 6.0 if summary_rows else 0.0
+    sec_dur = max(3.5, (ad - _INTRO_DUR - sum_dur - _CTA_DUR) / n_sec)
+
+    clips = []
+    clips.append(_stage("scene-intro", render_intro_scene,
+                         script.get("title", topic), f"Konu Anlatımı: {topic}", _INTRO_DUR))
+
+    for i, sec in enumerate(sections):
+        lines = _split_lines(sec["content"])
+        clips.append(_stage(f"scene-{i}", render_content_scene,
+                             sec["title"], lines, i + 1, n_sec, sec_dur))
+
     if summary_rows:
-        slides.append(create_summary_slide(f"{topic} — Özet", summary_rows))
-        stypes.append("summary")
+        clips.append(_stage("scene-summary", render_summary_scene,
+                             f"{topic} — Özet", summary_rows, sum_dur))
 
-    slides.append(create_cta_slide()); stypes.append("cta")
-    logger.info(f"[konu-anlatim] {len(slides)} slayt hazır")
-    video_path = _stage("video-assemble", assemble_video, slides, audio_path, stypes)
+    clips.append(_stage("scene-cta", render_cta_scene, _CTA_DUR))
+    logger.info(f"[konu-anlatim] {len(clips)} sahne hazır, audio={ad:.1f}s")
+
+    video_path = _stage("video-assemble", assemble_video, clips, audio_path)
     logger.info(f"[konu-anlatim] video hazır: {video_path}")
-    script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in sections)
 
+    script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in sections)
     return {
-        "type": "topic_explanation",
-        "topic": topic,
+        "type": "topic_explanation", "topic": topic,
         "title": script.get("title", f"{topic} — Konu Anlatımı"),
         "description": script.get("description", ""),
         "tags": script.get("tags", []),
@@ -237,15 +260,12 @@ def create_post(topic: str) -> dict:
         image_url = _stage("image-upload", upload_image, image_path)
         logger.info("[post] görsel yüklendi")
     except Exception as e:
-        logger.warning(f"[post] image upload hatası: {e}")
+        logger.warning(f"[post] upload hatası: {e}")
         image_url = None
 
     caption = script_text.split("\n\n")[-1] if "\n\n" in script_text else script_text[:200]
-
     return {
-        "type": "post",
-        "topic": topic,
-        "title": topic,
+        "type": "post", "topic": topic, "title": topic,
         "caption": caption,
         "image_path": image_url or image_path,
         "script": script_text,
