@@ -37,25 +37,36 @@ def _try_tts(text: str) -> str | None:
         return None
 
 
+def _stage(name: str, fn, *args, **kwargs):
+    """Run fn(*args, **kwargs) and re-raise with stage name prepended on failure."""
+    try:
+        return fn(*args, **kwargs)
+    except Exception as e:
+        raise RuntimeError(f"[{name}] {e}") from e
+
+
 # ─────────────────────────────────────────────────────────────
 # Uzun Video (konu anlatım tarzı)
 # ─────────────────────────────────────────────────────────────
 def create_normal_video(topic: str, duration_minutes: int = 5) -> dict:
-    script = generate_video_script(topic, duration_minutes)
+    script = _stage("script", generate_video_script, topic, duration_minutes)
+    logger.info("[video] script hazır")
 
     full_text = " ".join(s["content"] for s in script["sections"])
-    audio_path = generate_audio(full_text, voice="nova")
+    audio_path = _stage("audio", generate_audio, full_text, voice="nova")
+    logger.info("[video] ses hazır")
 
-    # Intro + içerik slaytları + CTA
     slides = [create_intro_slide(script["title"], script.get("description", "")[:80])]
     sub = _sub_slides(script["sections"])
     for i, s in enumerate(sub):
-        slides.append(create_slide(s["title"], s["content"], i + 1, len(sub)))
+        slides.append(_stage("slide", create_slide, s["title"], s["content"], i + 1, len(sub)))
     slides.append(create_cta_slide())
+    logger.info(f"[video] {len(slides)} slayt hazır")
 
-    video_path = assemble_video(slides, audio_path)
+    video_path = _stage("video-assemble", assemble_video, slides, audio_path)
+    logger.info(f"[video] video hazır: {video_path}")
+
     script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in script["sections"])
-
     return {
         "type": "video",
         "topic": topic,
@@ -73,17 +84,20 @@ def create_normal_video(topic: str, duration_minutes: int = 5) -> dict:
 # YouTube Shorts / Instagram Reel
 # ─────────────────────────────────────────────────────────────
 def create_short_video(topic: str) -> dict:
-    script = generate_shorts_script(topic)
+    script = _stage("script", generate_shorts_script, topic)
+    logger.info("[short] script hazır")
 
     full_text = f"{script['hook']} {script['content']} {script['cta']}"
-    audio_path = generate_audio(full_text, voice="nova")
+    audio_path = _stage("audio", generate_audio, full_text, voice="nova")
+    logger.info("[short] ses hazır")
 
     slides = [
         create_shorts_slide(title=script["title"], content="", hook=script["hook"]),
         create_shorts_slide(title=script["title"], content=script["content"], hook=""),
         create_shorts_cta_slide(),
     ]
-    video_path = assemble_video(slides, audio_path)
+    video_path = _stage("video-assemble", assemble_video, slides, audio_path)
+    logger.info(f"[short] video hazır: {video_path}")
     script_text = f"{script['hook']}\n\n{script['content']}\n\n{script['cta']}"
 
     return {
@@ -103,10 +117,12 @@ def create_short_video(topic: str) -> dict:
 # Soru Çözüm Videosu
 # ─────────────────────────────────────────────────────────────
 def create_question_solution_video(topic: str, question_text: str = "") -> dict:
-    script = generate_question_solution_script(topic, question_text)
+    script = _stage("script", generate_question_solution_script, topic, question_text)
+    logger.info("[soru-cozum] script hazır")
 
     full_text = " ".join(s["content"] for s in script.get("sections", []))
-    audio_path = generate_audio(full_text or topic, voice="nova")
+    audio_path = _stage("audio", generate_audio, full_text or topic, voice="nova")
+    logger.info("[soru-cozum] ses hazır")
 
     slides = []
 
@@ -138,7 +154,9 @@ def create_question_solution_video(topic: str, question_text: str = "") -> dict:
         slides.append(create_slide("Sınavda Dikkat!", puf, len(sections), len(sections)))
 
     slides.append(create_cta_slide())
-    video_path = assemble_video(slides, audio_path)
+    logger.info(f"[soru-cozum] {len(slides)} slayt hazır")
+    video_path = _stage("video-assemble", assemble_video, slides, audio_path)
+    logger.info(f"[soru-cozum] video hazır: {video_path}")
     script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in sections)
 
     return {
@@ -158,10 +176,12 @@ def create_question_solution_video(topic: str, question_text: str = "") -> dict:
 # Konu Anlatım Videosu
 # ─────────────────────────────────────────────────────────────
 def create_topic_explanation_video(topic: str) -> dict:
-    script = generate_topic_explanation_script(topic)
+    script = _stage("script", generate_topic_explanation_script, topic)
+    logger.info("[konu-anlatim] script hazır")
 
     full_text = " ".join(s["content"] for s in script.get("sections", []))
-    audio_path = generate_audio(full_text or topic, voice="nova")
+    audio_path = _stage("audio", generate_audio, full_text or topic, voice="nova")
+    logger.info("[konu-anlatim] ses hazır")
 
     slides = [create_intro_slide(script.get("title", topic), f"Konu Anlatımı: {topic}")]
 
@@ -177,7 +197,9 @@ def create_topic_explanation_video(topic: str) -> dict:
         slides.append(create_summary_slide(f"{topic} — Özet", summary_rows))
 
     slides.append(create_cta_slide())
-    video_path = assemble_video(slides, audio_path)
+    logger.info(f"[konu-anlatim] {len(slides)} slayt hazır")
+    video_path = _stage("video-assemble", assemble_video, slides, audio_path)
+    logger.info(f"[konu-anlatim] video hazır: {video_path}")
     script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in sections)
 
     return {
@@ -197,12 +219,14 @@ def create_topic_explanation_video(topic: str) -> dict:
 # Instagram Post / Görsel
 # ─────────────────────────────────────────────────────────────
 def create_post(topic: str) -> dict:
-    image_path, script_text = generate_post_image_with_gemini(topic)
+    image_path, script_text = _stage("image-gen", generate_post_image_with_gemini, topic)
+    logger.info("[post] görsel hazır")
 
     try:
-        image_url = upload_image(image_path)
+        image_url = _stage("image-upload", upload_image, image_path)
+        logger.info("[post] görsel yüklendi")
     except Exception as e:
-        logger.warning(f"[content] image upload hatası: {e}")
+        logger.warning(f"[post] image upload hatası: {e}")
         image_url = None
 
     caption = script_text.split("\n\n")[-1] if "\n\n" in script_text else script_text[:200]
