@@ -48,7 +48,7 @@ def assemble_video(
     clips_or_paths,
     audio_path: str | None = None,
     slide_types: list[str] | None = None,
-) -> str:
+) -> str:  # noqa: C901
     """
     Accepts:
       - list[VideoClip] with audio already embedded (audio_path=None) — per-scene sync
@@ -59,6 +59,7 @@ def assemble_video(
     n = len(clips_or_paths)
     if n == 0:
         raise ValueError("Slayt/clip listesi boş")
+    audio = None   # defined here to avoid NameError in cleanup
 
     # ── Branch: per-scene audio already embedded (audio_path=None) ──
     if audio_path is None and isinstance(clips_or_paths[0], VideoClip):

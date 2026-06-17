@@ -72,6 +72,7 @@ def _build_synced_video(
                     scene[k] = v
 
     clips = []
+    audio_clips = []   # track all open AudioFileClip for cleanup
     preview_text = ""
 
     for i, scene in enumerate(scenes):
@@ -88,17 +89,26 @@ def _build_synced_video(
         clip = clip.set_duration(audio_dur)
 
         # Embed audio
-        audio_clip = AudioFileClip(audio_path)
-        clip = clip.set_audio(audio_clip)
+        aclip = AudioFileClip(audio_path)
+        audio_clips.append(aclip)
+        clip = clip.set_audio(aclip)
         clips.append(clip)
 
         if i == 1:  # hook/second scene preview
             preview_text = narration
 
-    logger.info(f"[service] {len(clips)} clip hazır, toplam süre = {sum(c.duration for c in clips):.1f}s")
+    total_dur = sum(c.duration for c in clips)
+    logger.info(f"[service] {len(clips)} clip hazır, toplam süre = {total_dur:.1f}s")
 
     video_path = _stage("video-assemble", assemble_video, clips)
     logger.info(f"[service] video hazır: {video_path}")
+
+    # Cleanup audio file handles
+    for ac in audio_clips:
+        try:
+            ac.close()
+        except Exception:
+            pass
 
     # Build script text for display
     script_parts = []
