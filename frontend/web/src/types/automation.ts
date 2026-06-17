@@ -1,5 +1,5 @@
 export type ContentPlatform = 'youtube' | 'instagram' | 'tiktok' | 'youtube_shorts'
-export type ContentType = 'video' | 'reel' | 'short' | 'post' | 'story'
+export type ContentType = 'video' | 'reel' | 'short' | 'post' | 'story' | 'question_solution' | 'topic_explanation'
 export type ContentStatus =
   | 'draft'
   | 'generating'
@@ -24,6 +24,7 @@ export interface ContentPiece {
   thumbnail_url?: string
   video_url?: string
   image_url?: string
+  error_detail?: string
   scheduled_at?: string
   published_at?: string
   created_at: string
@@ -36,6 +37,8 @@ export interface GenerateContentRequest {
   topic: string
   platform: ContentPlatform
   content_type: ContentType
+  backend_type?: string
+  question_text?: string
   tone?: 'professional' | 'casual' | 'educational' | 'promotional'
   target_audience?: string
   keywords?: string[]

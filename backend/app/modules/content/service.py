@@ -1,12 +1,23 @@
-from app.modules.content.script_generator import generate_video_script, generate_shorts_script, generate_post_content
+import logging
+from app.modules.content.script_generator import (
+    generate_video_script, generate_shorts_script, generate_post_content,
+    generate_question_solution_script, generate_topic_explanation_script,
+)
 from app.modules.content.audio_generator import generate_audio
-from app.modules.content.slide_generator import create_slide, create_shorts_slide, create_post_image
+from app.modules.content.slide_generator import (
+    create_slide, create_intro_slide, create_cta_slide,
+    create_shorts_slide, create_shorts_cta_slide,
+    create_post_image, create_question_slide, create_answer_slide,
+    create_summary_slide,
+)
 from app.modules.content.video_assembler import assemble_video
 from app.modules.content.youtube_uploader import upload_to_youtube, make_public
 from app.modules.content.instagram_poster import post_image_to_instagram, post_reel_to_instagram
 from app.modules.content.storage import upload_image
 from app.modules.content.gemini_image import generate_post_image_with_gemini
 from app.modules.voice.tts import synthesize
+
+logger = logging.getLogger(__name__)
 
 
 def _sub_slides(sections: list[dict], words_per_slide: int = 35) -> list[dict]:
@@ -19,118 +30,209 @@ def _sub_slides(sections: list[dict], words_per_slide: int = 35) -> list[dict]:
     return result
 
 
+def _try_tts(text: str) -> str | None:
+    try:
+        return synthesize(text[:1200], voice="nova")
+    except Exception:
+        return None
+
+
+# ─────────────────────────────────────────────────────────────
+# Uzun Video (konu anlatım tarzı)
+# ─────────────────────────────────────────────────────────────
 def create_normal_video(topic: str, duration_minutes: int = 5) -> dict:
     script = generate_video_script(topic, duration_minutes)
 
     full_text = " ".join(s["content"] for s in script["sections"])
     audio_path = generate_audio(full_text, voice="nova")
 
+    # Intro + içerik slaytları + CTA
+    slides = [create_intro_slide(script["title"], script.get("description", "")[:80])]
     sub = _sub_slides(script["sections"])
-    slides = [
-        create_slide(
-            section_title=s["title"],
-            content=s["content"],
-            section_num=i + 1,
-            total_sections=len(sub),
-        )
-        for i, s in enumerate(sub)
-    ]
+    for i, s in enumerate(sub):
+        slides.append(create_slide(s["title"], s["content"], i + 1, len(sub)))
+    slides.append(create_cta_slide())
 
     video_path = assemble_video(slides, audio_path)
-
     script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in script["sections"])
-    preview_text = script["sections"][0]["content"] if script["sections"] else script["title"]
-    try:
-        audio_base64 = synthesize(preview_text[:1200], voice="nova")
-    except Exception:
-        audio_base64 = None
 
     return {
         "type": "video",
         "topic": topic,
         "title": script["title"],
-        "description": script["description"],
-        "tags": script["tags"],
+        "description": script.get("description", ""),
+        "tags": script.get("tags", []),
         "video_path": video_path,
         "script": script_text,
-        "audio_base64": audio_base64,
+        "audio_base64": _try_tts(script["sections"][0]["content"] if script["sections"] else topic),
         "status": "pending_approval",
     }
 
 
+# ─────────────────────────────────────────────────────────────
+# YouTube Shorts / Instagram Reel
+# ─────────────────────────────────────────────────────────────
 def create_short_video(topic: str) -> dict:
     script = generate_shorts_script(topic)
 
     full_text = f"{script['hook']} {script['content']} {script['cta']}"
     audio_path = generate_audio(full_text, voice="nova")
 
-    slide_hook = create_shorts_slide(title=script["title"], content="", hook=script["hook"])
-    slide_main = create_shorts_slide(title=script["title"], content=script["content"], hook="")
-    slide_cta  = create_shorts_slide(title="", content=script["cta"], hook="")
-
-    video_path = assemble_video([slide_hook, slide_main, slide_cta], audio_path)
-
+    slides = [
+        create_shorts_slide(title=script["title"], content="", hook=script["hook"]),
+        create_shorts_slide(title=script["title"], content=script["content"], hook=""),
+        create_shorts_cta_slide(),
+    ]
+    video_path = assemble_video(slides, audio_path)
     script_text = f"{script['hook']}\n\n{script['content']}\n\n{script['cta']}"
-    try:
-        audio_base64 = synthesize(full_text[:1200], voice="nova")
-    except Exception:
-        audio_base64 = None
 
     return {
         "type": "short",
         "topic": topic,
         "title": script["title"],
         "caption": script["caption"],
-        "tags": script["tags"],
+        "tags": script.get("tags", []),
         "video_path": video_path,
         "script": script_text,
-        "audio_base64": audio_base64,
+        "audio_base64": _try_tts(full_text),
         "status": "pending_approval",
     }
 
 
+# ─────────────────────────────────────────────────────────────
+# Soru Çözüm Videosu
+# ─────────────────────────────────────────────────────────────
+def create_question_solution_video(topic: str, question_text: str = "") -> dict:
+    script = generate_question_solution_script(topic, question_text)
+
+    full_text = " ".join(s["content"] for s in script.get("sections", []))
+    audio_path = generate_audio(full_text or topic, voice="nova")
+
+    slides = []
+
+    # Soru slaytı
+    q_text = script.get("question_text") or question_text or f"{topic} sorusu"
+    slides.append(create_question_slide(q_text, topic))
+
+    # İçerik slaytları
+    sections = script.get("sections", [])
+    for i, s in enumerate(sections):
+        sub = _sub_slides([s])
+        for j, ss in enumerate(sub):
+            slides.append(create_slide(ss["title"], ss["content"], i + 1, len(sections)))
+
+    # Cevap slaytı
+    correct = script.get("correct_option", "")
+    explanation = ""
+    for s in sections:
+        if "doğru" in s.get("title", "").lower() or "cevap" in s.get("title", "").lower():
+            explanation = s.get("content", "")
+            break
+    if not explanation and sections:
+        explanation = sections[-2]["content"] if len(sections) >= 2 else sections[0]["content"]
+    slides.append(create_answer_slide(explanation, correct))
+
+    # Özet / puf nokta
+    puf = script.get("puf_nokta", "")
+    if puf:
+        slides.append(create_slide("Sınavda Dikkat!", puf, len(sections), len(sections)))
+
+    slides.append(create_cta_slide())
+    video_path = assemble_video(slides, audio_path)
+    script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in sections)
+
+    return {
+        "type": "question_solution",
+        "topic": topic,
+        "title": script.get("title", f"{topic} — Soru Çözümü"),
+        "description": script.get("description", ""),
+        "tags": script.get("tags", []),
+        "video_path": video_path,
+        "script": script_text,
+        "audio_base64": _try_tts(full_text[:1200]),
+        "status": "pending_approval",
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# Konu Anlatım Videosu
+# ─────────────────────────────────────────────────────────────
+def create_topic_explanation_video(topic: str) -> dict:
+    script = generate_topic_explanation_script(topic)
+
+    full_text = " ".join(s["content"] for s in script.get("sections", []))
+    audio_path = generate_audio(full_text or topic, voice="nova")
+
+    slides = [create_intro_slide(script.get("title", topic), f"Konu Anlatımı: {topic}")]
+
+    sections = script.get("sections", [])
+    for i, s in enumerate(sections):
+        sub = _sub_slides([s])
+        for ss in sub:
+            slides.append(create_slide(ss["title"], ss["content"], i + 1, len(sections)))
+
+    # Özet tablo slaytı
+    summary_rows = script.get("summary_table", [])
+    if summary_rows:
+        slides.append(create_summary_slide(f"{topic} — Özet", summary_rows))
+
+    slides.append(create_cta_slide())
+    video_path = assemble_video(slides, audio_path)
+    script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in sections)
+
+    return {
+        "type": "topic_explanation",
+        "topic": topic,
+        "title": script.get("title", f"{topic} — Konu Anlatımı"),
+        "description": script.get("description", ""),
+        "tags": script.get("tags", []),
+        "video_path": video_path,
+        "script": script_text,
+        "audio_base64": _try_tts(full_text[:1200]),
+        "status": "pending_approval",
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# Instagram Post / Görsel
+# ─────────────────────────────────────────────────────────────
 def create_post(topic: str) -> dict:
     image_path, script_text = generate_post_image_with_gemini(topic)
 
     try:
         image_url = upload_image(image_path)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[content] image upload hatası: {e}")
         image_url = None
 
-    title = topic
     caption = script_text.split("\n\n")[-1] if "\n\n" in script_text else script_text[:200]
-
-    try:
-        audio_base64 = synthesize(script_text[:1200], voice="nova")
-    except Exception:
-        audio_base64 = None
 
     return {
         "type": "post",
         "topic": topic,
-        "title": title,
+        "title": topic,
         "caption": caption,
         "image_path": image_url or image_path,
         "script": script_text,
-        "audio_base64": audio_base64,
+        "audio_base64": _try_tts(script_text[:1200]),
         "status": "pending_approval",
     }
 
 
+# ─────────────────────────────────────────────────────────────
+# Yayın
+# ─────────────────────────────────────────────────────────────
 def publish_to_youtube(content: dict) -> dict:
-    result = upload_to_youtube(
-        video_path=content["video_path"],
-        title=content["title"],
+    return upload_to_youtube(
+        video_path=content.get("video_path", ""),
+        title=content.get("title", ""),
         description=content.get("description", ""),
         tags=content.get("tags", []),
         privacy="private",
     )
-    return result
 
 
 def publish_to_instagram(content: dict) -> dict:
-    if content["type"] == "post":
-        return post_image_to_instagram(content["image_path"], content["caption"])
-    elif content["type"] == "short":
-        return post_reel_to_instagram(content["video_path"], content["caption"])
-    return {"error": "Geçersiz içerik tipi"}
+    if content.get("type") == "post":
+        return post_image_to_instagram(content.get("image_path", ""), content.get("caption", ""))
+    return post_reel_to_instagram(content.get("video_path", ""), content.get("caption", ""))

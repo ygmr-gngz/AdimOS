@@ -48,6 +48,16 @@ export const PLATFORM_LABELS: Record<string, string> = {
   youtube_shorts: 'YouTube Shorts',
 }
 
+export const CONTENT_TYPE_LABELS: Record<string, string> = {
+  video: 'Konu Anlatım',
+  short: 'Shorts / Reel',
+  post: 'Görsel Post',
+  reel: 'Reel',
+  story: 'Story',
+  question_solution: 'Soru Çözüm',
+  topic_explanation: 'Konu Anlatım',
+}
+
 export const MAX_FILE_SIZE_MB = 50
 export const SUPPORTED_FILE_TYPES = ['application/pdf', 'text/plain', 'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document']

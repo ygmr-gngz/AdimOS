@@ -73,9 +73,16 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
         <video
           src={content.video_url}
           controls
+          preload="metadata"
           className="w-full bg-black"
           style={{ maxHeight: 220 }}
+          onError={(e) => { (e.target as HTMLVideoElement).style.display = 'none' }}
         />
+      )}
+      {!hasVideo && !hasImage && !isGenerating && !isError && (
+        <div className="w-full bg-surface-100 flex items-center justify-center text-xs text-gray-600 py-5 border-b border-surface-200">
+          Video dosyası henüz üretilmedi
+        </div>
       )}
 
       {/* Post görseli */}
@@ -120,9 +127,16 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
         )}
 
         {isError && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg mb-2">
-            <AlertCircle size={12} className="text-red-400" />
-            <span className="text-xs text-red-300">Üretim başarısız</span>
+          <div className="px-3 py-2.5 bg-red-500/10 border border-red-500/20 rounded-lg mb-2">
+            <div className="flex items-center gap-2 mb-1">
+              <AlertCircle size={12} className="text-red-400 flex-shrink-0" />
+              <span className="text-xs font-semibold text-red-300">Üretim Başarısız</span>
+            </div>
+            {content.error_detail && (
+              <p className="text-xs text-red-400/80 leading-relaxed pl-5 break-words">
+                {content.error_detail}
+              </p>
+            )}
           </div>
         )}
 

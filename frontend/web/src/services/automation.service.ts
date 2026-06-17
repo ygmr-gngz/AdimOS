@@ -24,6 +24,7 @@ const PLATFORM_TO_BACKEND: Record<string, string> = {
 export const automationService = {
   async generateContent(request: GenerateContentRequest): Promise<ContentPiece> {
     const backendType =
+      request.backend_type ??
       TYPE_TO_BACKEND[request.content_type] ??
       PLATFORM_TO_BACKEND[request.platform] ??
       'video'
@@ -33,6 +34,7 @@ export const automationService = {
     const { data } = await apiClient.post(`/content/${backendType}/generate`, {
       topic: request.topic,
       duration_minutes: durationMinutes,
+      question_text: request.question_text ?? '',
     })
     return {
       id: String(data.content_id ?? data.id ?? ''),
