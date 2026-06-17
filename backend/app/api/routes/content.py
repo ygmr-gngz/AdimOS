@@ -7,7 +7,7 @@ from app.modules.content.service import (
 )
 from app.db.repositories.generated_contents_repo import (
     create_content, update_content, get_content, list_contents,
-    delete_content as db_delete,
+    delete_content as db_delete, delete_orphan_contents,
 )
 
 logger = logging.getLogger(__name__)
@@ -132,6 +132,13 @@ def publish_instagram(content_id: str):
     result = publish_to_instagram(item)
     update_content(content_id, {"status": "published"})
     return result
+
+
+@router.delete("/orphan")
+def cleanup_orphan():
+    """video_url veya image_url olmayan hatalı kartları toplu sil."""
+    count = delete_orphan_contents()
+    return {"deleted": count}
 
 
 @router.delete("/{content_id}")

@@ -6,8 +6,9 @@ import ContentCard from '@/components/automation/ContentCard'
 import GenerateContentModal from '@/components/automation/GenerateContentModal'
 import Button from '@/components/ui/Button'
 import { automationService } from '@/services/automation.service'
+import apiClient from '@/lib/api-client'
 import type { ContentPiece, GenerateContentRequest } from '@/types/automation'
-import { Plus, Video, Filter } from 'lucide-react'
+import { Plus, Video, Filter, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { clsx } from 'clsx'
 
@@ -88,6 +89,21 @@ export default function AutomationPage() {
     } catch { toast.error('Silme başarısız') }
   }
 
+  const handleCleanupOrphan = async () => {
+    try {
+      const r = await apiClient.delete('/content/orphan')
+      const count: number = r.data?.deleted ?? 0
+      if (count > 0) {
+        toast.success(`${count} eski hatalı kart temizlendi`)
+        fetchContent()
+      } else {
+        toast.success('Temizlenecek eski kart bulunamadı')
+      }
+    } catch {
+      toast.error('Temizleme başarısız')
+    }
+  }
+
   const pendingCount = content.filter((c) => c.status === 'pending_approval').length
 
   return (
@@ -100,9 +116,18 @@ export default function AutomationPage() {
               YouTube, Instagram ve Shorts için AI içerik üretin — onay verin — otomatik yayınlayın
             </p>
           </div>
-          <Button onClick={() => setIsModalOpen(true)}>
-            <Plus size={16} /> İçerik Üret
-          </Button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleCleanupOrphan}
+              title="Video veya görseli olmayan hatalı kartları sil"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-400 hover:text-red-400 bg-surface-100 border border-surface-200 rounded-xl transition-colors"
+            >
+              <Trash2 size={13} /> Eski Kartları Temizle
+            </button>
+            <Button onClick={() => setIsModalOpen(true)}>
+              <Plus size={16} /> İçerik Üret
+            </Button>
+          </div>
         </div>
 
         {pendingCount > 0 && (

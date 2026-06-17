@@ -10,6 +10,7 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
+    WEBHOOK_SECRET: str = ""
 
     # YouTube
     YOUTUBE_CLIENT_ID: str = ""

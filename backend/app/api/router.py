@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends
-from app.api.routes import health, documents, chat, voice, agents, dashboard, crm, academy, automation, content, debug
+from app.api.routes import health, documents, chat, voice, agents, dashboard, crm, academy, automation, content, debug, webhooks
 from app.api.routes import users
 from app.core.auth import get_current_user
 
 router = APIRouter()
 
 # Public
-router.include_router(health.router, prefix="/health", tags=["health"])
+router.include_router(health.router,   prefix="/health",   tags=["health"])
+router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
 
 # Protected — auth zorunlu
 _protected = APIRouter(dependencies=[Depends(get_current_user)])
