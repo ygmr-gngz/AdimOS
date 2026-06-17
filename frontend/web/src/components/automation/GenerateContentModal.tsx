@@ -68,10 +68,12 @@ const BACKEND_ROUTE: Record<string, string> = {
   video: 'video',
 }
 
-const CATEGORY_OPTIONS = [
-  { value: 'smmm', label: 'SMMM / YMM', desc: 'Muhasebe, vergi, SGK, ticaret hukuku' },
-  { value: 'sgs',  label: 'SGS', desc: 'SGS mevzuatı, iş hukuku, SGS prosedürleri' },
-  { value: 'genel', label: 'Genel', desc: 'Muhasebe, vergi, girişimcilik' },
+type Category = 'smmm' | 'sgs' | 'genel'
+
+const CATEGORY_OPTIONS: { value: Category; label: string; desc: string }[] = [
+  { value: 'smmm',  label: 'SMMM / YMM', desc: 'Muhasebe, vergi, SGK, ticaret hukuku' },
+  { value: 'sgs',   label: 'SGS',         desc: 'SGS mevzuatı, iş hukuku, SGS prosedürleri' },
+  { value: 'genel', label: 'Genel',       desc: 'Muhasebe, vergi, girişimcilik' },
 ]
 
 export default function GenerateContentModal({ isOpen, onClose, onGenerate }: GenerateContentModalProps) {
@@ -79,7 +81,7 @@ export default function GenerateContentModal({ isOpen, onClose, onGenerate }: Ge
   const [topic, setTopic] = useState('')
   const [questionText, setQuestionText] = useState('')
   const [selectedIdx, setSelectedIdx] = useState(0)
-  const [category, setCategory] = useState('smmm')
+  const [category, setCategory] = useState<'smmm' | 'sgs' | 'genel'>('smmm')
 
   const selected = CONTENT_OPTIONS[selectedIdx]
 
