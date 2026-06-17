@@ -39,6 +39,7 @@ export interface GenerateContentRequest {
   content_type: ContentType
   backend_type?: string
   question_text?: string
+  category?: 'smmm' | 'sgs' | 'genel'
   tone?: 'professional' | 'casual' | 'educational' | 'promotional'
   target_audience?: string
   keywords?: string[]

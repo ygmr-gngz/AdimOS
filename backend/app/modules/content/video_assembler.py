@@ -46,49 +46,56 @@ def _apply_zoom(clip: ImageClip, direction: str, amount: float) -> ImageClip:
 
 def assemble_video(
     clips_or_paths,
-    audio_path: str,
+    audio_path: str | None = None,
     slide_types: list[str] | None = None,
 ) -> str:
     """
-    Accepts either:
-      - list[VideoClip]  — from scene_engine (animated scenes)
-      - list[str]        — image paths (legacy, applies Ken Burns)
+    Accepts:
+      - list[VideoClip] with audio already embedded (audio_path=None) — per-scene sync
+      - list[VideoClip] + audio_path — single audio track
+      - list[str] (image paths) + audio_path — legacy Ken Burns
     """
     os.makedirs(_OUTPUT_DIR, exist_ok=True)
-    audio = AudioFileClip(audio_path)
-    ad = audio.duration
     n = len(clips_or_paths)
-
     if n == 0:
         raise ValueError("Slayt/clip listesi boş")
 
-    # ── Branch: animated VideoClip objects ───────────────────
-    if isinstance(clips_or_paths[0], VideoClip):
+    # ── Branch: per-scene audio already embedded (audio_path=None) ──
+    if audio_path is None and isinstance(clips_or_paths[0], VideoClip):
         processed = []
         for i, clip in enumerate(clips_or_paths):
             if i > 0:
                 clip = clip.crossfadein(_CF)
             processed.append(clip)
-
         video = concatenate_videoclips(processed, padding=-_CF, method="compose")
+        logger.info(f"[assembler] synced {n} clips, video={video.duration:.1f}s")
 
-        # Fit to audio duration (cut excess or hold last frame)
+    # ── Branch: animated VideoClip objects + single audio ────────
+    elif isinstance(clips_or_paths[0], VideoClip):
+        audio = AudioFileClip(audio_path)
+        ad = audio.duration
+        processed = []
+        for i, clip in enumerate(clips_or_paths):
+            if i > 0:
+                clip = clip.crossfadein(_CF)
+            processed.append(clip)
+        video = concatenate_videoclips(processed, padding=-_CF, method="compose")
         if video.duration > ad + 0.2:
             video = video.set_duration(ad)
         video = video.set_audio(audio)
         logger.info(f"[assembler] animated {n} clips, audio={ad:.1f}s, video={video.duration:.1f}s")
 
-    # ── Branch: static image paths (legacy Ken Burns) ─────────
+    # ── Branch: static image paths (legacy Ken Burns) ────────────
     else:
+        audio = AudioFileClip(audio_path)
+        ad = audio.duration
         types = (slide_types or ["content"] * n)[:n]
         while len(types) < n:
             types.append("content")
-
         total_raw = ad + (n - 1) * _CF
         weights = [_WEIGHTS.get(t, 1.0) for t in types]
         total_w = sum(weights)
         durations = [(w / total_w) * total_raw for w in weights]
-
         clips = []
         for i, (path, dur, stype) in enumerate(zip(clips_or_paths, durations, types)):
             clip = ImageClip(path).set_duration(dur)
@@ -97,7 +104,6 @@ def assemble_video(
             if i > 0:
                 clip = clip.crossfadein(_CF)
             clips.append(clip)
-
         video = concatenate_videoclips(clips, padding=-_CF, method="compose")
         video = video.set_audio(audio)
         logger.info(f"[assembler] image-path {n} slides, audio={ad:.1f}s")
@@ -114,7 +120,10 @@ def assemble_video(
         preset="fast",
     )
 
-    audio.close()
+    try:
+        audio.close()
+    except Exception:
+        pass
     try:
         video.close()
     except Exception:

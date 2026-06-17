@@ -35,6 +35,7 @@ export const automationService = {
       topic: request.topic,
       duration_minutes: durationMinutes,
       question_text: request.question_text ?? '',
+      category: request.category ?? 'smmm',
     })
     return {
       id: String(data.content_id ?? data.id ?? ''),

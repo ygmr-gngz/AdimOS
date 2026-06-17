@@ -7,6 +7,19 @@ _client = OpenAI(api_key=settings.OPENAI_API_KEY)
 _OUTPUT_DIR = "/tmp/audio"
 
 
+def generate_audio_segment(text: str, voice: str = "nova") -> tuple[str, float]:
+    """
+    TTS üretir ve (dosya_yolu, süre_saniye) döndürür.
+    Her sahne için ayrı çağrılır → mükemmel sync.
+    """
+    path = generate_audio(text, voice)
+    from moviepy.editor import AudioFileClip
+    c = AudioFileClip(path)
+    dur = c.duration
+    c.close()
+    return path, dur
+
+
 def generate_audio(text: str, voice: str = "onyx") -> str:
     """
     Metni sese çevirir ve dosya yolunu döndürür.

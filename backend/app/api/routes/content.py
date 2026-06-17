@@ -20,6 +20,7 @@ class ContentRequest(BaseModel):
     topic: str
     duration_minutes: int = 5
     question_text: str = ""
+    category: str = "smmm"  # smmm | sgs | genel
 
 
 class ApproveRequest(BaseModel):
@@ -53,14 +54,14 @@ def _background_generate(content_id: str, fn, *args):
 @router.post("/video/generate")
 def generate_video(req: ContentRequest, bg: BackgroundTasks):
     row = create_content(req.topic, "video")
-    bg.add_task(_background_generate, row["id"], create_normal_video, req.topic, req.duration_minutes)
+    bg.add_task(_background_generate, row["id"], create_normal_video, req.topic, req.duration_minutes, req.category)
     return {"content_id": row["id"], "status": "generating"}
 
 
 @router.post("/short/generate")
 def generate_short(req: ContentRequest, bg: BackgroundTasks):
     row = create_content(req.topic, "short")
-    bg.add_task(_background_generate, row["id"], create_short_video, req.topic)
+    bg.add_task(_background_generate, row["id"], create_short_video, req.topic, req.category)
     return {"content_id": row["id"], "status": "generating"}
 
 
@@ -74,14 +75,14 @@ def generate_post_endpoint(req: ContentRequest, bg: BackgroundTasks):
 @router.post("/question-solution/generate")
 def generate_question_solution(req: ContentRequest, bg: BackgroundTasks):
     row = create_content(req.topic, "question_solution")
-    bg.add_task(_background_generate, row["id"], create_question_solution_video, req.topic, req.question_text)
+    bg.add_task(_background_generate, row["id"], create_question_solution_video, req.topic, req.question_text, req.category)
     return {"content_id": row["id"], "status": "generating"}
 
 
 @router.post("/topic-explanation/generate")
 def generate_topic_explanation(req: ContentRequest, bg: BackgroundTasks):
     row = create_content(req.topic, "topic_explanation")
-    bg.add_task(_background_generate, row["id"], create_topic_explanation_video, req.topic)
+    bg.add_task(_background_generate, row["id"], create_topic_explanation_video, req.topic, req.category)
     return {"content_id": row["id"], "status": "generating"}
 
 

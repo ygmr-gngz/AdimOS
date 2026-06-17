@@ -161,6 +161,173 @@ JSON:
     return json.loads(r.choices[0].message.content)
 
 
+def generate_storyboard(topic: str, content_type: str = "video", category: str = "smmm") -> dict:
+    """
+    Sahne bazlı storyboard üretir.
+    Her sahne: narration (TTS'e gider) + display_lines (ekranda görünür) AYRI.
+    content_type: video | short | question_solution | topic_explanation
+    category: smmm | sgs | genel
+    """
+    cat_ctx = {
+        "sgs":   "SGS hazırlık sınavı — SGS mevzuatı, iş hukuku, SGS prosedürleri",
+        "smmm":  "SMMM/YMM sınavı — muhasebe, vergi, KDV, gelir vergisi, SGK, ticaret hukuku",
+        "genel": "Adım Müşavir genel içerik — muhasebe, vergi, girişimcilik",
+    }.get(category, "SMMM/YMM sınavı")
+
+    if content_type == "question_solution":
+        scene_format = """Sahneler ŞÖYLE OLMALI (tam bu sırayla):
+1. intro — "Bugün X sorusunu çözüyoruz" (kısa giriş)
+2. question — soruyu yüksek sesle oku, şıkları tanıt
+3. concept — soru için gerekli temel kavramı anlat
+4. option_analysis — yanlış şıkları neden yanlış oldukları ile ele al
+5. answer — doğru cevabı ver ve açıkla
+6. exam_tip — sınavda dikkat noktası
+7. cta — abone ol, beğen, takip et
+
+JSON:
+{
+  "title": "Başlık (YouTube SEO)",
+  "description": "YouTube açıklaması",
+  "tags": [...],
+  "scenes": [
+    {
+      "type": "intro",
+      "title": "Giriş",
+      "narration": "TTS metni — doğal konuşma dili, 2-3 cümle",
+      "display_lines": ["Başlık satırı", "Alt başlık"]
+    },
+    {
+      "type": "question",
+      "title": "Soru",
+      "narration": "Soruyu okuyalım...",
+      "display_lines": ["Soru başlığı"],
+      "question_text": "Tam soru metni",
+      "options": ["A) ...", "B) ...", "C) ...", "D) ..."]
+    },
+    {
+      "type": "concept",
+      "title": "Kavram Analizi",
+      "narration": "Bu soruyu çözmek için bilmemiz gereken kavram...",
+      "display_lines": ["Kavram:", "• madde", "• madde"]
+    },
+    {
+      "type": "option_analysis",
+      "title": "Şık Analizi",
+      "narration": "Şıklara bakalım. A şıkkı yanlış çünkü...",
+      "display_lines": ["Şık Analizi", "• A yanlış: ...", "• B yanlış: ...", "• C doğru: ..."]
+    },
+    {
+      "type": "answer",
+      "title": "Doğru Cevap",
+      "narration": "Doğru cevap X'dir. Çünkü...",
+      "display_lines": [],
+      "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+      "correct_option": "A",
+      "explanation": "Açıklama metni"
+    },
+    {
+      "type": "exam_tip",
+      "title": "Sınav Püf Noktası",
+      "narration": "Sınavda dikkat...",
+      "tip": "Kısa ve net püf nokta metni"
+    },
+    {
+      "type": "cta",
+      "title": "Son",
+      "narration": "Videoyu beğendiyseniz abone olmayı unutmayın. Adım Müşavir ile sınava hazırlanın.",
+      "display_lines": []
+    }
+  ]
+}"""
+    elif content_type == "short":
+        scene_format = """Sahneler (Reels/Shorts format — toplam 45-90 sn):
+1. hook — dikkat çekici ilk 3-5 saniye, tek güçlü cümle
+2. content — 3-5 madde, hızlı tempo
+3. cta — kısa çağrı
+
+JSON:
+{
+  "title": "Başlık (max 8 kelime)",
+  "description": "Caption",
+  "tags": [...],
+  "scenes": [
+    {"type": "hook", "title": "Hook", "narration": "15-20 kelime max", "display_lines": ["Tek güçlü cümle"]},
+    {"type": "content", "title": "İçerik", "narration": "40-60 kelime max", "display_lines": ["• madde", "• madde", "• madde"]},
+    {"type": "cta", "title": "CTA", "narration": "Takip et, beğen, adimmusavir.com", "display_lines": []}
+  ]
+}"""
+    else:
+        # video veya topic_explanation
+        scene_format = f"""Sahneler ŞÖYLE OLMALI (tam bu sırayla):
+1. intro — başlık + "Bu videodan sonra X'i anlayacaksınız"
+2. hook — "Bu konuyu neden bilmen gerekiyor?" (dikkat çek)
+3. content × 3-5 — her bölüm bir kavram/kural/örnek, her biri BAĞIMSIZ sahne
+4. summary — özet tablo (3-5 satır)
+5. cta — abone ol, beğen, adimmusavir.com
+
+JSON:
+{{
+  "title": "Başlık (YouTube SEO, max 70 karakter)",
+  "description": "YouTube açıklaması (500 karakter)",
+  "tags": [...],
+  "scenes": [
+    {{
+      "type": "intro",
+      "title": "Giriş başlığı",
+      "narration": "TTS — 2-3 cümle, doğal konuşma",
+      "display_lines": ["Video başlığı", "Alt başlık"]
+    }},
+    {{
+      "type": "hook",
+      "title": "Neden Önemli?",
+      "narration": "2-3 cümle merak uyandır",
+      "display_lines": ["⚡ Dikkat!", "Önemli not satırı"]
+    }},
+    {{
+      "type": "content",
+      "title": "Bölüm Başlığı",
+      "narration": "3-5 cümle, öğretici anlatım — bu sahnenin içeriğini seslendirmek için yeterli",
+      "display_lines": ["Ana başlık", "• Madde 1", "• Madde 2", "• Madde 3"]
+    }},
+    {{
+      "type": "summary",
+      "title": "Özet",
+      "narration": "Özetleyelim...",
+      "rows": [{{"label": "Kavram", "value": "Açıklama"}}, ...]
+    }},
+    {{
+      "type": "cta",
+      "title": "Son",
+      "narration": "Videoyu beğendiyseniz abone olmayı unutmayın.",
+      "display_lines": []
+    }}
+  ]
+}}"""
+
+    prompt = f"""{_BRAND_CTX}
+
+Hedef kategori: {cat_ctx}
+Konu: "{topic}"
+Video tipi: {content_type}
+
+{scene_format}
+
+KURALLAR:
+- narration: TTS'e gider — doğal konuşma dili, kısa ve net cümleler
+- display_lines: EKRANDA görünür — max 5 satır, her satır max 50 karakter
+- Her sahne için narration MUTLAKA yazılsın (boş bırakma)
+- Intro + CTA dahil toplam 5-8 sahne olsun
+- Sadece JSON döndür, başka açıklama ekleme
+"""
+    r = _client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        temperature=0.4,
+    )
+    return json.loads(r.choices[0].message.content)
+
+
 def generate_post_content(topic: str) -> dict:
     prompt = f"""{_BRAND_CTX}
 

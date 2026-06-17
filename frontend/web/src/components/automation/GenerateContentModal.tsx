@@ -68,11 +68,18 @@ const BACKEND_ROUTE: Record<string, string> = {
   video: 'video',
 }
 
+const CATEGORY_OPTIONS = [
+  { value: 'smmm', label: 'SMMM / YMM', desc: 'Muhasebe, vergi, SGK, ticaret hukuku' },
+  { value: 'sgs',  label: 'SGS', desc: 'SGS mevzuatı, iş hukuku, SGS prosedürleri' },
+  { value: 'genel', label: 'Genel', desc: 'Muhasebe, vergi, girişimcilik' },
+]
+
 export default function GenerateContentModal({ isOpen, onClose, onGenerate }: GenerateContentModalProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [topic, setTopic] = useState('')
   const [questionText, setQuestionText] = useState('')
   const [selectedIdx, setSelectedIdx] = useState(0)
+  const [category, setCategory] = useState('smmm')
 
   const selected = CONTENT_OPTIONS[selectedIdx]
 
@@ -86,6 +93,7 @@ export default function GenerateContentModal({ isOpen, onClose, onGenerate }: Ge
         content_type: selected.content_type,
         backend_type: BACKEND_ROUTE[selected.backend_type],
         question_text: questionText.trim() || undefined,
+        category,
       })
       onClose()
       setTopic('')
@@ -124,6 +132,27 @@ export default function GenerateContentModal({ isOpen, onClose, onGenerate }: Ge
                   <span className="text-sm font-medium">{opt.label}</span>
                 </div>
                 <p className="text-xs text-gray-600 mt-0.5 ml-8">{opt.description}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Kategori */}
+        <div>
+          <label className="block text-xs font-medium text-gray-400 mb-2">Kategori</label>
+          <div className="flex gap-2">
+            {CATEGORY_OPTIONS.map((cat) => (
+              <button
+                key={cat.value}
+                onClick={() => setCategory(cat.value)}
+                className={`flex-1 text-center px-3 py-2 rounded-xl border text-xs transition-colors ${
+                  category === cat.value
+                    ? 'bg-brand-600/20 border-brand-500/50 text-gray-100 font-semibold'
+                    : 'bg-surface-100 border-surface-200 text-gray-500 hover:border-surface-300 hover:text-gray-300'
+                }`}
+              >
+                <div>{cat.label}</div>
+                <div className="text-gray-600 text-[10px] mt-0.5">{cat.desc}</div>
               </button>
             ))}
           </div>
