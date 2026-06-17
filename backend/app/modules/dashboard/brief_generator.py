@@ -31,53 +31,76 @@ def generate_daily_brief() -> dict:
     followup_leads = [l for l in leads if l.get("status") == "contacted"]
     indexed_docs   = [d for d in documents if d.get("status") == "indexed"]
     failed_docs    = [d for d in documents if d.get("status") == "failed"]
+    processing_docs = [d for d in documents if d.get("status") == "processing"]
     pending_cnt    = sum(1 for c in contents if c.get("status") == "pending_approval")
     error_cnt      = sum(1 for c in contents if c.get("status") in ("error", "failed"))
     published_cnt  = sum(1 for c in contents if c.get("status") == "published")
+    generating_cnt = sum(1 for c in contents if c.get("status") == "generating")
 
-    # İçerik tipi bazında dağılım (öneri üretmek için)
     type_counts: dict[str, int] = {}
     for c in contents:
         t = c.get("type", "bilinmeyen")
         type_counts[t] = type_counts.get(t, 0) + 1
 
-    content_summary = ", ".join(f"{v} {k}" for k, v in type_counts.items()) if type_counts else "henüz içerik yok"
+    content_summary = (
+        ", ".join(f"{v} {k}" for k, v in type_counts.items())
+        if type_counts else "henüz içerik yok"
+    )
+
+    # Agent durumları (metin özeti)
+    k_status = (
+        f"HATA ({failed_docs} hatalı belge)" if failed_docs else
+        f"İŞLENİYOR ({len(processing_docs)} belge sırada)" if processing_docs else
+        f"HAZIR ({len(indexed_docs)} belge indekslenmiş)"
+    )
+    a_status = (
+        f"ÜRETİYOR ({generating_cnt} içerik)" if generating_cnt else
+        f"UYARI ({error_cnt} hatalı içerik)" if error_cnt else
+        "HAZIR"
+    )
+    c_status = f"{len(new_leads)} yeni · {len(followup_leads)} takipte · toplam {len(leads)}"
 
     prompt = f"""Sen Adım Müşavir AI işletim sistemi CEO Agentısın. Bugün {today} tarihli günlük özeti hazırla.
 
 SİSTEM VERİLERİ:
-- CRM: {len(leads)} toplam lead | {len(new_leads)} yeni | {len(followup_leads)} takip bekliyor
-- Knowledge: {len(documents)} belge | {len(indexed_docs)} hazır | {len(failed_docs)} hatalı
-- İçerik: {content_summary} | {pending_cnt} onay bekliyor | {error_cnt} hata | {published_cnt} yayında
-- Öğrenci: {len(students)} kayıtlı
 
-ŞU FORMATI KULLAN (Markdown):
+CRM Agent: {c_status}
+Knowledge Agent: {k_status}
+Automation Agent: {a_status}
+  - Üretilen: {content_summary}
+  - Onay bekleyen: {pending_cnt} · Hata: {error_cnt} · Yayında: {published_cnt}
+Öğrenci: {len(students)} kayıtlı
+
+ŞU FORMATI KULLAN (Markdown, başka format kullanma):
 
 ## 📊 Günlük CEO Özeti — {today}
 
-### CRM Durumu
-[lead durumu analizi]
+### 👥 CRM Agent
+[lead durumu ve takip önerileri]
 
-### Knowledge & Dokümanlar
-[belge durumu]
+### 🧠 Knowledge Agent
+[belge durumu — hata varsa ne yapılmalı]
 
-### İçerik Üretimi
-[içerik durumu]
+### 🎬 Automation Agent
+[içerik üretim durumu — hangi tip içerikler üretilmeli, öncelik sırası]
 
-### Öneriler
-[3-5 madde, somut ve aksiyona yönelik öneriler — Adım Müşavir için hangi içerikler üretilmeli, hangi leadler takip edilmeli, sistem iyileştirmeleri]
+### ✅ Günlük Öneriler
+1. [CRM ile ilgili aksiyon]
+2. [Knowledge ile ilgili aksiyon]
+3. [İçerik ile ilgili aksiyon]
+4-5. [Varsa diğer öncelikler]
 
 ---
 *AdimOS CEO Agent — {today}*
 
-Türkçe yaz. Net, kısa, yönetici özeti tarzında."""
+Türkçe yaz. Yönetici özeti tarzında, net ve kısa. Her bölüm 2-3 cümle."""
 
     try:
         response = _client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=800,
-            temperature=0.4,
+            max_tokens=900,
+            temperature=0.3,
         )
         content_text = response.choices[0].message.content
         logger.info("[ceo] günlük özet üretildi")
@@ -85,11 +108,21 @@ Türkçe yaz. Net, kısa, yönetici özeti tarzında."""
         logger.error(f"[ceo] özet üretim hatası: {e}")
         content_text = f"""## Günlük CEO Özeti — {today}
 
-### Özet
-- CRM: {len(new_leads)} yeni lead, {len(followup_leads)} takip bekliyor
-- Dokümanlar: {len(indexed_docs)} hazır, {len(failed_docs)} hatalı
-- İçerik: {pending_cnt} onay bekliyor, {error_cnt} hata
+### 👥 CRM Agent
+{len(new_leads)} yeni lead, {len(followup_leads)} takip bekliyor, toplam {len(leads)} lead.
 
-*OpenAI bağlantısı mevcut değil — ham veri özeti*"""
+### 🧠 Knowledge Agent
+{k_status}
+
+### 🎬 Automation Agent
+{a_status} — {content_summary}
+
+### ✅ Günlük Öneriler
+1. Yeni leadleri takip et.
+2. Hatalı dokümanları yeniden işle.
+3. İçerik üretimini kontrol et.
+
+---
+*AdimOS CEO Agent — {today} (OpenAI bağlantısı yok — ham özet)*"""
 
     return create_brief("Günlük CEO Özeti", content_text, "daily_brief")

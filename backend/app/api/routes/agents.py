@@ -39,117 +39,116 @@ def _count_table(table: str, filters: dict | None = None) -> int:
 
 
 def _agent_statuses() -> list[dict]:
-    db_ok, db_msg   = _ping_supabase()
-    api_ok          = bool(settings.OPENAI_API_KEY)
-    storage_ok, _   = _ping_storage()
+    db_ok, db_msg = _ping_supabase()
+    api_ok        = bool(settings.OPENAI_API_KEY)
+    storage_ok, _ = _ping_storage()
 
-    # Gerçek sayımlar
-    failed_docs     = _count_table("documents",         {"status": "failed"})
-    processing_docs = _count_table("documents",         {"status": "processing"})
-    generating_cnt  = _count_table("generated_contents",{"status": "generating"})
-    new_leads       = _count_table("leads",             {"status": "new"})
+    # Gerçek sayımlar — tek seferde
+    failed_docs     = _count_table("documents",          {"status": "failed"})
+    processing_docs = _count_table("documents",          {"status": "processing"})
+    indexed_docs    = _count_table("documents",          {"status": "indexed"})
+    total_docs      = failed_docs + processing_docs + indexed_docs
+    generating_cnt  = _count_table("generated_contents", {"status": "generating"})
+    error_cnt       = _count_table("generated_contents", {"status": "error"})
+    new_leads       = _count_table("leads",              {"status": "new"})
+    followup_leads  = _count_table("leads",              {"status": "contacted"})
+    total_leads     = _count_table("leads")
 
-    def _s(ready: bool, busy: bool, err: bool, busy_label: str, err_label: str) -> tuple[str, str, str]:
-        if err:   return "error",   err_label,  "red"
-        if busy:  return "running", busy_label, "yellow"
-        return "ready", "Hazır", "green"
-
-    # Knowledge
-    k_err  = not db_ok or not api_ok
-    k_busy = processing_docs > 0
-    k_s, k_l, k_c = _s(
-        True, k_busy, k_err,
-        f"{processing_docs} doküman işleniyor",
-        "Supabase/OpenAI bağlantı hatası" if not db_ok else "OpenAI API eksik",
-    )
-    if db_ok and api_ok and failed_docs > 0:
+    # ── Knowledge Agent
+    if not db_ok:
+        k_s, k_l, k_c = "error",   "Supabase bağlantı hatası", "red"
+        k_detail = db_msg
+    elif not api_ok:
+        k_s, k_l, k_c = "error",   "OpenAI API key eksik", "red"
+        k_detail = "OPENAI_API_KEY env değişkeni tanımlı değil"
+    elif processing_docs > 0:
+        k_s, k_l, k_c = "running", f"{processing_docs} doküman işleniyor", "yellow"
+        k_detail = f"{indexed_docs}/{total_docs} belge hazır, {processing_docs} sırada"
+    elif failed_docs > 0:
         k_s, k_l, k_c = "warning", f"{failed_docs} hatalı doküman", "yellow"
+        k_detail = f"{indexed_docs} hazır · {failed_docs} yeniden işlenmeyi bekliyor"
+    else:
+        k_s, k_l, k_c = "ready",   f"{indexed_docs} belge hazır", "green"
+        k_detail = f"Toplam {total_docs} belge indekslenmiş, RAG aktif"
 
-    # Voice
-    v_s, v_l, v_c = ("ready", "API aktif", "green") if api_ok else ("error", "OpenAI API eksik", "red")
+    # ── Voice Agent
+    if api_ok:
+        v_s, v_l, v_c = "ready", "Whisper + TTS-1 aktif", "green"
+        v_detail = "OpenAI Whisper (STT) ve TTS-1 nova sesi hazır"
+    else:
+        v_s, v_l, v_c = "error", "OpenAI API key eksik", "red"
+        v_detail = "Ses özellikleri devre dışı"
 
-    # Automation
-    a_err  = not storage_ok or not api_ok
-    a_busy = generating_cnt > 0
-    a_s, a_l, a_c = _s(
-        True, a_busy, a_err,
-        f"{generating_cnt} içerik üretiliyor",
-        "Storage/OpenAI hatası",
-    )
+    # ── Automation Agent
+    if not storage_ok or not api_ok:
+        a_s, a_l, a_c = "error",   "Storage/OpenAI bağlantı hatası", "red"
+        a_detail = "İçerik üretimi devre dışı"
+    elif generating_cnt > 0:
+        a_s, a_l, a_c = "running", f"{generating_cnt} içerik üretiliyor", "yellow"
+        a_detail = f"{generating_cnt} üretiliyor · {error_cnt} hata"
+    elif error_cnt > 0:
+        a_s, a_l, a_c = "warning", f"{error_cnt} hatalı içerik", "yellow"
+        a_detail = f"{error_cnt} içerik hata aldı, panelden silinebilir"
+    else:
+        a_s, a_l, a_c = "ready",   "İçerik üretimine hazır", "green"
+        a_detail = "Video, Shorts, Soru Çözüm, Konu Anlatım üretilebilir"
 
-    # CRM
-    c_s, c_l, c_c = _s(
-        True, new_leads > 0, not db_ok,
-        f"{new_leads} yeni lead bekliyor",
-        "Veritabanı bağlantı hatası",
-    )
-    if db_ok and new_leads > 0:
-        c_s, c_l, c_c = "running", f"{new_leads} yeni lead", "yellow"
+    # ── CRM Agent
+    if not db_ok:
+        c_s, c_l, c_c = "error",   "Veritabanı bağlantı hatası", "red"
+        c_detail = db_msg
+    elif new_leads > 0:
+        c_s, c_l, c_c = "running", f"{new_leads} yeni lead bekliyor", "yellow"
+        c_detail = f"Toplam {total_leads} lead · {new_leads} yeni · {followup_leads} takipte"
+    else:
+        c_s, c_l, c_c = "ready",   "Lead takibi güncel", "green"
+        c_detail = f"Toplam {total_leads} lead · {followup_leads} takipte"
 
-    # CEO & Follow-up — scheduler her sabah çalışıyor
-    ceo_s, ceo_l, ceo_c = ("running", "Planlandı — sabah 08:00", "yellow") if db_ok else ("error", "DB hatası", "red")
-    fu_s,  fu_l,  fu_c  = ("running", "Planlandı — sabah 09:00", "yellow") if db_ok else ("error", "DB hatası", "red")
+    # ── CEO Agent (scheduler sabah 08:00)
+    if not db_ok:
+        ceo_s, ceo_l, ceo_c = "error",   "DB hatası — özet üretilemez", "red"
+        ceo_detail = db_msg
+    elif not api_ok:
+        ceo_s, ceo_l, ceo_c = "warning", "OpenAI eksik — ham özet", "yellow"
+        ceo_detail = "GPT-4o-mini yoksa ham veri özeti üretilir"
+    else:
+        ceo_s, ceo_l, ceo_c = "running", "Planlandı — sabah 08:00", "green"
+        ceo_detail = "APScheduler aktif, GPT-4o-mini özeti her gün 08:00"
 
-    # Learning
-    lrn_s, lrn_l, lrn_c = ("ready", "Hazır", "green") if (db_ok and api_ok) else ("error", "Bağlantı hatası", "red")
+    # ── Follow-up Agent (scheduler sabah 09:00)
+    fu_s  = "running" if db_ok else "error"
+    fu_l  = "Planlandı — sabah 09:00" if db_ok else "DB hatası"
+    fu_c  = "green" if db_ok else "red"
+    fu_detail = f"APScheduler aktif · {followup_leads} takipte lead" if db_ok else db_msg
+
+    # ── Learning Agent
+    lrn_s = "ready" if (db_ok and api_ok) else "error"
+    lrn_l = "Hazır" if (db_ok and api_ok) else "Bağlantı eksik"
+    lrn_c = "green" if (db_ok and api_ok) else "red"
+    lrn_detail = "SGS Academy öğrenci analizi hazır" if (db_ok and api_ok) else "OpenAI veya DB bağlantısı eksik"
 
     return [
-        {
-            "id": "knowledge_agent",
-            "name": "Knowledge Agent",
-            "description": "Doküman işleme, embedding ve RAG bilgi arama",
-            "status": k_s, "label": k_l, "color": k_c,
-            "icon": "brain", "run_count": 0,
-            "detail": db_msg if not db_ok else f"{failed_docs} hatalı, {processing_docs} işleniyor",
-        },
-        {
-            "id": "voice_agent",
-            "name": "Voice Agent",
-            "description": "Sesli komut, STT ve TTS servisleri",
-            "status": v_s, "label": v_l, "color": v_c,
-            "icon": "mic", "run_count": 0,
-            "detail": "OpenAI Whisper + TTS-1 aktif" if api_ok else "API key eksik",
-        },
-        {
-            "id": "ceo_agent",
-            "name": "CEO Agent",
-            "description": "Günlük yönetici özeti — her sabah 08:00",
-            "status": ceo_s, "label": ceo_l, "color": ceo_c,
-            "icon": "briefcase", "run_count": 0,
-            "detail": "APScheduler aktif" if db_ok else db_msg,
-        },
-        {
-            "id": "crm_agent",
-            "name": "CRM Agent",
-            "description": "Lead yönetimi ve müşteri takibi",
-            "status": c_s, "label": c_l, "color": c_c,
-            "icon": "users", "run_count": 0,
-            "detail": f"Toplam {_count_table('leads')} lead" if db_ok else db_msg,
-        },
-        {
-            "id": "followup_agent",
-            "name": "Follow-up Agent",
-            "description": "Lead takip hatırlatmaları — her sabah 09:00",
-            "status": fu_s, "label": fu_l, "color": fu_c,
-            "icon": "usercheck", "run_count": 0,
-            "detail": "APScheduler aktif" if db_ok else db_msg,
-        },
-        {
-            "id": "learning_agent",
-            "name": "Learning Agent",
-            "description": "SGS Academy öğrenci analizi ve öğrenme planları",
-            "status": lrn_s, "label": lrn_l, "color": lrn_c,
-            "icon": "bookopen", "run_count": 0,
-            "detail": "Sistem hazır" if (db_ok and api_ok) else "Bağlantı eksik",
-        },
-        {
-            "id": "automation_agent",
-            "name": "Automation Agent",
-            "description": "YouTube/Instagram içerik üretimi ve yayın",
-            "status": a_s, "label": a_l, "color": a_c,
-            "icon": "video", "run_count": 0,
-            "detail": f"{generating_cnt} içerik üretiliyor" if a_busy else "Hazır — içerik üret butonuna bas",
-        },
+        {"id": "knowledge_agent",  "name": "Knowledge Agent",
+         "description": "Doküman işleme, embedding ve RAG bilgi arama",
+         "status": k_s, "label": k_l, "color": k_c, "icon": "brain",   "detail": k_detail},
+        {"id": "voice_agent",      "name": "Voice Agent",
+         "description": "Sesli komut, STT ve TTS servisleri",
+         "status": v_s, "label": v_l, "color": v_c, "icon": "mic",     "detail": v_detail},
+        {"id": "ceo_agent",        "name": "CEO Agent",
+         "description": "Günlük yönetici özeti — her sabah 08:00",
+         "status": ceo_s, "label": ceo_l, "color": ceo_c, "icon": "briefcase", "detail": ceo_detail},
+        {"id": "crm_agent",        "name": "CRM Agent",
+         "description": "Lead yönetimi ve müşteri takibi",
+         "status": c_s, "label": c_l, "color": c_c, "icon": "users",   "detail": c_detail},
+        {"id": "followup_agent",   "name": "Follow-up Agent",
+         "description": "Lead takip hatırlatmaları — her sabah 09:00",
+         "status": fu_s, "label": fu_l, "color": fu_c, "icon": "usercheck", "detail": fu_detail},
+        {"id": "learning_agent",   "name": "Learning Agent",
+         "description": "SGS Academy öğrenci analizi ve öğrenme planları",
+         "status": lrn_s, "label": lrn_l, "color": lrn_c, "icon": "bookopen", "detail": lrn_detail},
+        {"id": "automation_agent", "name": "Automation Agent",
+         "description": "YouTube/Instagram içerik üretimi ve yayın",
+         "status": a_s, "label": a_l, "color": a_c, "icon": "video",   "detail": a_detail},
     ]
 
 

@@ -56,14 +56,18 @@ def create_normal_video(topic: str, duration_minutes: int = 5) -> dict:
     audio_path = _stage("audio", generate_audio, full_text, voice="nova")
     logger.info("[video] ses hazır")
 
-    slides = [create_intro_slide(script["title"], script.get("description", "")[:80])]
+    slides, stypes = [], []
+    slides.append(create_intro_slide(script["title"], script.get("description", "")[:80]))
+    stypes.append("intro")
     sub = _sub_slides(script["sections"])
     for i, s in enumerate(sub):
         slides.append(_stage("slide", create_slide, s["title"], s["content"], i + 1, len(sub)))
+        stypes.append("content")
     slides.append(create_cta_slide())
+    stypes.append("cta")
     logger.info(f"[video] {len(slides)} slayt hazır")
 
-    video_path = _stage("video-assemble", assemble_video, slides, audio_path)
+    video_path = _stage("video-assemble", assemble_video, slides, audio_path, stypes)
     logger.info(f"[video] video hazır: {video_path}")
 
     script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in script["sections"])
@@ -96,7 +100,8 @@ def create_short_video(topic: str) -> dict:
         create_shorts_slide(title=script["title"], content=script["content"], hook=""),
         create_shorts_cta_slide(),
     ]
-    video_path = _stage("video-assemble", assemble_video, slides, audio_path)
+    stypes = ["intro", "content", "cta"]
+    video_path = _stage("video-assemble", assemble_video, slides, audio_path, stypes)
     logger.info(f"[short] video hazır: {video_path}")
     script_text = f"{script['hook']}\n\n{script['content']}\n\n{script['cta']}"
 
@@ -124,11 +129,11 @@ def create_question_solution_video(topic: str, question_text: str = "") -> dict:
     audio_path = _stage("audio", generate_audio, full_text or topic, voice="nova")
     logger.info("[soru-cozum] ses hazır")
 
-    slides = []
+    slides, stypes = [], []
 
     # Soru slaytı
     q_text = script.get("question_text") or question_text or f"{topic} sorusu"
-    slides.append(create_question_slide(q_text, topic))
+    slides.append(create_question_slide(q_text, topic)); stypes.append("question")
 
     # İçerik slaytları
     sections = script.get("sections", [])
@@ -136,6 +141,7 @@ def create_question_solution_video(topic: str, question_text: str = "") -> dict:
         sub = _sub_slides([s])
         for j, ss in enumerate(sub):
             slides.append(create_slide(ss["title"], ss["content"], i + 1, len(sections)))
+            stypes.append("content")
 
     # Cevap slaytı
     correct = script.get("correct_option", "")
@@ -146,16 +152,17 @@ def create_question_solution_video(topic: str, question_text: str = "") -> dict:
             break
     if not explanation and sections:
         explanation = sections[-2]["content"] if len(sections) >= 2 else sections[0]["content"]
-    slides.append(create_answer_slide(explanation, correct))
+    slides.append(create_answer_slide(explanation, correct)); stypes.append("answer")
 
     # Özet / puf nokta
     puf = script.get("puf_nokta", "")
     if puf:
         slides.append(create_slide("Sınavda Dikkat!", puf, len(sections), len(sections)))
+        stypes.append("puf")
 
-    slides.append(create_cta_slide())
+    slides.append(create_cta_slide()); stypes.append("cta")
     logger.info(f"[soru-cozum] {len(slides)} slayt hazır")
-    video_path = _stage("video-assemble", assemble_video, slides, audio_path)
+    video_path = _stage("video-assemble", assemble_video, slides, audio_path, stypes)
     logger.info(f"[soru-cozum] video hazır: {video_path}")
     script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in sections)
 
@@ -183,22 +190,26 @@ def create_topic_explanation_video(topic: str) -> dict:
     audio_path = _stage("audio", generate_audio, full_text or topic, voice="nova")
     logger.info("[konu-anlatim] ses hazır")
 
-    slides = [create_intro_slide(script.get("title", topic), f"Konu Anlatımı: {topic}")]
+    slides, stypes = [], []
+    slides.append(create_intro_slide(script.get("title", topic), f"Konu Anlatımı: {topic}"))
+    stypes.append("intro")
 
     sections = script.get("sections", [])
     for i, s in enumerate(sections):
         sub = _sub_slides([s])
         for ss in sub:
             slides.append(create_slide(ss["title"], ss["content"], i + 1, len(sections)))
+            stypes.append("content")
 
     # Özet tablo slaytı
     summary_rows = script.get("summary_table", [])
     if summary_rows:
         slides.append(create_summary_slide(f"{topic} — Özet", summary_rows))
+        stypes.append("summary")
 
-    slides.append(create_cta_slide())
+    slides.append(create_cta_slide()); stypes.append("cta")
     logger.info(f"[konu-anlatim] {len(slides)} slayt hazır")
-    video_path = _stage("video-assemble", assemble_video, slides, audio_path)
+    video_path = _stage("video-assemble", assemble_video, slides, audio_path, stypes)
     logger.info(f"[konu-anlatim] video hazır: {video_path}")
     script_text = "\n\n".join(f"{s['title']}\n{s['content']}" for s in sections)
 
