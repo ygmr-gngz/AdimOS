@@ -1,3 +1,4 @@
+import re
 import logging
 from openai import OpenAI
 from app.core.config import settings
@@ -10,8 +11,23 @@ logger = logging.getLogger(__name__)
 
 MAX_MESSAGE_LENGTH = 4000
 SIMILARITY_THRESHOLD = 0.3
-MAX_CHUNKS_IN_CONTEXT = 5
+GOOD_SIMILARITY = 0.5   # bu eşiğin altında kalırsa 2. arama yapılır
+MAX_CHUNKS_IN_CONTEXT = 6
 MAX_CHUNK_CHARS = 1200
+
+_STOPWORDS = {
+    "bir", "ve", "ile", "bu", "da", "de", "mi", "mu", "mü", "ne", "en",
+    "çok", "için", "var", "yok", "olan", "olan", "gibi", "daha", "bana",
+    "beni", "bunu", "şunu", "nasıl", "nedir", "neler", "hangi", "kadar",
+    "hakkında", "konusunda", "söyle", "anlat", "yazar", "misin", "mısın",
+}
+
+
+def _keywords(text: str) -> str:
+    """Sorudan stopword'leri çıkarıp arama için anahtar kelime dizisi üret."""
+    words = re.findall(r"[A-Za-zÇçĞğİıÖöŞşÜü]{3,}", text.lower())
+    keys = [w for w in words if w not in _STOPWORDS]
+    return " ".join(keys[:6]) if keys else text
 
 _SYSTEM = """Sen AdimOS içerisinde çalışan gelişmiş yapay zeka işletim sistemi asistanısın.
 
@@ -114,12 +130,29 @@ def query(
 
     logger.info(f"[rag] sorgu — user={user_id}, len={len(user_message)}")
 
-    # 1. Retrieve chunks
+    # 1. İlk arama — orijinal sorgu
     chunks = retrieve(user_message, match_count=10, match_threshold=SIMILARITY_THRESHOLD)
     chunk_count = len(chunks)
-    logger.info(f"[rag] {chunk_count} chunk bulundu (threshold={SIMILARITY_THRESHOLD})")
+    logger.info(f"[rag] 1. arama: {chunk_count} chunk (threshold={SIMILARITY_THRESHOLD})")
 
-    # 2. Handle no results
+    # 2. Iterative RAG — benzerlik düşükse anahtar kelimelerle 2. arama
+    if chunk_count == 0 or (chunk_count > 0 and max(c.get("similarity", 0) for c in chunks) < GOOD_SIMILARITY):
+        keyword_query = _keywords(user_message)
+        if keyword_query and keyword_query != user_message:
+            second_chunks = retrieve(keyword_query, match_count=8, match_threshold=SIMILARITY_THRESHOLD)
+            logger.info(f"[rag] 2. arama (keywords): {len(second_chunks)} chunk — '{keyword_query}'")
+            # Benzersiz chunk'ları birleştir (id'ye göre deduplicate)
+            seen_ids: set[str] = {c.get("id", "") for c in chunks}
+            for c in second_chunks:
+                if c.get("id", "") not in seen_ids:
+                    chunks.append(c)
+                    seen_ids.add(c.get("id", ""))
+            # Benzerliğe göre sırala
+            chunks.sort(key=lambda c: c.get("similarity", 0), reverse=True)
+            chunk_count = len(chunks)
+            logger.info(f"[rag] birleşik: {chunk_count} chunk")
+
+    # 3. Hiç sonuç yoksa
     if chunk_count == 0:
         total = get_total_chunks()
         logger.info(f"[rag] DB'de toplam {total} chunk var")
