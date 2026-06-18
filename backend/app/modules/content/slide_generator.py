@@ -463,9 +463,6 @@ def create_post_image(
         bg = _ORANGE if i == 0 else (_ORANGE_LT if i % 2 == 0 else _WHITE)
         tc = _WHITE if i == 0 else _DARK
         _draw_rounded_rect(d, (60, y, W - 60, y + row_h), 10, bg)
-        for line in _wrap(point, 36)[:2]:
-            d.text((90, y + 20 if _ == 0 else y + 48), line, font=_font_reg(36), fill=tc)
-            break
         d.text((90, y + 28), point[:54], font=_font_reg(36), fill=tc)
         y += row_h + 6
 

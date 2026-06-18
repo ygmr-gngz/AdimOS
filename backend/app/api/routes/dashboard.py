@@ -14,6 +14,13 @@ def list_briefs():
     return get_recent_briefs()
 
 
+@router.get("/brief")
+def get_latest_brief():
+    """Tek brief döndürür — frontend /brief çağırıyorsa buraya düşer."""
+    briefs = get_recent_briefs()
+    return briefs[0] if briefs else {}
+
+
 @router.post("/briefs/generate")
 def generate_brief():
     return create_brief()

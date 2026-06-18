@@ -64,20 +64,31 @@ def remove_document(document_id: str, storage_path: str):
 
 def reindex_document(document_id: str, storage_path: str, file_name: str):
     logger.info(f"[knowledge] yeniden indeksleme başladı: {document_id}")
+    import tempfile, os
+    from app.db.storage import download_file
+    tmp_path = None
     try:
         update_document_status(document_id, DocumentStatus.PROCESSING)
         delete_chunks_by_document_id(document_id)
 
-        from app.db.storage import download_file
-        import tempfile, os
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             tmp_path = tmp.name
         clean_path = storage_path.replace(f"{BUCKET}/", "", 1)
-        download_file(BUCKET, clean_path, tmp_path)
+
+        try:
+            download_file(BUCKET, clean_path, tmp_path)
+        except Exception as dl_err:
+            err_str = str(dl_err)
+            if "not_found" in err_str or "Object not found" in err_str or "404" in err_str:
+                logger.warning(
+                    f"[knowledge] dosya storage'da bulunamadı, kayıt failed yapılıyor: {document_id}"
+                )
+                update_document_status(document_id, DocumentStatus.FAILED)
+                return
+            raise
 
         with open(tmp_path, "rb") as f:
             file_bytes = f.read()
-        os.unlink(tmp_path)
 
         text = load_pdf(file_bytes)
         raw_chunks = split_into_chunks(text)
@@ -93,3 +104,9 @@ def reindex_document(document_id: str, storage_path: str, file_name: str):
     except Exception as e:
         logger.error(f"[knowledge] yeniden indeksleme hatası: {document_id} — {e}")
         update_document_status(document_id, DocumentStatus.FAILED)
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
