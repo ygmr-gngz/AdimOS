@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from app.api.routes import health, documents, chat, voice, agents, dashboard, crm, academy, automation, content, debug, webhooks
+from app.api.routes import health, documents, chat, voice, agents, dashboard, crm, academy, automation, content, debug, webhooks, sgs
 from app.api.routes import users
 from app.core.auth import get_current_user
 
@@ -22,5 +22,6 @@ _protected.include_router(automation.router, prefix="/automation", tags=["automa
 _protected.include_router(content.router,    prefix="/content",    tags=["content"])
 _protected.include_router(debug.router,      prefix="/debug",      tags=["debug"])
 _protected.include_router(users.router,      prefix="/users",      tags=["users"])
+_protected.include_router(sgs.router,        prefix="/sgs",        tags=["sgs"])
 
 router.include_router(_protected)
