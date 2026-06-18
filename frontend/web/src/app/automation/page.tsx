@@ -141,21 +141,6 @@ export default function AutomationPage() {
     } catch { toast.error('Silme başarısız') }
   }
 
-  const handleCleanupOrphan = async () => {
-    try {
-      const r = await apiClient.delete('/content/orphan')
-      const count: number = r.data?.deleted ?? 0
-      if (count > 0) {
-        toast.success(`${count} eski hatalı kart temizlendi`)
-        fetchContent()
-      } else {
-        toast.success('Temizlenecek eski kart bulunamadı')
-      }
-    } catch {
-      toast.error('Temizleme başarısız')
-    }
-  }
-
   const pendingCount = content.filter((c) => c.status === 'pending_approval').length
 
   return (
