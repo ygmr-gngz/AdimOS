@@ -35,30 +35,57 @@ def _get_agent_statuses() -> list[dict]:
 
 
 def get_dashboard_data() -> dict:
-    leads    = _safe(get_leads)
-    students = _safe(get_students)
+    leads     = _safe(get_leads)
+    students  = _safe(get_students)
     documents = _safe(get_documents)
-    contents = _safe(list_contents)
+    contents  = _safe(list_contents)
 
-    indexed   = [d for d in documents if d.get("status") == "indexed"]
-    published = [c for c in contents if c.get("status") == "published"]
-    pending   = [c for c in contents if c.get("status") == "pending_approval"]
-    new_leads = [l for l in leads if l.get("status") == "new"]
+    indexed        = [d for d in documents if d.get("status") == "indexed"]
+    failed_docs    = [d for d in documents if d.get("status") == "failed"]
+    processing     = [d for d in documents if d.get("status") == "processing"]
+    published      = [c for c in contents if c.get("status") == "published"]
+    pending        = [c for c in contents if c.get("status") == "pending_approval"]
+    generating     = [c for c in contents if c.get("status") == "generating"]
+    failed_content = [c for c in contents if c.get("status") == "failed"]
+    new_leads      = [l for l in leads if l.get("status") == "new"]
+    followup       = [l for l in leads if l.get("status") == "follow_up"]
 
     recent_docs = sorted(documents, key=lambda d: d.get("created_at", ""), reverse=True)[:5]
+    recent_contents = sorted(contents, key=lambda c: c.get("created_at", ""), reverse=True)[:5]
+
+    # En güncel CEO brifini yükle
+    brief_content = None
+    brief_generated_at = None
+    brief_title = None
+    try:
+        from app.db.repositories.briefs_repo import get_briefs
+        briefs = _safe(get_briefs)
+        if briefs:
+            brief_content      = briefs[0].get("content", "")
+            brief_generated_at = briefs[0].get("created_at", "")
+            brief_title        = briefs[0].get("title", "Günlük CEO Özeti")
+    except Exception:
+        pass
 
     return {
         "stats": {
             "total_documents": len(documents),
             "indexed_documents": len(indexed),
-            "total_agent_runs": 0,
+            "failed_documents": len(failed_docs),
+            "processing_documents": len(processing),
             "total_leads": len(leads),
             "new_leads": len(new_leads),
+            "followup_leads": len(followup),
             "pending_content": len(pending),
+            "generating_content": len(generating),
+            "failed_content": len(failed_content),
             "total_students": len(students),
             "published_content": len(published),
+            "total_content": len(contents),
         },
-        "daily_brief": None,
+        "daily_brief": brief_content,
+        "brief_generated_at": brief_generated_at,
+        "brief_title": brief_title,
         "recent_documents": [
             {
                 "id": d.get("id", ""),
@@ -67,6 +94,16 @@ def get_dashboard_data() -> dict:
                 "created_at": d.get("created_at", ""),
             }
             for d in recent_docs
+        ],
+        "recent_contents": [
+            {
+                "id": c.get("id", ""),
+                "title": c.get("title", ""),
+                "content_type": c.get("content_type", ""),
+                "status": c.get("status", ""),
+                "created_at": c.get("created_at", ""),
+            }
+            for c in recent_contents
         ],
         "agent_statuses": _get_agent_statuses(),
     }

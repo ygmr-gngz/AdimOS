@@ -2,13 +2,48 @@
 
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
-import StatCard from '@/components/dashboard/StatCard'
 import DailyBriefCard from '@/components/dashboard/DailyBriefCard'
 import { dashboardService, type DashboardData } from '@/services/dashboard.service'
-import { FileText, Bot, Users, GraduationCap, Video, Database } from 'lucide-react'
+import {
+  FileText, Users, Video, Database, AlertCircle,
+  Clock, CheckCircle2, TrendingUp, GraduationCap
+} from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import { useAuth } from '@/hooks/useAuth'
-import { AGENT_STATUS_LABELS, DOCUMENT_STATUS_LABELS } from '@/lib/constants'
+import { DOCUMENT_STATUS_LABELS } from '@/lib/constants'
+
+function KpiCard({
+  label, value, sub, icon: Icon, color, alert,
+}: {
+  label: string
+  value: number
+  sub?: string
+  icon: React.ElementType
+  color: 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'brand'
+  alert?: boolean
+}) {
+  const colorMap: Record<string, string> = {
+    blue:   'bg-blue-500/10 text-blue-400',
+    green:  'bg-green-500/10 text-green-400',
+    orange: 'bg-orange-500/10 text-orange-400',
+    red:    'bg-red-500/10 text-red-400',
+    purple: 'bg-purple-500/10 text-purple-400',
+    brand:  'bg-brand-500/10 text-brand-400',
+  }
+  return (
+    <div className={`relative bg-surface-50 rounded-xl p-4 border ${alert && value > 0 ? 'border-red-500/30' : 'border-surface-200'}`}>
+      {alert && value > 0 && (
+        <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+      )}
+      <div className={`w-8 h-8 rounded-lg ${colorMap[color]} flex items-center justify-center mb-3`}>
+        <Icon size={16} />
+      </div>
+      <p className="text-2xl font-bold text-white">{value}</p>
+      <p className="text-xs text-gray-500 mt-0.5">{label}</p>
+      {sub && <p className="text-xs text-gray-600 mt-1">{sub}</p>}
+    </div>
+  )
+}
 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
@@ -42,78 +77,110 @@ export default function DashboardPage() {
     )
   }
 
-  const stats = data?.stats
+  const s = data?.stats
+
+  const alerts: string[] = []
+  if (s && s.failed_documents > 0) alerts.push(`${s.failed_documents} belge hatalı`)
+  if (s && s.failed_content > 0) alerts.push(`${s.failed_content} içerik başarısız`)
+  if (s && s.followup_leads > 0) alerts.push(`${s.followup_leads} müşteri takip bekliyor`)
 
   return (
     <AppShell>
       <div className="space-y-6 animate-fade-in">
+
+        {/* Başlık */}
         <div>
-          <h2 className="text-2xl font-bold text-white">
-            Merhaba {displayName} 👋
-          </h2>
+          <h2 className="text-2xl font-bold text-white">Merhaba, {displayName}</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {stats
-              ? `Bugün sistemde ${stats.total_agent_runs} aktif görev ve ${stats.total_leads} bekleyen takip bulunuyor.`
-              : 'AdimOS — Tüm sistem durumu burada'}
+            {alerts.length > 0
+              ? `Dikkat: ${alerts.join(' · ')}`
+              : 'Tüm sistemler çalışıyor.'}
           </p>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-          <StatCard label="Toplam Doküman" value={stats?.total_documents ?? 0} icon={FileText} color="blue" />
-          <StatCard label="Bilgi Parçası" value={stats?.indexed_documents ?? 0} icon={Database} color="green" />
-          <StatCard label="Aktif Agent" value={stats?.total_agent_runs ?? 0} icon={Bot} color="purple" />
-          <StatCard label="Bekleyen Takip" value={stats?.total_leads ?? 0} icon={Users} color="orange" />
-          <StatCard label="Sesli Oturum" value={0} icon={Video} color="blue" />
-          <StatCard label="Öğrenci" value={stats?.total_students ?? 0} icon={GraduationCap} color="purple" />
+        {/* KPI Izgarası */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+          <KpiCard label="İşlenen Belge"  value={s?.indexed_documents ?? 0}   icon={Database}      color="green" />
+          <KpiCard label="Toplam İçerik"  value={s?.total_content ?? 0}       icon={Video}         color="brand" />
+          <KpiCard label="Onay Bekleyen"  value={s?.pending_content ?? 0}     icon={Clock}         color="orange" />
+          <KpiCard label="Yeni Lead"      value={s?.new_leads ?? 0}           icon={TrendingUp}    color="blue" />
+          <KpiCard label="Takip Bekleyen" value={s?.followup_leads ?? 0}      icon={Users}         color="purple" />
+          <KpiCard label="Yayınlanan"     value={s?.published_content ?? 0}   icon={CheckCircle2}  color="green" />
+          <KpiCard label="Hatalı Belge"   value={s?.failed_documents ?? 0}    icon={AlertCircle}   color="red"   alert />
+          <KpiCard label="Hatalı İçerik" value={s?.failed_content ?? 0}      icon={AlertCircle}   color="red"   alert />
+          <KpiCard label="Öğrenci"        value={s?.total_students ?? 0}      icon={GraduationCap} color="purple" />
+          <KpiCard label="Toplam Lead"    value={s?.total_leads ?? 0}         icon={Users}         color="blue" />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          <div className="lg:col-span-2">
-            <DailyBriefCard brief={data?.daily_brief} />
-          </div>
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-gray-300">Agent Ofisi</h3>
-            {data?.agent_statuses?.length ? (
-              data.agent_statuses.map((a) => (
-                <div key={a.agent_type} className="flex items-center justify-between p-3 bg-surface-50 rounded-lg border border-surface-200">
-                  <span className="text-xs text-gray-400 capitalize">{a.agent_type.replace(/_/g, ' ')}</span>
-                  <Badge
-                    variant={a.status === 'running' ? 'warning' : a.status === 'completed' ? 'success' : a.status === 'failed' ? 'error' : 'default'}
-                    dot
-                  >
-                    {AGENT_STATUS_LABELS[a.status] ?? a.status}
-                  </Badge>
-                </div>
-              ))
-            ) : (
-              <div className="text-xs text-gray-600 p-3 bg-surface-50 rounded-lg border border-surface-200">
-                Agent verisi bekleniyor...
+        {/* CEO Özet — Ana Kart */}
+        <DailyBriefCard
+          brief={data?.daily_brief}
+          generatedAt={data?.brief_generated_at}
+        />
+
+        {/* Alt Satır: Son Belgeler + Son İçerikler */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+          {data?.recent_documents && data.recent_documents.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+                <Database size={13} className="text-gray-500" />
+                Son Yüklenen Belgeler
+              </h3>
+              <div className="space-y-2">
+                {data.recent_documents.map((doc) => (
+                  <div key={doc.id} className="flex items-center justify-between p-3 bg-surface-50 rounded-lg border border-surface-200">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileText size={13} className="text-gray-500 shrink-0" />
+                      <span className="text-xs text-gray-300 truncate">{doc.file_name}</span>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-xs text-gray-600">{new Date(doc.created_at).toLocaleDateString('tr-TR')}</span>
+                      <Badge variant={doc.status === 'indexed' ? 'success' : doc.status === 'failed' ? 'error' : 'warning'}>
+                        {DOCUMENT_STATUS_LABELS[doc.status] ?? doc.status}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
               </div>
-            )}
-          </div>
-        </div>
-
-        {data?.recent_documents && data.recent_documents.length > 0 && (
-          <div>
-            <h3 className="text-sm font-semibold text-gray-300 mb-3">Son Yüklenen Dokümanlar</h3>
-            <div className="space-y-2">
-              {data.recent_documents.map((doc) => (
-                <div key={doc.id} className="flex items-center justify-between p-3 bg-surface-50 rounded-lg border border-surface-200">
-                  <div className="flex items-center gap-2">
-                    <FileText size={14} className="text-gray-500" />
-                    <span className="text-xs text-gray-300 truncate max-w-xs">{doc.file_name}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-gray-600">{new Date(doc.created_at).toLocaleDateString('tr-TR')}</span>
-                    <Badge variant={doc.status === 'indexed' ? 'success' : doc.status === 'failed' ? 'error' : 'warning'}>
-                      {DOCUMENT_STATUS_LABELS[doc.status] ?? doc.status}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
             </div>
-          </div>
-        )}
+          )}
+
+          {data?.recent_contents && data.recent_contents.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+                <Video size={13} className="text-gray-500" />
+                Son Üretilen İçerikler
+              </h3>
+              <div className="space-y-2">
+                {data.recent_contents.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between p-3 bg-surface-50 rounded-lg border border-surface-200">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Video size={13} className="text-gray-500 shrink-0" />
+                      <span className="text-xs text-gray-300 truncate">{c.title || c.content_type}</span>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-xs text-gray-600">{new Date(c.created_at).toLocaleDateString('tr-TR')}</span>
+                      <Badge variant={
+                        c.status === 'published' ? 'success'
+                        : c.status === 'failed' ? 'error'
+                        : c.status === 'pending_approval' ? 'warning'
+                        : 'default'
+                      }>
+                        {c.status === 'published' ? 'Yayında'
+                          : c.status === 'failed' ? 'Hata'
+                          : c.status === 'pending_approval' ? 'Onay Bekliyor'
+                          : c.status === 'generating' ? 'Üretiliyor'
+                          : c.status}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+        </div>
       </div>
     </AppShell>
   )

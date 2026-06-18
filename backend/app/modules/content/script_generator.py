@@ -405,6 +405,65 @@ KRİTİK KURALLAR:
     return json.loads(r.choices[0].message.content)
 
 
+def apply_director_pass(storyboard: dict, topic: str, content_type: str = "video") -> dict:
+    """
+    Director Agent — storyboard'u ikinci bir GPT geçişiyle güçlendirir.
+    Sahne çeşitliliği, narration kalitesi ve görsel etki için optimize eder.
+    Storyboard'un yapısını (title, description, tags, scenes) korur.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    scenes = storyboard.get("scenes", [])
+    if not scenes:
+        return storyboard
+
+    try:
+        scenes_json = json.dumps(scenes, ensure_ascii=False, indent=2)
+        prompt = f"""Sen bir profesyonel eğitim videosu yönetmenisin.
+
+Aşağıdaki storyboard "{topic}" konusu için üretildi. ({content_type} formatı)
+
+MEVCUT SAHNELER:
+{scenes_json}
+
+YÖNETMEN GÖREVİN:
+1. İzleyicinin ilgisi nerede düşebilir? → o sahnelerin narration'ını güçlendir
+2. Peş peşe aynı tip sahne var mı? → çeşitlendir (örn: 3 content art arda olmasın)
+3. display_lines ekranda okunuyor mu? → çok uzunsa kısalt, en fazla 50 karakter/satır
+4. hook sahnesi güçlü mü? → zayıfsa yeniden yaz
+5. Narration doğal konuşma Türkçesi mi? → gereksiz tekrarları kaldır
+6. Sahne sayısı fazla mı ya da az mı? → gerekirse ekle veya birleştir
+
+KURALLAR:
+- Sahnelerin temel tip ve mantığını koru (question_solution akışını değiştirme)
+- Her narration doğal konuşma dili, kısa cümleler
+- display_lines max 5 satır, max 50 karakter/satır
+- Comparison → left_title ve right_title zorunlu
+- Example → scenario alanı zorunlu
+- summary → rows[] zorunlu
+- exam_tip → tip zorunlu
+
+Sadece scenes dizisini döndür, başka açıklama ekleme:
+{{"scenes": [ ... geliştirilmiş sahneler ... ]}}
+"""
+        r = _client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0.25,
+        )
+        result = json.loads(r.choices[0].message.content)
+        if "scenes" in result and isinstance(result["scenes"], list) and result["scenes"]:
+            storyboard = dict(storyboard)
+            storyboard["scenes"] = result["scenes"]
+            logger.info(f"[director] {len(result['scenes'])} sahne güçlendirildi")
+    except Exception as e:
+        logger.warning(f"[director] pass atlandı (hata): {e}")
+
+    return storyboard
+
+
 def generate_post_content(topic: str) -> dict:
     prompt = f"""{_BRAND_CTX}
 

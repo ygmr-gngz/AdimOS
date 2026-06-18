@@ -14,6 +14,7 @@ from moviepy.editor import AudioFileClip
 
 from app.modules.content.script_generator import (
     generate_storyboard,
+    apply_director_pass,
     generate_post_content,
 )
 from app.modules.content.audio_generator import generate_audio_segment, generate_audio
@@ -44,6 +45,42 @@ def _stage(name: str, fn, *args, **kwargs):
         raise RuntimeError(f"[{name}] {e}") from e
 
 
+def _run_qc(clips: list, scenes: list, total_dur: float) -> None:
+    """
+    QC Agent — video üretimi sonrası kalite kontrolü.
+    Sorunları loglar; üretimi durdurmaz, sadece raporlar.
+    """
+    issues: list[str] = []
+
+    if total_dur < 30:
+        issues.append(f"Video çok kısa: {total_dur:.1f}s (min 30s beklenir)")
+    if total_dur > 900:
+        issues.append(f"Video çok uzun: {total_dur:.1f}s (max 15dk beklenir)")
+
+    for i, (clip, scene) in enumerate(zip(clips, scenes)):
+        dur = clip.duration
+        scene_type = scene.get("type", "?")
+        if dur < 2:
+            issues.append(f"Sahne {i+1} ({scene_type}): çok kısa {dur:.1f}s — TTS hatası olabilir")
+        if dur > 40:
+            issues.append(f"Sahne {i+1} ({scene_type}): çok uzun {dur:.1f}s — izlenme düşebilir")
+        if clip.audio is None:
+            issues.append(f"Sahne {i+1} ({scene_type}): ses yok — senkron problemi")
+
+    # Sahne tipi tekrarı kontrolü
+    types = [s.get("type", "") for s in scenes]
+    for j in range(len(types) - 2):
+        if types[j] == types[j+1] == types[j+2] and types[j] not in ("content",):
+            issues.append(f"Sahne {j+1}-{j+3}: üst üste aynı tip '{types[j]}' — monoton görünebilir")
+
+    if issues:
+        logger.warning(f"[qc] {len(issues)} uyarı:")
+        for issue in issues:
+            logger.warning(f"[qc]   • {issue}")
+    else:
+        logger.info(f"[qc] geçti — {len(clips)} sahne, {total_dur:.1f}s, ses senkronu OK")
+
+
 def _build_synced_video(
     topic: str,
     content_type: str,
@@ -58,11 +95,15 @@ def _build_synced_video(
     4. Concatenate → upload → public URL
     """
     storyboard = _stage("script", generate_storyboard, topic, content_type, category)
+
+    # Director Agent — storyboard kalite geçişi (hata halinde orijinali kullan)
+    storyboard = _stage("director", apply_director_pass, storyboard, topic, content_type)
+
     scenes = storyboard.get("scenes", [])
     if not scenes:
         raise RuntimeError("[script] Storyboard sahne içermiyor")
 
-    logger.info(f"[service] storyboard hazır: {len(scenes)} sahne")
+    logger.info(f"[service] storyboard hazır (director geçişi tamamlandı): {len(scenes)} sahne")
 
     # Inject extra data into matching scenes (question_text, options etc.)
     if extra:
@@ -102,6 +143,9 @@ def _build_synced_video(
 
     video_path = _stage("video-assemble", assemble_video, clips)
     logger.info(f"[service] video hazır: {video_path}")
+
+    # QC Agent — kalite kontrol raporu
+    _run_qc(clips, scenes, total_dur)
 
     # Cleanup audio file handles
     for ac in audio_clips:
