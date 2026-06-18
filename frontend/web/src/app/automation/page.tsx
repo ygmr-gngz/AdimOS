@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import ContentCard from '@/components/automation/ContentCard'
+import ContentEditModal from '@/components/automation/ContentEditModal'
 import GenerateContentModal from '@/components/automation/GenerateContentModal'
 import Button from '@/components/ui/Button'
 import { automationService } from '@/services/automation.service'
@@ -24,6 +25,7 @@ export default function AutomationPage() {
   const [content, setContent] = useState<ContentPiece[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [editModal, setEditModal] = useState<{ id: string; title: string } | null>(null)
   const [filter, setFilter] = useState('')
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -79,6 +81,16 @@ export default function AutomationPage() {
         toast.error(result.error ?? 'Yayınlama başarısız')
       }
     } catch { toast.error('Yayınlama başarısız') }
+  }
+
+  const handleEdit = (id: string, title: string) => {
+    setEditModal({ id, title })
+  }
+
+  const handleEditRegenerated = (id: string) => {
+    setContent(prev => prev.map(c => c.id === id ? { ...c, status: 'generating' } : c))
+    if (pollRef.current) clearTimeout(pollRef.current)
+    pollRef.current = setTimeout(fetchContent, 8000)
   }
 
   const handleDelete = async (id: string) => {
@@ -185,6 +197,7 @@ export default function AutomationPage() {
                 onReject={handleReject}
                 onPublish={handlePublish}
                 onDelete={handleDelete}
+                onEdit={handleEdit}
               />
             ))}
           </div>
@@ -196,6 +209,16 @@ export default function AutomationPage() {
         onClose={() => setIsModalOpen(false)}
         onGenerate={handleGenerate}
       />
+
+      {editModal && (
+        <ContentEditModal
+          contentId={editModal.id}
+          contentTitle={editModal.title}
+          isOpen={!!editModal}
+          onClose={() => setEditModal(null)}
+          onRegenerated={handleEditRegenerated}
+        />
+      )}
     </AppShell>
   )
 }

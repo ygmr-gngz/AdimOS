@@ -68,31 +68,73 @@ def _get_live_context() -> str:
         # Öğrenci
         total_students = count("students")
 
+        # CRM lead detayları — son 10 lead isim/durum/telefon
+        crm_detail_lines = []
+        try:
+            leads_resp = (
+                sb.table("leads")
+                .select("full_name, status, phone, notes, created_at")
+                .order("created_at", desc=True)
+                .limit(10)
+                .execute()
+            )
+            for lead in (leads_resp.data or []):
+                name = lead.get("full_name", "—")
+                status = lead.get("status", "—")
+                phone = lead.get("phone") or "telefon yok"
+                note = (lead.get("notes") or "")[:80]
+                crm_detail_lines.append(f"  • {name} | {status} | {phone}" + (f" | not: {note}" if note else ""))
+        except Exception:
+            pass
+
+        # Son 5 içerik başlığı
+        content_detail_lines = []
+        try:
+            cont_resp = (
+                sb.table("generated_contents")
+                .select("title, status, type, created_at")
+                .order("created_at", desc=True)
+                .limit(5)
+                .execute()
+            )
+            for c in (cont_resp.data or []):
+                content_detail_lines.append(f"  • {c.get('title','—')} | {c.get('type','—')} | {c.get('status','—')}")
+        except Exception:
+            pass
+
         lines = [
             f"Bugünün tarihi: {today.strftime('%d.%m.%Y')}",
             "",
             "## Sistem Durumu (Anlık)",
             "",
-            f"### CRM",
+            "### CRM",
             f"- Toplam lead: {total_leads}",
             f"- Yeni (takip bekleyen): {new_leads}",
             f"- Takipte: {followup_leads}",
             f"- Bu hafta gelen yeni lead: {week_leads}",
+        ]
+        if crm_detail_lines:
+            lines += ["- Son leadler:"] + crm_detail_lines
+        lines += [
             "",
-            f"### İçerik (Automation Agent)",
+            "### İçerik (Automation Agent)",
             f"- Toplam üretilen: {total_content}",
             f"- Onay bekleyen: {pending_content}",
             f"- Yayınlanan: {published}",
             f"- Hatalı: {error_content}",
             f"- Bu hafta üretilen: {week_content}",
+        ]
+        if content_detail_lines:
+            lines += ["- Son içerikler:"] + content_detail_lines
+        lines += [
             "",
-            f"### Knowledge Agent",
+            "### Knowledge Agent",
             f"- Toplam doküman: {total_docs}",
             f"- İndekslenmiş (hazır): {indexed_docs}",
             f"- Hatalı: {failed_docs}",
             f"- Bu hafta yüklenen: {week_docs}",
             "",
-            f"### SGS Academy",
+            "### SGS Academy",
             f"- Kayıtlı öğrenci: {total_students}",
         ]
         return "\n".join(lines)

@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { PlayCircle, Camera, Video, Check, X, Calendar, Trash2, Play, Square, ChevronDown, ChevronUp, FileText, AlertCircle, Loader2 } from 'lucide-react'
+import { PlayCircle, Camera, Video, Check, X, Calendar, Trash2, Play, Square, ChevronDown, ChevronUp, FileText, AlertCircle, Loader2, Pencil } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import type { ContentPiece, ContentStatus, ContentPlatform } from '@/types/automation'
@@ -33,9 +33,10 @@ interface ContentCardProps {
   onReject: (id: string) => void
   onPublish: (id: string) => void
   onDelete: (id: string) => void
+  onEdit: (id: string, title: string) => void
 }
 
-export default function ContentCard({ content, onApprove, onReject, onPublish, onDelete }: ContentCardProps) {
+export default function ContentCard({ content, onApprove, onReject, onPublish, onDelete, onEdit }: ContentCardProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [scriptOpen, setScriptOpen] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -196,12 +197,22 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
               <Calendar size={13} /> Yayınla
             </Button>
           )}
-          <button
-            onClick={() => onDelete(content.id)}
-            className="flex items-center gap-1 text-xs text-gray-600 hover:text-red-400 transition-colors"
-          >
-            <Trash2 size={12} /> Sil
-          </button>
+          <div className="flex items-center gap-3">
+            {!isGenerating && !isError && (
+              <button
+                onClick={() => onEdit(content.id, content.title)}
+                className="flex items-center gap-1 text-xs text-gray-500 hover:text-brand-400 transition-colors"
+              >
+                <Pencil size={12} /> Düzenle
+              </button>
+            )}
+            <button
+              onClick={() => onDelete(content.id)}
+              className="flex items-center gap-1 text-xs text-gray-600 hover:text-red-400 transition-colors"
+            >
+              <Trash2 size={12} /> Sil
+            </button>
+          </div>
         </div>
       </div>
     </div>

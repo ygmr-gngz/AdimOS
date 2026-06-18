@@ -28,6 +28,10 @@ class ApproveRequest(BaseModel):
     notes: str = ""
 
 
+class EditRequest(BaseModel):
+    message: str
+
+
 def _background_generate(content_id: str, fn, *args):
     try:
         logger.info(f"[content] üretim başladı id={content_id}")
@@ -113,6 +117,54 @@ def approve_content(content_id: str, req: ApproveRequest):
     if req.notes:
         updates["approval_notes"] = req.notes
     return update_content(content_id, updates)
+
+
+# ── Edit (doğal dil ile yeniden üretim)
+
+@router.post("/{content_id}/edit")
+def edit_content(content_id: str, req: EditRequest, bg: BackgroundTasks):
+    """Doğal dil komutu ile içeriği analiz et ve arka planda yeniden üret."""
+    from app.modules.content.editor import build_edit_plan
+
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="Düzenleme mesajı boş olamaz")
+
+    item = get_content(content_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="İçerik bulunamadı")
+
+    plan = build_edit_plan(item, req.message)
+    enhanced_topic = plan.get("enhanced_topic") or (
+        (item.get("topic") or item.get("title", "")) + f". {req.message}"
+    )
+    content_type = item.get("type", "video")
+    category = item.get("category", "smmm")
+
+    fn_map = {
+        "video": (create_normal_video, (enhanced_topic, 5, category)),
+        "short": (create_short_video, (enhanced_topic, category)),
+        "post": (create_post, (enhanced_topic,)),
+        "question_solution": (create_question_solution_video, (enhanced_topic, "", category)),
+        "topic_explanation": (create_topic_explanation_video, (enhanced_topic, category)),
+        "sgs_topic_video": (create_topic_explanation_video, (enhanced_topic, "sgs")),
+    }
+    fn, args = fn_map.get(content_type, (create_normal_video, (enhanced_topic, 5, "smmm")))
+
+    update_content(content_id, {
+        "status": "generating",
+        "video_url": None,
+        "audio_base64": None,
+        "error_detail": None,
+    })
+
+    bg.add_task(_background_generate, content_id, fn, *args)
+
+    return {
+        "content_id": content_id,
+        "status": "regenerating",
+        "changes_summary": plan.get("changes_summary", [req.message]),
+        "explanation": plan.get("explanation", ""),
+    }
 
 
 # ── Validate (video URL erişilebilir mi?)
