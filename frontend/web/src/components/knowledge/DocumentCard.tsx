@@ -53,7 +53,11 @@ export default function DocumentCard({ document: doc, onDelete, onReindex }: Doc
       <button
         onClick={() => onDelete(doc.id)}
         title="Sil"
-        className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-gray-600 hover:text-red-400 transition-all"
+        className={`p-1.5 rounded-lg hover:bg-red-500/20 hover:text-red-400 transition-all ${
+          doc.status === 'failed'
+            ? 'text-red-500 opacity-100'
+            : 'opacity-0 group-hover:opacity-100 text-gray-600'
+        }`}
       >
         <Trash2 size={15} />
       </button>
