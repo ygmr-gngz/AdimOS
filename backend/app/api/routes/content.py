@@ -36,6 +36,7 @@ class EditRequest(BaseModel):
 
 
 def _background_generate(content_id: str, fn, *args):
+    from app.api.routes.notifications import push_notification
     try:
         logger.info(f"[content] üretim başladı id={content_id}")
         result = fn(*args)
@@ -47,13 +48,13 @@ def _background_generate(content_id: str, fn, *args):
                     "image_url" if field == "image_path" else field))
                 updates[db_field] = result[field]
         update_content(content_id, updates)
+        title = result.get("title") or "İçerik"
+        push_notification("content", f"İçerik hazır: {title}", "Onay bekliyor — Otomasyon sayfasından onaylayabilirsiniz.")
         logger.info(f"[content] üretim tamamlandı id={content_id}")
     except Exception as e:
         logger.error(f"[content] üretim hatası id={content_id} hata={e}", exc_info=True)
-        update_content(content_id, {
-            "status": "error",
-            "error_detail": str(e)[:300],
-        })
+        update_content(content_id, {"status": "error", "error_detail": str(e)[:300]})
+        push_notification("content_error", "İçerik üretim hatası", f"Üretim başarısız: {str(e)[:120]}")
 
 
 # ── Generate endpoints

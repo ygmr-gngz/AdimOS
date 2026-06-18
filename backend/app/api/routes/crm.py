@@ -8,7 +8,13 @@ router = APIRouter()
 
 @router.post("")
 def create_lead(data: LeadCreate):
-    return add_lead(data)
+    lead = add_lead(data)
+    try:
+        from app.api.routes.notifications import push_notification
+        push_notification("crm", f"Yeni lead: {data.name}", f"Kaynak: {data.source or '—'} | Durum: {data.status.value}")
+    except Exception:
+        pass
+    return lead
 
 
 @router.get("")
