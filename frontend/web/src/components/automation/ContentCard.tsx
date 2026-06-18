@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { PlayCircle, Camera, Video, Check, X, Calendar, Trash2, Play, Square, ChevronDown, ChevronUp, FileText, AlertCircle, Loader2, Pencil } from 'lucide-react'
+import { PlayCircle, Camera, Video, Check, X, Calendar, Trash2, Play, Square, ChevronDown, ChevronUp, FileText, AlertCircle, Loader2, Pencil, RefreshCw, Archive } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import type { ContentPiece, ContentStatus, ContentPlatform } from '@/types/automation'
@@ -25,6 +25,8 @@ const statusVariant: Record<ContentStatus, 'success' | 'warning' | 'error' | 'in
   published: 'success',
   failed: 'error',
   error: 'error',
+  corrupted: 'error',
+  archived: 'default',
 }
 
 interface ContentCardProps {
@@ -34,9 +36,11 @@ interface ContentCardProps {
   onPublish: (id: string) => void
   onDelete: (id: string) => void
   onEdit: (id: string, title: string) => void
+  onRetry: (id: string) => void
+  onArchive: (id: string) => void
 }
 
-export default function ContentCard({ content, onApprove, onReject, onPublish, onDelete, onEdit }: ContentCardProps) {
+export default function ContentCard({ content, onApprove, onReject, onPublish, onDelete, onEdit, onRetry, onArchive }: ContentCardProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [scriptOpen, setScriptOpen] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -47,9 +51,11 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
   const hasScript = !!(content.script || content.description)
   const scriptText = content.script || content.description || ''
   const isGenerating = content.status === 'generating'
-  const isError = content.status === 'error' || content.status === 'failed'
+  const isError = content.status === 'error' || content.status === 'failed' || content.status === 'corrupted'
   const isPending = content.status === 'pending_approval'
   const isApproved = content.status === 'approved'
+  const isRetryable = ['error', 'failed', 'corrupted', 'rejected'].includes(content.status)
+  const isArchived = content.status === 'archived'
 
   const handlePlayPause = () => {
     if (!content.audio_base64) return
@@ -174,7 +180,7 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
           </div>
         )}
 
-        {/* Onay butonları — büyük ve belirgin */}
+        {/* Onay butonları */}
         <div className="mt-auto pt-3 border-t border-surface-200">
           {isPending && (
             <div className="flex gap-2 mb-2">
@@ -197,8 +203,16 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
               <Calendar size={13} /> Yayınla
             </Button>
           )}
+          {isRetryable && (
+            <button
+              onClick={() => onRetry(content.id)}
+              className="flex items-center justify-center gap-1.5 w-full py-1.5 mb-2 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 text-orange-400 text-xs font-semibold transition-colors"
+            >
+              <RefreshCw size={12} /> Yeniden Üret
+            </button>
+          )}
           <div className="flex items-center gap-3">
-            {!isGenerating && !isError && (
+            {!isGenerating && !isArchived && (
               <button
                 onClick={() => onEdit(content.id, content.title)}
                 className="flex items-center gap-1 text-xs text-gray-500 hover:text-brand-400 transition-colors"
@@ -206,9 +220,17 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
                 <Pencil size={12} /> Düzenle
               </button>
             )}
+            {!isArchived && !isError && !isGenerating && (
+              <button
+                onClick={() => onArchive(content.id)}
+                className="flex items-center gap-1 text-xs text-gray-600 hover:text-yellow-400 transition-colors"
+              >
+                <Archive size={12} /> Arşivle
+              </button>
+            )}
             <button
               onClick={() => onDelete(content.id)}
-              className="flex items-center gap-1 text-xs text-gray-600 hover:text-red-400 transition-colors"
+              className="flex items-center gap-1 text-xs text-gray-600 hover:text-red-400 transition-colors ml-auto"
             >
               <Trash2 size={12} /> Sil
             </button>

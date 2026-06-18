@@ -10,6 +10,8 @@ export type ContentStatus =
   | 'published'
   | 'failed'
   | 'error'
+  | 'corrupted'
+  | 'archived'
 
 export interface ContentPiece {
   id: string

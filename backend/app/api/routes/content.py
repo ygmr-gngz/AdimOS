@@ -11,6 +11,9 @@ from app.db.repositories.generated_contents_repo import (
     create_content, update_content, get_content, list_contents,
     delete_content as db_delete, delete_orphan_contents,
 )
+from app.modules.content.cleanup import (
+    run_full_cleanup, run_health_check, safe_delete_content,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -245,7 +248,69 @@ def publish_instagram(content_id: str):
     return result
 
 
-# ── Cleanup / Delete
+# ── Retry failed content
+
+@router.post("/{content_id}/retry")
+def retry_content(content_id: str, bg: BackgroundTasks):
+    """Başarısız içeriği aynı konu ile yeniden üret."""
+    item = get_content(content_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="İçerik bulunamadı")
+    if item.get("status") not in ("error", "failed", "corrupted", "rejected"):
+        raise HTTPException(status_code=400, detail="Sadece hatalı içerikler yeniden üretilebilir")
+
+    topic = item.get("topic") or item.get("title", "")
+    content_type = item.get("type", "video")
+    category = item.get("category", "smmm")
+
+    fn_map = {
+        "video": (create_normal_video, (topic, 5, category)),
+        "short": (create_short_video, (topic, category)),
+        "post": (create_post, (topic,)),
+        "question_solution": (create_question_solution_video, (topic, "", category)),
+        "topic_explanation": (create_topic_explanation_video, (topic, category)),
+        "sgs_topic_video": (create_topic_explanation_video, (topic, "sgs")),
+    }
+    fn, args = fn_map.get(content_type, (create_normal_video, (topic, 5, "smmm")))
+
+    update_content(content_id, {
+        "status": "generating",
+        "error_detail": None,
+        "video_url": None,
+        "audio_base64": None,
+    })
+    bg.add_task(_background_generate, content_id, fn, *args)
+    return {"content_id": content_id, "status": "retrying"}
+
+
+# ── Archive
+
+@router.patch("/{content_id}/archive")
+def archive_content(content_id: str):
+    """İçeriği silmek yerine arşivle."""
+    item = get_content(content_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="İçerik bulunamadı")
+    return update_content(content_id, {"status": "archived"})
+
+
+# ── Health check + Full cleanup
+
+@router.post("/health-check")
+def health_check():
+    """Sorunlu içerikleri tespit edip 'corrupted' olarak işaretle."""
+    result = run_health_check()
+    return result
+
+
+@router.post("/cleanup")
+def full_cleanup():
+    """Tam sistem temizliği — hatalı, yetim, takılı içerikleri sil."""
+    result = run_full_cleanup()
+    return result
+
+
+# ── Legacy orphan (backwards compat)
 
 @router.delete("/orphan")
 def cleanup_orphan():
@@ -253,7 +318,9 @@ def cleanup_orphan():
     return {"deleted": count}
 
 
+# ── Delete (storage dahil)
+
 @router.delete("/{content_id}")
 def delete_content(content_id: str):
-    db_delete(content_id)
-    return {"message": "İçerik silindi"}
+    safe_delete_content(content_id)
+    return {"message": "İçerik ve dosyalar silindi"}

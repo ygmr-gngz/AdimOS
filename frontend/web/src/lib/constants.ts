@@ -39,6 +39,8 @@ export const CONTENT_STATUS_LABELS: Record<string, string> = {
   published: 'Yayınlandı',
   failed: 'Hata',
   error: 'Hata',
+  corrupted: 'Bozuk',
+  archived: 'Arşivlendi',
 }
 
 export const PLATFORM_LABELS: Record<string, string> = {

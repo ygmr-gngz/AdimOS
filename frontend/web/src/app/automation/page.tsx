@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import ContentCard from '@/components/automation/ContentCard'
 import ContentEditModal from '@/components/automation/ContentEditModal'
+import CleanupReportModal from '@/components/automation/CleanupReportModal'
 import GenerateContentModal from '@/components/automation/GenerateContentModal'
 import Button from '@/components/ui/Button'
 import { automationService } from '@/services/automation.service'
@@ -26,6 +27,12 @@ export default function AutomationPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editModal, setEditModal] = useState<{ id: string; title: string } | null>(null)
+  const [cleanupOpen, setCleanupOpen] = useState(false)
+  const [cleanupLoading, setCleanupLoading] = useState(false)
+  const [cleanupReport, setCleanupReport] = useState<null | {
+    deleted_failed: number; deleted_stuck: number; deleted_corrupted: number;
+    deleted_orphan: number; storage_cleaned: number; total_deleted: number
+  }>(null)
   const [filter, setFilter] = useState('')
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -87,6 +94,39 @@ export default function AutomationPage() {
     setEditModal({ id, title })
   }
 
+  const handleRetry = async (id: string) => {
+    try {
+      await apiClient.post(`/content/${id}/retry`)
+      setContent(prev => prev.map(c => c.id === id ? { ...c, status: 'generating' } : c))
+      toast.success('Yeniden üretim başladı')
+      if (pollRef.current) clearTimeout(pollRef.current)
+      pollRef.current = setTimeout(fetchContent, 8000)
+    } catch { toast.error('Yeniden üretim başlatılamadı') }
+  }
+
+  const handleArchive = async (id: string) => {
+    try {
+      await apiClient.patch(`/content/${id}/archive`)
+      setContent(prev => prev.map(c => c.id === id ? { ...c, status: 'archived' } : c))
+      toast.success('İçerik arşivlendi')
+    } catch { toast.error('Arşivleme başarısız') }
+  }
+
+  const handleCleanup = async () => {
+    setCleanupOpen(true)
+    setCleanupLoading(true)
+    setCleanupReport(null)
+    try {
+      const { data } = await apiClient.post('/content/cleanup')
+      setCleanupReport(data)
+      if (data.total_deleted > 0) fetchContent()
+    } catch {
+      setCleanupReport(null)
+    } finally {
+      setCleanupLoading(false)
+    }
+  }
+
   const handleEditRegenerated = (id: string) => {
     setContent(prev => prev.map(c => c.id === id ? { ...c, status: 'generating' } : c))
     if (pollRef.current) clearTimeout(pollRef.current)
@@ -130,11 +170,11 @@ export default function AutomationPage() {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={handleCleanupOrphan}
-              title="Video veya görseli olmayan hatalı kartları sil"
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-400 hover:text-red-400 bg-surface-100 border border-surface-200 rounded-xl transition-colors"
+              onClick={handleCleanup}
+              title="Hatalı, yetim ve takılı içerikleri temizle"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-400 hover:text-orange-400 bg-surface-100 border border-surface-200 rounded-xl transition-colors"
             >
-              <Trash2 size={13} /> Eski Kartları Temizle
+              <Trash2 size={13} /> Sistem Temizliği
             </button>
             <Button onClick={() => setIsModalOpen(true)}>
               <Plus size={16} /> İçerik Üret
@@ -198,6 +238,8 @@ export default function AutomationPage() {
                 onPublish={handlePublish}
                 onDelete={handleDelete}
                 onEdit={handleEdit}
+                onRetry={handleRetry}
+                onArchive={handleArchive}
               />
             ))}
           </div>
@@ -219,6 +261,13 @@ export default function AutomationPage() {
           onRegenerated={handleEditRegenerated}
         />
       )}
+
+      <CleanupReportModal
+        isOpen={cleanupOpen}
+        onClose={() => setCleanupOpen(false)}
+        report={cleanupReport}
+        loading={cleanupLoading}
+      />
     </AppShell>
   )
 }
