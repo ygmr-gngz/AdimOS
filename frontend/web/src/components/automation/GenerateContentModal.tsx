@@ -34,7 +34,7 @@ const CONTENT_OPTIONS: ContentOption[] = [
     content_type: 'video',
     backend_type: 'question_solution',
     label: 'Soru Çözüm Videosu',
-    description: 'SMMM/YMM sınav sorusu çözüm formatı — soru, şıklar, açıklama',
+    description: 'SMMM/YMM/SGS sınav sorusu çözüm formatı — soru, şıklar, açıklama',
     showQuestion: true,
   },
   {
@@ -72,8 +72,28 @@ type Category = 'smmm' | 'sgs' | 'genel'
 
 const CATEGORY_OPTIONS: { value: Category; label: string; desc: string }[] = [
   { value: 'smmm',  label: 'SMMM / YMM', desc: 'Muhasebe, vergi, SGK, ticaret hukuku' },
-  { value: 'sgs',   label: 'SGS',         desc: 'SGS mevzuatı, iş hukuku, SGS prosedürleri' },
+  { value: 'sgs',   label: 'SGS',         desc: 'SGS sınavı — ders bazlı soru çözümü' },
   { value: 'genel', label: 'Genel',       desc: 'Muhasebe, vergi, girişimcilik' },
+]
+
+const SGS_LESSONS = [
+  'Türkçe',
+  'Matematik',
+  'Tarih-Genel Kültür',
+  'İngilizce',
+  'Finansal Muhasebe',
+  'Muhasebe Standartları',
+  'Muhasebe Bilgi Sistemi',
+  'Maliyet Muhasebesi',
+  'Mali Tablolar Analizi',
+  'Muhasebe Denetimi',
+  'İktisat',
+  'Maliye',
+  'Meslek Hukuku',
+  'İş ve Sosyal Güvenlik Hukuku',
+  'Vergi Hukuku',
+  'Ticaret Hukuku',
+  'Borçlar Hukuku',
 ]
 
 export default function GenerateContentModal({ isOpen, onClose, onGenerate }: GenerateContentModalProps) {
@@ -81,16 +101,23 @@ export default function GenerateContentModal({ isOpen, onClose, onGenerate }: Ge
   const [topic, setTopic] = useState('')
   const [questionText, setQuestionText] = useState('')
   const [selectedIdx, setSelectedIdx] = useState(0)
-  const [category, setCategory] = useState<'smmm' | 'sgs' | 'genel'>('smmm')
+  const [category, setCategory] = useState<Category>('smmm')
+  const [sgsLesson, setSgsLesson] = useState('')
 
   const selected = CONTENT_OPTIONS[selectedIdx]
+  const isSgs = category === 'sgs'
 
   const handleSubmit = async () => {
     if (!topic.trim()) return
+    if (isSgs && !sgsLesson) return
     setIsLoading(true)
     try {
+      const finalTopic = isSgs && sgsLesson
+        ? `[${sgsLesson}] ${topic.trim()}`
+        : topic.trim()
+
       await onGenerate({
-        topic: topic.trim(),
+        topic: finalTopic,
         platform: selected.platform,
         content_type: selected.content_type,
         backend_type: BACKEND_ROUTE[selected.backend_type],
@@ -100,6 +127,7 @@ export default function GenerateContentModal({ isOpen, onClose, onGenerate }: Ge
       onClose()
       setTopic('')
       setQuestionText('')
+      setSgsLesson('')
     } finally {
       setIsLoading(false)
     }
@@ -146,7 +174,7 @@ export default function GenerateContentModal({ isOpen, onClose, onGenerate }: Ge
             {CATEGORY_OPTIONS.map((cat) => (
               <button
                 key={cat.value}
-                onClick={() => setCategory(cat.value)}
+                onClick={() => { setCategory(cat.value); setSgsLesson('') }}
                 className={`flex-1 text-center px-3 py-2 rounded-xl border text-xs transition-colors ${
                   category === cat.value
                     ? 'bg-brand-600/20 border-brand-500/50 text-gray-100 font-semibold'
@@ -160,11 +188,43 @@ export default function GenerateContentModal({ isOpen, onClose, onGenerate }: Ge
           </div>
         </div>
 
+        {/* SGS Ders Seçimi */}
+        {isSgs && (
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-2">
+              Ders <span className="text-red-400">*</span>
+            </label>
+            <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+              {SGS_LESSONS.map((lesson) => (
+                <button
+                  key={lesson}
+                  type="button"
+                  onClick={() => setSgsLesson(lesson)}
+                  className={`text-left px-3 py-2 rounded-lg border text-xs transition-colors ${
+                    sgsLesson === lesson
+                      ? 'bg-brand-600/30 border-brand-500/60 text-brand-300 font-medium'
+                      : 'bg-surface-100 border-surface-200 text-gray-500 hover:border-surface-300 hover:text-gray-300'
+                  }`}
+                >
+                  {lesson}
+                </button>
+              ))}
+            </div>
+            {!sgsLesson && (
+              <p className="text-xs text-amber-500/80 mt-1.5">Ders seçilmeden devam edilemez</p>
+            )}
+          </div>
+        )}
+
         {/* Konu */}
         <Input
           label="Konu"
           placeholder={
-            selected.backend_type === 'question_solution'
+            isSgs
+              ? sgsLesson
+                ? `Ör: ${sgsLesson} — 2023 sınav sorusu çözümü`
+                : 'Önce ders seçin...'
+              : selected.backend_type === 'question_solution'
               ? 'Ör: Ticaret Hukuku — İşletme Adı'
               : selected.backend_type === 'topic_explanation'
               ? 'Ör: KDV Beyannamesi Nasıl Hazırlanır'
@@ -172,6 +232,7 @@ export default function GenerateContentModal({ isOpen, onClose, onGenerate }: Ge
           }
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
+          disabled={isSgs && !sgsLesson}
         />
 
         {/* Soru metni (sadece soru çözümde göster) */}
@@ -192,7 +253,12 @@ export default function GenerateContentModal({ isOpen, onClose, onGenerate }: Ge
 
         <div className="flex gap-3 pt-1">
           <Button variant="secondary" onClick={onClose} className="flex-1">İptal</Button>
-          <Button onClick={handleSubmit} isLoading={isLoading} disabled={!topic.trim()} className="flex-1">
+          <Button
+            onClick={handleSubmit}
+            isLoading={isLoading}
+            disabled={!topic.trim() || (isSgs && !sgsLesson)}
+            className="flex-1"
+          >
             Üretimi Başlat
           </Button>
         </div>

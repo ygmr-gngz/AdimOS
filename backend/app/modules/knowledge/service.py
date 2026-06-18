@@ -1,5 +1,5 @@
 import logging
-from app.db.repositories.documents_repo import create_document, update_document_status, get_documents, get_document
+from app.db.repositories.documents_repo import create_document, update_document_status, get_documents, get_document, delete_document
 from app.db.repositories.chunks_repo import insert_chunks, delete_chunks_by_document_id
 from app.db.storage import upload_file, delete_file
 from app.modules.knowledge.pdf_loader import load_pdf
@@ -59,7 +59,12 @@ def fetch_document(document_id: str) -> dict | None:
 
 def remove_document(document_id: str, storage_path: str):
     delete_chunks_by_document_id(document_id)
-    delete_file(BUCKET, storage_path)
+    try:
+        clean_path = storage_path.replace(f"{BUCKET}/", "", 1)
+        delete_file(BUCKET, clean_path)
+    except Exception:
+        pass
+    delete_document(document_id)
 
 
 def reindex_document(document_id: str, storage_path: str, file_name: str):

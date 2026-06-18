@@ -32,3 +32,8 @@ def update_document_status(document_id: str, status: DocumentStatus):
         "status": status,
     }).eq("id", document_id).execute()
     return response.data[0] if response.data else None
+
+
+def delete_document(document_id: str):
+    supabase = get_supabase_client()
+    supabase.table("documents").delete().eq("id", document_id).execute()
