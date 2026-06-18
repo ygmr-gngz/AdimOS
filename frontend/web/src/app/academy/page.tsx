@@ -350,7 +350,7 @@ export default function AcademyPage() {
               SGS Academy
             </h2>
             <p className="text-sm text-gray-500 mt-0.5">
-              Çıkmış soru PDF'i yükle → otomatik video serisi planla → üret
+              Çıkmış soru PDF&apos;i yükle → otomatik video serisi planla → üret
             </p>
           </div>
         </div>
