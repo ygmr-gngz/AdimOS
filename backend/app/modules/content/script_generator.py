@@ -395,6 +395,13 @@ KRİTİK KURALLAR:
 - Summary sahnesinde rows[] ZORUNLU
 - Her sahne için narration MUTLAKA doldurulsun — boş bırakma
 - Sadece JSON döndür, başka açıklama ekleme
+
+DİL KURALI — KESİNLİKLE UYMAK ZORUNLU:
+- TÜM METİNLER TÜRKÇE OLMALIDIR. Tek bir İngilizce kelime bile kabul edilemez.
+- title, display_lines, narration, scenario, tip, explanation, left_title, right_title — TÜMÜ Türkçe
+- YANLIŞ: "Summary", "Definition", "Example", "Tip", "Hook", "Introduction"
+- DOĞRU: "Özet", "Tanım", "Örnek", "İpucu", "Dikkat", "Giriş"
+- Teknik terimler (KDV, SGK, TL) oldukları gibi kalabilir ama açıklamaları Türkçe olmalı
 """
     r = _client.chat.completions.create(
         model="gpt-4o-mini",
@@ -443,6 +450,9 @@ KURALLAR:
 - Example → scenario alanı zorunlu
 - summary → rows[] zorunlu
 - exam_tip → tip zorunlu
+
+DİL KURALI: Eğer herhangi bir alanda (display_lines, title, scenario, tip, explanation, left_title, right_title)
+İngilizce kelime varsa, TÜRKÇEYE çevir. Tüm metinler Türkçe olmalıdır.
 
 Sadece scenes dizisini döndür, başka açıklama ekleme:
 {{"scenes": [ ... geliştirilmiş sahneler ... ]}}
