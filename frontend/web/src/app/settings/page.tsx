@@ -1,10 +1,91 @@
 'use client'
 
+import { useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import Card, { CardHeader, CardTitle } from '@/components/ui/Card'
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
-import { Key, Mic, Globe, Bell } from 'lucide-react'
+import { Key, Mic, Globe, Bell, Lock, CheckCircle } from 'lucide-react'
+import apiClient from '@/lib/api-client'
+import toast from 'react-hot-toast'
+
+function ChangePasswordCard() {
+  const [form, setForm] = useState({ newPassword: '', confirm: '' })
+  const [loading, setLoading] = useState(false)
+  const [done, setDone] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (form.newPassword.length < 8) {
+      toast.error('Şifre en az 8 karakter olmalı')
+      return
+    }
+    if (form.newPassword !== form.confirm) {
+      toast.error('Şifreler eşleşmiyor')
+      return
+    }
+    setLoading(true)
+    try {
+      await apiClient.post('/users/me/change-password', { new_password: form.newPassword })
+      setDone(true)
+      setForm({ newPassword: '', confirm: '' })
+      toast.success('Şifre güncellendi')
+    } catch {
+      toast.error('Şifre değiştirilemedi')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Card variant="bordered">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Lock size={16} className="text-gray-400" />
+          <CardTitle>Şifre Değiştir</CardTitle>
+        </div>
+      </CardHeader>
+      {done ? (
+        <div className="flex items-center gap-3 p-4 bg-green-500/10 rounded-xl border border-green-500/20">
+          <CheckCircle size={18} className="text-green-400 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-green-300">Şifre güncellendi</p>
+            <p className="text-xs text-green-600 mt-0.5">Bir sonraki girişte yeni şifreni kullan.</p>
+          </div>
+          <button
+            onClick={() => setDone(false)}
+            className="ml-auto text-xs text-green-500 hover:text-green-300 transition-colors"
+          >
+            Tekrar değiştir
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <Input
+            label="Yeni Şifre"
+            type="password"
+            placeholder="En az 8 karakter"
+            value={form.newPassword}
+            onChange={(e) => setForm({ ...form, newPassword: e.target.value })}
+          />
+          <Input
+            label="Yeni Şifre (Tekrar)"
+            type="password"
+            placeholder="Aynı şifreyi tekrar gir"
+            value={form.confirm}
+            onChange={(e) => setForm({ ...form, confirm: e.target.value })}
+          />
+          {form.newPassword && form.confirm && form.newPassword !== form.confirm && (
+            <p className="text-xs text-red-400">Şifreler eşleşmiyor</p>
+          )}
+          <Button type="submit" isLoading={loading} disabled={loading}>
+            Şifreyi Güncelle
+          </Button>
+        </form>
+      )}
+    </Card>
+  )
+}
 
 export default function SettingsPage() {
   return (
@@ -14,6 +95,8 @@ export default function SettingsPage() {
           <h2 className="text-xl font-bold text-white mb-1">Ayarlar</h2>
           <p className="text-sm text-gray-500">Sistem ve kullanıcı tercihlerinizi yönetin</p>
         </div>
+
+        <ChangePasswordCard />
 
         <Card variant="bordered">
           <CardHeader>
