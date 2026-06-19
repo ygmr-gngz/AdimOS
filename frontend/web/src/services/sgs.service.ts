@@ -1,5 +1,27 @@
 import apiClient from '@/lib/api-client'
 
+export const SGS_LESSONS = [
+  'Türkçe',
+  'Matematik',
+  'Tarih-Genel Kültür',
+  'İngilizce',
+  'Finansal Muhasebe',
+  'Muhasebe Standartları',
+  'Muhasebe Bilgi Sistemi',
+  'Maliyet Muhasebesi',
+  'Mali Tablolar Analizi',
+  'Muhasebe Denetimi',
+  'İktisat',
+  'Maliye',
+  'Meslek Hukuku',
+  'İş ve Sosyal Güvenlik Hukuku',
+  'Vergi Hukuku',
+  'Ticaret Hukuku',
+  'Borçlar Hukuku',
+] as const
+
+export type SgsLesson = typeof SGS_LESSONS[number] | 'Belirsiz'
+
 export interface SgsQuestion {
   id: number
   subject: string
@@ -10,6 +32,9 @@ export interface SgsQuestion {
   options: string[]
   correct_option: string
   explanation?: string
+  lesson_confidence?: number
+  lesson_reason?: string
+  original_subject?: string
 }
 
 export interface SgsSubject {
@@ -83,5 +108,11 @@ export const sgsService = {
 
   async deleteAnalysis(analysisId: string): Promise<void> {
     await apiClient.delete(`/sgs/analyses/${analysisId}`)
+  },
+
+  async updateQuestionLesson(analysisId: string, questionId: number, newSubject: string): Promise<void> {
+    await apiClient.patch(`/sgs/analyses/${analysisId}/question/${questionId}`, {
+      new_subject: newSubject,
+    })
   },
 }

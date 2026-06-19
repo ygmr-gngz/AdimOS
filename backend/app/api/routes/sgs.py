@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from app.modules.sgs.service import analyze_pdf_bytes, build_sgs_topic_video
 from app.db.repositories.sgs_repo import (
-    create_analysis, list_analyses, get_analysis, delete_analysis,
+    create_analysis, list_analyses, get_analysis, delete_analysis, update_question_subject,
 )
 from app.db.repositories.generated_contents_repo import (
     create_content, update_content,
@@ -129,3 +129,19 @@ def delete_sgs_analysis(analysis_id: str):
     except Exception:
         pass
     return {"message": "Analiz silindi"}
+
+
+class QuestionLessonUpdate(BaseModel):
+    new_subject: str
+
+
+@router.patch("/analyses/{analysis_id}/question/{question_id}")
+def update_question_lesson(analysis_id: str, question_id: int, body: QuestionLessonUpdate):
+    """Bir sorunun dersini manuel düzelt."""
+    from app.modules.sgs.analyzer import SGS_LESSONS
+    if body.new_subject not in SGS_LESSONS and body.new_subject != "Belirsiz":
+        raise HTTPException(status_code=400, detail=f"Geçersiz ders: {body.new_subject}")
+    updated = update_question_subject(analysis_id, question_id, body.new_subject)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Analiz bulunamadı")
+    return {"message": "Ders güncellendi", "question_id": question_id, "new_subject": body.new_subject}

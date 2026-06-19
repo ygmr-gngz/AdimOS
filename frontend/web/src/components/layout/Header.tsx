@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Bell, User, Mic } from 'lucide-react'
+import { Bell, User, Mic, Menu } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import NotificationPanel from './NotificationPanel'
 import { notificationsService } from '@/services/notifications.service'
@@ -22,9 +22,10 @@ const pageTitles: Record<string, string> = {
 
 interface HeaderProps {
   onOpenAssistant: () => void
+  onOpenSidebar: () => void
 }
 
-export default function Header({ onOpenAssistant }: HeaderProps) {
+export default function Header({ onOpenAssistant, onOpenSidebar }: HeaderProps) {
   const pathname = usePathname()
   const title = pageTitles[pathname] || 'AdimOS'
   const [notifOpen, setNotifOpen] = useState(false)
@@ -36,7 +37,6 @@ export default function Header({ onOpenAssistant }: HeaderProps) {
       .then(({ unread_count }) => setUnread(unread_count))
       .catch(() => {})
 
-    // Her 60 saniyede bir unread sayısını güncelle
     const interval = setInterval(() => {
       notificationsService.list()
         .then(({ unread_count }) => setUnread(unread_count))
@@ -51,18 +51,28 @@ export default function Header({ onOpenAssistant }: HeaderProps) {
   }
 
   return (
-    <header className="h-14 bg-surface-50/80 backdrop-blur border-b border-surface-200 flex items-center justify-between px-6 flex-shrink-0">
-      <span className="text-sm font-medium text-gray-500">{title}</span>
+    <header className="h-14 bg-surface-50/80 backdrop-blur border-b border-surface-200 flex items-center justify-between px-4 md:px-6 flex-shrink-0">
+      <div className="flex items-center gap-3">
+        {/* Mobil hamburger */}
+        <button
+          onClick={onOpenSidebar}
+          className="md:hidden p-1.5 text-gray-400 hover:text-gray-200 transition-colors"
+          aria-label="Menüyü aç"
+        >
+          <Menu size={20} />
+        </button>
+        <span className="text-sm font-medium text-gray-500">{title}</span>
+      </div>
 
       <div className="flex items-center gap-2">
-        {/* Bildirim butonu */}
+        {/* Bildirim */}
         <div ref={bellRef} className="relative">
           <button
             onClick={handleOpenNotif}
-            className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-surface-200 text-gray-400 hover:text-gray-200 hover:border-surface-300 transition-colors text-xs font-medium"
+            className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-surface-200 text-gray-400 hover:text-gray-200 hover:border-surface-300 transition-colors text-xs font-medium"
           >
             <Bell size={14} />
-            Bildirimler
+            <span className="hidden sm:inline">Bildirimler</span>
             {unread > 0 && (
               <span className="absolute -top-1 -right-1 w-4 h-4 bg-brand-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
                 {unread > 9 ? '9+' : unread}
@@ -74,16 +84,16 @@ export default function Header({ onOpenAssistant }: HeaderProps) {
           )}
         </div>
 
-        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-surface-200 text-gray-400 hover:text-gray-200 hover:border-surface-300 transition-colors text-xs font-medium">
+        <button className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-surface-200 text-gray-400 hover:text-gray-200 hover:border-surface-300 transition-colors text-xs font-medium">
           <User size={14} />
           Profil
         </button>
         <button
           onClick={onOpenAssistant}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white transition-colors text-xs font-medium"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white transition-colors text-xs font-medium"
         >
           <Mic size={14} />
-          Sesli Komut
+          <span className="hidden sm:inline">Sesli Komut</span>
         </button>
       </div>
     </header>
