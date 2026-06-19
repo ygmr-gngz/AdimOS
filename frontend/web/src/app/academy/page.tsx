@@ -6,7 +6,7 @@ import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
 import {
   GraduationCap, Upload, FileText, Play, ChevronDown,
-  ChevronUp, Clock, BookOpen, Video, Trash2, RefreshCw, AlertTriangle, Edit2, Check
+  ChevronUp, Clock, BookOpen, Video, Trash2, RefreshCw, AlertTriangle, Edit2
 } from 'lucide-react'
 import { sgsService, SGS_LESSONS, type SgsAnalysis, type SgsAnalysisMeta, type SgsQuestion } from '@/services/sgs.service'
 import toast from 'react-hot-toast'

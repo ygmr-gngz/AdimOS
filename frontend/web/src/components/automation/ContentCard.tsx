@@ -94,6 +94,7 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
 
       {/* Post görseli */}
       {!hasVideo && hasImage && (
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={content.image_url}
           alt={content.title}
