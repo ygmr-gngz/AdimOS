@@ -6,6 +6,7 @@ import ContentCard from '@/components/automation/ContentCard'
 import ContentEditModal from '@/components/automation/ContentEditModal'
 import CleanupReportModal from '@/components/automation/CleanupReportModal'
 import GenerateContentModal from '@/components/automation/GenerateContentModal'
+import VideoReviewModal from '@/components/automation/VideoReviewModal'
 import Button from '@/components/ui/Button'
 import { automationService } from '@/services/automation.service'
 import apiClient from '@/lib/api-client'
@@ -28,6 +29,7 @@ export default function AutomationPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editModal, setEditModal] = useState<{ id: string; title: string } | null>(null)
   const [cleanupOpen, setCleanupOpen] = useState(false)
+  const [reviewContent, setReviewContent] = useState<ContentPiece | null>(null)
   const [cleanupLoading, setCleanupLoading] = useState(false)
   const [cleanupReport, setCleanupReport] = useState<null | {
     deleted_failed: number; deleted_stuck: number; deleted_corrupted: number;
@@ -225,6 +227,7 @@ export default function AutomationPage() {
                 onEdit={handleEdit}
                 onRetry={handleRetry}
                 onArchive={handleArchive}
+                onReview={setReviewContent}
               />
             ))}
           </div>
@@ -252,6 +255,14 @@ export default function AutomationPage() {
         onClose={() => setCleanupOpen(false)}
         report={cleanupReport}
         loading={cleanupLoading}
+      />
+
+      <VideoReviewModal
+        content={reviewContent}
+        onClose={() => setReviewContent(null)}
+        onApprove={(id) => { handleApprove(id); setReviewContent(null) }}
+        onReject={(id) => { handleReject(id); setReviewContent(null) }}
+        onPublish={(id) => { handlePublish(id); setReviewContent(null) }}
       />
     </AppShell>
   )

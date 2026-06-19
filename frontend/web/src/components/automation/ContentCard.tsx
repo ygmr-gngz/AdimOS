@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { PlayCircle, Camera, Video, Check, X, Calendar, Trash2, Play, Square, ChevronDown, ChevronUp, FileText, AlertCircle, Loader2, Pencil, RefreshCw, Archive } from 'lucide-react'
+import { PlayCircle, Camera, Video, Check, X, Calendar, Trash2, Play, Square, ChevronDown, ChevronUp, FileText, AlertCircle, Loader2, Pencil, RefreshCw, Archive, Maximize2 } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import type { ContentPiece, ContentStatus, ContentPlatform } from '@/types/automation'
@@ -38,9 +38,10 @@ interface ContentCardProps {
   onEdit: (id: string, title: string) => void
   onRetry: (id: string) => void
   onArchive: (id: string) => void
+  onReview?: (content: ContentPiece) => void
 }
 
-export default function ContentCard({ content, onApprove, onReject, onPublish, onDelete, onEdit, onRetry, onArchive }: ContentCardProps) {
+export default function ContentCard({ content, onApprove, onReject, onPublish, onDelete, onEdit, onRetry, onArchive, onReview }: ContentCardProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [scriptOpen, setScriptOpen] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -77,14 +78,25 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
 
       {/* Video player — tam genişlik, kartın üstünde */}
       {hasVideo && (
-        <video
-          src={content.video_url}
-          controls
-          preload="metadata"
-          className="w-full bg-black"
-          style={{ maxHeight: 220 }}
-          onError={(e) => { (e.target as HTMLVideoElement).style.display = 'none' }}
-        />
+        <div className="relative group/video">
+          <video
+            src={content.video_url}
+            controls
+            preload="metadata"
+            className="w-full bg-black"
+            style={{ maxHeight: 220 }}
+            onError={(e) => { (e.target as HTMLVideoElement).style.display = 'none' }}
+          />
+          {onReview && (
+            <button
+              onClick={() => onReview(content)}
+              className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-lg opacity-0 group-hover/video:opacity-100 transition-opacity"
+              title="Tam ekranda incele"
+            >
+              <Maximize2 size={14} />
+            </button>
+          )}
+        </div>
       )}
       {!hasVideo && !hasImage && !isGenerating && !isError && (
         <div className="w-full bg-surface-100 flex items-center justify-center text-xs text-gray-600 py-5 border-b border-surface-200">
@@ -184,19 +196,29 @@ export default function ContentCard({ content, onApprove, onReject, onPublish, o
         {/* Onay butonları */}
         <div className="mt-auto pt-3 border-t border-surface-200">
           {isPending && (
-            <div className="flex gap-2 mb-2">
-              <button
-                onClick={() => onApprove(content.id)}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-semibold transition-colors"
-              >
-                <Check size={15} /> Onayla
-              </button>
-              <button
-                onClick={() => onReject(content.id)}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-semibold transition-colors"
-              >
-                <X size={15} /> Reddet
-              </button>
+            <div className="space-y-2 mb-2">
+              {onReview && (
+                <button
+                  onClick={() => onReview(content)}
+                  className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-brand-600/20 hover:bg-brand-600/30 border border-brand-600/40 text-brand-300 text-sm font-medium transition-colors"
+                >
+                  <Maximize2 size={14} /> Videoyu İncele &amp; Karar Ver
+                </button>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => onApprove(content.id)}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-semibold transition-colors"
+                >
+                  <Check size={15} /> Onayla
+                </button>
+                <button
+                  onClick={() => onReject(content.id)}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-semibold transition-colors"
+                >
+                  <X size={15} /> Reddet
+                </button>
+              </div>
             </div>
           )}
           {isApproved && (

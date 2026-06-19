@@ -5,10 +5,11 @@ import AppShell from '@/components/layout/AppShell'
 import Card, { CardHeader, CardTitle } from '@/components/ui/Card'
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
-import { Key, Mic, Globe, Bell, Lock, CheckCircle } from 'lucide-react'
+import { Key, Mic, Globe, Bell, Lock, CheckCircle, AlertCircle, Loader2, Instagram, Youtube, RefreshCw } from 'lucide-react'
 import apiClient from '@/lib/api-client'
 import toast from 'react-hot-toast'
 
+/* ─── Şifre Değiştir ─────────────────────────────────────────── */
 function ChangePasswordCard() {
   const [form, setForm] = useState({ newPassword: '', confirm: '' })
   const [loading, setLoading] = useState(false)
@@ -16,14 +17,8 @@ function ChangePasswordCard() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (form.newPassword.length < 8) {
-      toast.error('Şifre en az 8 karakter olmalı')
-      return
-    }
-    if (form.newPassword !== form.confirm) {
-      toast.error('Şifreler eşleşmiyor')
-      return
-    }
+    if (form.newPassword.length < 8) { toast.error('Şifre en az 8 karakter olmalı'); return }
+    if (form.newPassword !== form.confirm) { toast.error('Şifreler eşleşmiyor'); return }
     setLoading(true)
     try {
       await apiClient.post('/users/me/change-password', { new_password: form.newPassword })
@@ -52,41 +47,190 @@ function ChangePasswordCard() {
             <p className="text-sm font-medium text-green-300">Şifre güncellendi</p>
             <p className="text-xs text-green-600 mt-0.5">Bir sonraki girişte yeni şifreni kullan.</p>
           </div>
-          <button
-            onClick={() => setDone(false)}
-            className="ml-auto text-xs text-green-500 hover:text-green-300 transition-colors"
-          >
+          <button onClick={() => setDone(false)} className="ml-auto text-xs text-green-500 hover:text-green-300 transition-colors">
             Tekrar değiştir
           </button>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Input
-            label="Yeni Şifre"
-            type="password"
-            placeholder="En az 8 karakter"
-            value={form.newPassword}
-            onChange={(e) => setForm({ ...form, newPassword: e.target.value })}
-          />
-          <Input
-            label="Yeni Şifre (Tekrar)"
-            type="password"
-            placeholder="Aynı şifreyi tekrar gir"
-            value={form.confirm}
-            onChange={(e) => setForm({ ...form, confirm: e.target.value })}
-          />
+          <Input label="Yeni Şifre" type="password" placeholder="En az 8 karakter"
+            value={form.newPassword} onChange={(e) => setForm({ ...form, newPassword: e.target.value })} />
+          <Input label="Yeni Şifre (Tekrar)" type="password" placeholder="Aynı şifreyi tekrar gir"
+            value={form.confirm} onChange={(e) => setForm({ ...form, confirm: e.target.value })} />
           {form.newPassword && form.confirm && form.newPassword !== form.confirm && (
             <p className="text-xs text-red-400">Şifreler eşleşmiyor</p>
           )}
-          <Button type="submit" isLoading={loading} disabled={loading}>
-            Şifreyi Güncelle
-          </Button>
+          <Button type="submit" isLoading={loading} disabled={loading}>Şifreyi Güncelle</Button>
         </form>
       )}
     </Card>
   )
 }
 
+/* ─── Sosyal Medya Bağlantıları ──────────────────────────────── */
+interface InstagramStatus {
+  token_configured: boolean
+  account_configured: boolean
+  token_preview: string
+  account_id: string | null
+  connected: boolean
+  account_name: string | null
+  followers: number | null
+  error: string | null
+}
+
+interface YoutubeStatus {
+  configured: boolean
+  client_id_preview: string
+  refresh_token_configured: boolean
+  error: string | null
+}
+
+function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <span className={`flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
+      ok ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'
+    }`}>
+      {ok ? <CheckCircle size={11} /> : <AlertCircle size={11} />}
+      {label}
+    </span>
+  )
+}
+
+function SocialConnectionCard() {
+  const [igStatus, setIgStatus] = useState<InstagramStatus | null>(null)
+  const [ytStatus, setYtStatus] = useState<YoutubeStatus | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const testConnections = async () => {
+    setLoading(true)
+    try {
+      const [igRes, ytRes] = await Promise.all([
+        apiClient.get('/social/instagram/status'),
+        apiClient.get('/social/youtube/status'),
+      ])
+      setIgStatus(igRes.data)
+      setYtStatus(ytRes.data)
+    } catch {
+      toast.error('Bağlantı durumu alınamadı')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Card variant="bordered">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Globe size={16} className="text-gray-400" />
+            <CardTitle>Sosyal Medya Bağlantıları</CardTitle>
+          </div>
+          <Button size="sm" variant="secondary" onClick={testConnections} isLoading={loading}>
+            <RefreshCw size={13} /> Durumu Test Et
+          </Button>
+        </div>
+      </CardHeader>
+
+      <div className="space-y-5">
+        {/* Instagram */}
+        <div className="p-4 bg-surface-100 rounded-xl border border-surface-200">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Instagram size={16} className="text-pink-400" />
+              <span className="text-sm font-semibold text-gray-200">Instagram Business</span>
+            </div>
+            {igStatus && (
+              <StatusBadge ok={igStatus.connected} label={igStatus.connected ? 'Bağlı' : 'Bağlantı Yok'} />
+            )}
+          </div>
+
+          {igStatus ? (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="flex items-center gap-1.5 text-gray-400">
+                  <span className="text-gray-600">Token:</span>
+                  <code className="text-gray-300 bg-surface-200 px-1.5 py-0.5 rounded">{igStatus.token_preview}</code>
+                  <StatusBadge ok={igStatus.token_configured} label={igStatus.token_configured ? 'Var' : 'Yok'} />
+                </div>
+                <div className="flex items-center gap-1.5 text-gray-400">
+                  <span className="text-gray-600">Account ID:</span>
+                  <code className="text-gray-300 bg-surface-200 px-1.5 py-0.5 rounded text-[10px]">
+                    {igStatus.account_id ?? '—'}
+                  </code>
+                </div>
+              </div>
+              {igStatus.connected && igStatus.account_name && (
+                <div className="p-2.5 bg-green-500/10 border border-green-500/20 rounded-lg">
+                  <p className="text-xs text-green-300">
+                    <strong>{igStatus.account_name}</strong> hesabına bağlı
+                    {igStatus.followers && ` · ${igStatus.followers.toLocaleString('tr-TR')} takipçi`}
+                  </p>
+                </div>
+              )}
+              {igStatus.error && (
+                <div className="p-2.5 bg-red-500/10 border border-red-500/20 rounded-lg">
+                  <p className="text-xs text-red-400">{igStatus.error}</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-600">
+              Railway → Variables'da <code className="text-gray-400">META_ACCESS_TOKEN</code> ve{' '}
+              <code className="text-gray-400">INSTAGRAM_BUSINESS_ACCOUNT_ID</code> tanımlanmalı.{' '}
+              <strong className="text-brand-400">Durumu Test Et</strong> butonuna basarak bağlantıyı kontrol edin.
+            </p>
+          )}
+        </div>
+
+        {/* YouTube */}
+        <div className="p-4 bg-surface-100 rounded-xl border border-surface-200">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Youtube size={16} className="text-red-400" />
+              <span className="text-sm font-semibold text-gray-200">YouTube</span>
+            </div>
+            {ytStatus && (
+              <StatusBadge ok={ytStatus.configured} label={ytStatus.configured ? 'Bağlı' : 'Bağlantı Yok'} />
+            )}
+          </div>
+
+          {ytStatus ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                <span className="text-gray-600">Client ID:</span>
+                <code className="text-gray-300 bg-surface-200 px-1.5 py-0.5 rounded">{ytStatus.client_id_preview}</code>
+                <StatusBadge ok={ytStatus.refresh_token_configured} label={ytStatus.refresh_token_configured ? 'Token var' : 'Token yok'} />
+              </div>
+              {ytStatus.error && (
+                <div className="p-2.5 bg-red-500/10 border border-red-500/20 rounded-lg">
+                  <p className="text-xs text-red-400">{ytStatus.error}</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-600">
+              Railway → Variables'da <code className="text-gray-400">YOUTUBE_CLIENT_ID</code>,{' '}
+              <code className="text-gray-400">YOUTUBE_CLIENT_SECRET</code> ve{' '}
+              <code className="text-gray-400">YOUTUBE_REFRESH_TOKEN</code> tanımlanmalı.
+            </p>
+          )}
+        </div>
+
+        {/* Nasıl yapılır */}
+        <div className="p-3 bg-surface-200/50 rounded-xl text-xs text-gray-500 space-y-1">
+          <p className="font-medium text-gray-400">Credentials nasıl güncellenir?</p>
+          <p>1. Railway dashboard → Projeniz → Variables sekmesi</p>
+          <p>2. İlgili değişkeni bulun veya yeni ekleyin</p>
+          <p>3. Kaydedin → Railway otomatik redeploy yapar</p>
+          <p>4. Burada <strong>Durumu Test Et</strong> butonuyla doğrulayın</p>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+/* ─── Ana Sayfa ──────────────────────────────────────────────── */
 export default function SettingsPage() {
   return (
     <AppShell>
@@ -98,20 +242,7 @@ export default function SettingsPage() {
 
         <ChangePasswordCard />
 
-        <Card variant="bordered">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Key size={16} className="text-gray-400" />
-              <CardTitle>API Anahtarları</CardTitle>
-            </div>
-          </CardHeader>
-          <div className="space-y-4">
-            <Input label="OpenAI API Key" type="password" placeholder="sk-..." />
-            <Input label="Supabase URL" placeholder="https://xxx.supabase.co" />
-            <Input label="Supabase Anon Key" type="password" placeholder="eyJ..." />
-            <Button>Kaydet</Button>
-          </div>
-        </Card>
+        <SocialConnectionCard />
 
         <Card variant="bordered">
           <CardHeader>
@@ -130,21 +261,6 @@ export default function SettingsPage() {
                 <option value="shimmer">Shimmer (Yumuşak)</option>
               </select>
             </div>
-            <Button>Kaydet</Button>
-          </div>
-        </Card>
-
-        <Card variant="bordered">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Globe size={16} className="text-gray-400" />
-              <CardTitle>Sosyal Medya Bağlantıları</CardTitle>
-            </div>
-          </CardHeader>
-          <div className="space-y-4">
-            <Input label="YouTube Channel ID" placeholder="UC..." />
-            <Input label="Instagram Business Account ID" placeholder="Instagram Business ID" />
-            <Input label="Facebook / Meta API Token" type="password" placeholder="EAA..." />
             <Button>Kaydet</Button>
           </div>
         </Card>
