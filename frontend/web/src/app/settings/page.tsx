@@ -5,7 +5,7 @@ import AppShell from '@/components/layout/AppShell'
 import Card, { CardHeader, CardTitle } from '@/components/ui/Card'
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
-import { Key, Mic, Globe, Bell, Lock, CheckCircle, AlertCircle, Loader2, Instagram, Youtube, RefreshCw } from 'lucide-react'
+import { Mic, Globe, Bell, Lock, CheckCircle, AlertCircle, Instagram, Youtube, RefreshCw } from 'lucide-react'
 import apiClient from '@/lib/api-client'
 import toast from 'react-hot-toast'
 
@@ -176,7 +176,7 @@ function SocialConnectionCard() {
             </div>
           ) : (
             <p className="text-xs text-gray-600">
-              Railway → Variables'da <code className="text-gray-400">META_ACCESS_TOKEN</code> ve{' '}
+              Railway &rarr; Variables&apos;da <code className="text-gray-400">META_ACCESS_TOKEN</code> ve{' '}
               <code className="text-gray-400">INSTAGRAM_BUSINESS_ACCOUNT_ID</code> tanımlanmalı.{' '}
               <strong className="text-brand-400">Durumu Test Et</strong> butonuna basarak bağlantıyı kontrol edin.
             </p>
@@ -210,7 +210,7 @@ function SocialConnectionCard() {
             </div>
           ) : (
             <p className="text-xs text-gray-600">
-              Railway → Variables'da <code className="text-gray-400">YOUTUBE_CLIENT_ID</code>,{' '}
+              Railway &rarr; Variables&apos;da <code className="text-gray-400">YOUTUBE_CLIENT_ID</code>,{' '}
               <code className="text-gray-400">YOUTUBE_CLIENT_SECRET</code> ve{' '}
               <code className="text-gray-400">YOUTUBE_REFRESH_TOKEN</code> tanımlanmalı.
             </p>
