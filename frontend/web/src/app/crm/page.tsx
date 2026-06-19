@@ -5,7 +5,7 @@ import AppShell from '@/components/layout/AppShell'
 import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
 import { crmService, type Lead, type LeadStatus } from '@/services/crm.service'
-import { Users, Plus, Trash2, Phone, Mail, X, AlertCircle, MessageCircle, Edit2 } from 'lucide-react'
+import { Users, Plus, Trash2, Phone, Mail, X, AlertCircle, MessageCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const STATUS_LABELS: Record<LeadStatus, string> = {
