@@ -6,9 +6,9 @@ import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
 import {
   GraduationCap, Upload, FileText, Play, ChevronDown,
-  ChevronUp, Clock, BookOpen, Video, Trash2, RefreshCw, AlertTriangle, Edit2
+  ChevronUp, Clock, BookOpen, Video, Trash2, RefreshCw, AlertTriangle, Edit2, List, Plus
 } from 'lucide-react'
-import { sgsService, SGS_LESSONS, type SgsAnalysis, type SgsAnalysisMeta, type SgsQuestion } from '@/services/sgs.service'
+import { sgsService, SGS_LESSONS, type SgsAnalysis, type SgsAnalysisMeta, type SgsQuestion, type SgsRange } from '@/services/sgs.service'
 import toast from 'react-hot-toast'
 
 type Phase = 'idle' | 'uploading' | 'done'
@@ -217,6 +217,164 @@ function QuestionRow({
   )
 }
 
+function RangesPanel() {
+  const [ranges, setRanges] = useState<SgsRange[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({
+    document_name: '',
+    start_question_no: '',
+    end_question_no: '',
+    lesson_name: SGS_LESSONS[0] as string,
+    notes: '',
+  })
+
+  useEffect(() => {
+    sgsService.listRanges()
+      .then(setRanges)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const start = parseInt(form.start_question_no)
+    const end = parseInt(form.end_question_no)
+    if (!form.document_name.trim()) { toast.error('Belge adı gerekli'); return }
+    if (isNaN(start) || isNaN(end) || start < 1 || end < start) {
+      toast.error('Geçerli bir soru aralığı girin'); return
+    }
+    setSaving(true)
+    try {
+      const saved = await sgsService.saveRange({
+        document_name: form.document_name.trim(),
+        start_question_no: start,
+        end_question_no: end,
+        lesson_name: form.lesson_name,
+        notes: form.notes.trim() || undefined,
+      })
+      setRanges(prev => [...prev, saved])
+      setForm(f => ({ ...f, start_question_no: '', end_question_no: '', notes: '' }))
+      toast.success('Aralık kaydedildi')
+    } catch {
+      toast.error('Kaydedilemedi')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    try {
+      await sgsService.deleteRange(id)
+      setRanges(prev => prev.filter(r => r.id !== id))
+      toast.success('Aralık silindi')
+    } catch {
+      toast.error('Silinemedi')
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Form */}
+      <div className="bg-surface-50 rounded-xl border border-surface-200 p-5">
+        <h3 className="text-sm font-semibold text-gray-200 mb-4 flex items-center gap-2">
+          <Plus size={14} className="text-brand-400" /> Yeni Aralık Tanımla
+        </h3>
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label className="text-xs font-medium text-gray-400 mb-1 block">Belge Adı</label>
+            <input
+              className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 placeholder-gray-600"
+              placeholder="örn: 2026-1 SGS Çıkmış Sorular"
+              value={form.document_name}
+              onChange={e => setForm(f => ({ ...f, document_name: e.target.value }))}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-gray-400 mb-1 block">Başlangıç Sorusu</label>
+              <input
+                type="number" min={1}
+                className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                placeholder="1"
+                value={form.start_question_no}
+                onChange={e => setForm(f => ({ ...f, start_question_no: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-400 mb-1 block">Bitiş Sorusu</label>
+              <input
+                type="number" min={1}
+                className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                placeholder="20"
+                value={form.end_question_no}
+                onChange={e => setForm(f => ({ ...f, end_question_no: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-400 mb-1 block">Ders</label>
+            <select
+              className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              value={form.lesson_name}
+              onChange={e => setForm(f => ({ ...f, lesson_name: e.target.value }))}
+            >
+              {SGS_LESSONS.map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-400 mb-1 block">Not (isteğe bağlı)</label>
+            <input
+              className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 placeholder-gray-600"
+              placeholder="örn: İlk 20 soru Türkçe bölümüne ait"
+              value={form.notes}
+              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+            />
+          </div>
+          <Button type="submit" isLoading={saving} disabled={saving}>
+            <Plus size={14} /> Kaydet
+          </Button>
+        </form>
+      </div>
+
+      {/* Tablo */}
+      <div className="bg-surface-50 rounded-xl border border-surface-200 overflow-hidden">
+        <div className="px-5 py-3 border-b border-surface-200 flex items-center gap-2">
+          <List size={14} className="text-gray-500" />
+          <span className="text-sm font-semibold text-gray-300">Kayıtlı Aralıklar ({ranges.length})</span>
+        </div>
+        {loading ? (
+          <div className="p-8 text-center text-gray-600 text-sm">Yükleniyor...</div>
+        ) : ranges.length === 0 ? (
+          <div className="p-8 text-center text-gray-600 text-sm">Henüz aralık tanımlanmadı</div>
+        ) : (
+          <div className="divide-y divide-surface-200">
+            {ranges.map(r => (
+              <div key={r.id} className="flex items-center justify-between px-5 py-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-mono bg-surface-200 text-gray-300 px-2 py-0.5 rounded">
+                      {r.start_question_no}–{r.end_question_no}
+                    </span>
+                    <span className="text-sm font-medium text-brand-300">{r.lesson_name}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5 truncate">{r.document_name}{r.notes ? ` · ${r.notes}` : ''}</p>
+                </div>
+                <button
+                  onClick={() => handleDelete(r.id)}
+                  className="p-1.5 text-gray-600 hover:text-red-400 transition-colors shrink-0 ml-3"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function AnalysisResult({
   analysis, onGenerate, onLessonChange,
 }: {
@@ -327,6 +485,7 @@ function AnalysisResult({
 }
 
 export default function AcademyPage() {
+  const [pageTab, setPageTab] = useState<'analyses' | 'ranges'>('analyses')
   const [phase, setPhase] = useState<Phase>('idle')
   const [analysis, setAnalysis] = useState<SgsAnalysis | null>(null)
   const [savedAnalyses, setSavedAnalyses] = useState<SgsAnalysisMeta[]>([])
@@ -403,7 +562,7 @@ export default function AcademyPage() {
   return (
     <AppShell>
       <div className="space-y-6 animate-fade-in">
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between flex-wrap gap-3">
           <div>
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <GraduationCap size={20} className="text-brand-400" />
@@ -413,9 +572,29 @@ export default function AcademyPage() {
               Çıkmış soru PDF&apos;i yükle → otomatik video serisi planla → üret
             </p>
           </div>
+          <div className="flex gap-1 bg-surface-100 p-1 rounded-xl">
+            <button
+              onClick={() => setPageTab('analyses')}
+              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                pageTab === 'analyses' ? 'bg-surface-50 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              <BookOpen size={13} /> Analizler
+            </button>
+            <button
+              onClick={() => setPageTab('ranges')}
+              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                pageTab === 'ranges' ? 'bg-surface-50 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              <List size={13} /> Soru Aralıkları
+            </button>
+          </div>
         </div>
 
-        {generatedTitles.length > 0 && (
+        {pageTab === 'ranges' && <RangesPanel />}
+
+        {pageTab === 'analyses' && generatedTitles.length > 0 && (
           <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-xl">
             <p className="text-sm text-green-300 font-medium">
               {generatedTitles.length} video üretimi arka planda başladı. Otomasyon sayfasından takip edebilirsiniz.
@@ -423,7 +602,7 @@ export default function AcademyPage() {
           </div>
         )}
 
-        {phase !== 'done' && (
+        {pageTab === 'analyses' && phase !== 'done' && (
           <div
             onClick={() => fileRef.current?.click()}
             className="border-2 border-dashed border-surface-300 rounded-2xl p-10 text-center cursor-pointer hover:border-brand-500/50 hover:bg-brand-500/5 transition-all"
@@ -455,13 +634,13 @@ export default function AcademyPage() {
           </div>
         )}
 
-        {error && (
+        {pageTab === 'analyses' && error && (
           <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
             <p className="text-sm text-red-400">{error}</p>
           </div>
         )}
 
-        {phase === 'done' && analysis && (
+        {pageTab === 'analyses' && phase === 'done' && analysis && (
           <div className="space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
@@ -477,7 +656,7 @@ export default function AcademyPage() {
           </div>
         )}
 
-        {!loadingList && savedAnalyses.length > 0 && phase !== 'done' && (
+        {pageTab === 'analyses' && !loadingList && savedAnalyses.length > 0 && phase !== 'done' && (
           <div>
             <h3 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
               <Clock size={13} className="text-gray-500" />
@@ -512,7 +691,7 @@ export default function AcademyPage() {
           </div>
         )}
 
-        {!loadingList && savedAnalyses.length === 0 && phase === 'idle' && (
+        {pageTab === 'analyses' && !loadingList && savedAnalyses.length === 0 && phase === 'idle' && (
           <div className="flex flex-col items-center justify-center py-10 text-center text-gray-600 text-sm">
             <GraduationCap size={32} className="mb-3 text-gray-700" />
             <p>Henüz analiz yok. Yukarıdan bir PDF yükleyin.</p>

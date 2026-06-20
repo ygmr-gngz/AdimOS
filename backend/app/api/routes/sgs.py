@@ -2,10 +2,10 @@
 import logging
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
 from pydantic import BaseModel
-
 from app.modules.sgs.service import analyze_pdf_bytes, build_sgs_topic_video
 from app.db.repositories.sgs_repo import (
     create_analysis, list_analyses, get_analysis, delete_analysis, update_question_subject,
+    save_range, get_ranges, delete_range,
 )
 from app.db.repositories.generated_contents_repo import (
     create_content, update_content,
@@ -145,3 +145,30 @@ def update_question_lesson(analysis_id: str, question_id: int, body: QuestionLes
     if not updated:
         raise HTTPException(status_code=404, detail="Analiz bulunamadı")
     return {"message": "Ders güncellendi", "question_id": question_id, "new_subject": body.new_subject}
+
+class RangeCreateRequest(BaseModel):
+    document_name:str
+    document_id: str | None = None
+    start_question_no:int
+    end_question_no:int
+    lesson_name:str
+    notes: str | None = None
+
+@router.post("/ranges")
+def create_range(body: RangeCreateRequest):
+    result = save_range(
+        body.document_name, body.start_question_no, body.end_question_no,
+        body.lesson_name, body.notes, body.document_id
+    )
+    return result
+
+
+@router.get("/ranges")
+def list_ranges(document_name: str | None = None):
+    return get_ranges(document_name)
+
+
+@router.delete("/ranges/{range_id}")
+def remove_range(range_id: str):
+    delete_range(range_id)
+    return {"message": "Aralık silindi"}

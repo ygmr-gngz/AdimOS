@@ -72,7 +72,40 @@ export interface SgsAnalysisMeta {
   created_at: string
 }
 
+export interface SgsRange {
+  id: string
+  document_name: string
+  document_id: string | null
+  start_question_no: number
+  end_question_no: number
+  lesson_name: string
+  notes: string | null
+  created_at: string
+}
+
 export const sgsService = {
+  async saveRange(payload: {
+    document_name: string
+    document_id?: string | null
+    start_question_no: number
+    end_question_no: number
+    lesson_name: string
+    notes?: string
+  }): Promise<SgsRange> {
+    const { data } = await apiClient.post('/sgs/ranges', payload)
+    return data
+  },
+
+  async listRanges(documentName?: string): Promise<SgsRange[]> {
+    const { data } = await apiClient.get('/sgs/ranges', {
+      params: documentName ? { document_name: documentName } : undefined,
+    })
+    return data ?? []
+  },
+
+  async deleteRange(rangeId: string): Promise<void> {
+    await apiClient.delete(`/sgs/ranges/${rangeId}`)
+  },
   async analyzePdf(file: File): Promise<SgsAnalysis> {
     const form = new FormData()
     form.append('file', file)
