@@ -18,7 +18,11 @@ class Settings(BaseSettings):
     YOUTUBE_REFRESH_TOKEN: str = ""
 
     # Instagram / Meta
+    META_APP_ID: str = ""
+    META_APP_SECRET: str = ""
     META_ACCESS_TOKEN: str = ""
+    META_VERIFY_TOKEN: str = ""
+    FACEBOOK_PAGE_ID: str = ""
     INSTAGRAM_BUSINESS_ACCOUNT_ID: str = ""
 
     class Config:

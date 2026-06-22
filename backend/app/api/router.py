@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends
 from app.api.routes import health, documents, chat, voice, agents, dashboard, crm, academy, automation, content, debug, webhooks, sgs, notifications, social
 from app.api.routes import users
+from app.api.routes.meta_webhook import router as meta_router, protected_router as meta_protected_router
 from app.core.auth import get_current_user
 
 router = APIRouter()
 
-# Public
-router.include_router(health.router,   prefix="/health",   tags=["health"])
-router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
+# Public (auth gerektirmeyen)
+router.include_router(health.router,        prefix="/health",   tags=["health"])
+router.include_router(webhooks.router,      prefix="/webhooks", tags=["webhooks"])
+router.include_router(meta_router,          prefix="/meta",     tags=["meta"])
 
 # Protected — auth zorunlu
 _protected = APIRouter(dependencies=[Depends(get_current_user)])
@@ -24,6 +26,7 @@ _protected.include_router(debug.router,      prefix="/debug",      tags=["debug"
 _protected.include_router(users.router,      prefix="/users",      tags=["users"])
 _protected.include_router(sgs.router,           prefix="/sgs",           tags=["sgs"])
 _protected.include_router(notifications.router, prefix="/notifications",  tags=["notifications"])
-_protected.include_router(social.router,       prefix="/social",          tags=["social"])
+_protected.include_router(social.router,            prefix="/social",    tags=["social"])
+_protected.include_router(meta_protected_router,   prefix="/meta",      tags=["meta"])
 
 router.include_router(_protected)
