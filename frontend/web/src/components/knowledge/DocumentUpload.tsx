@@ -4,7 +4,7 @@ import { useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { Upload, FileText } from 'lucide-react'
 import { clsx } from 'clsx'
-import { SUPPORTED_FILE_TYPES, MAX_FILE_SIZE_MB } from '@/lib/constants'
+import { MAX_FILE_SIZE_MB } from '@/lib/constants'
 
 interface DocumentUploadProps {
   onUpload: (file: File) => Promise<unknown>
