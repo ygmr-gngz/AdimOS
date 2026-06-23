@@ -23,7 +23,12 @@ export default function DocumentUpload({ onUpload, isUploading }: DocumentUpload
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: SUPPORTED_FILE_TYPES.reduce((acc, type) => ({ ...acc, [type]: [] }), {}),
+    accept: {
+      'application/pdf': ['.pdf'],
+      'text/plain': ['.txt'],
+      'application/msword': ['.doc'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+    },
     maxSize: MAX_FILE_SIZE_MB * 1024 * 1024,
     disabled: isUploading,
     multiple: true,

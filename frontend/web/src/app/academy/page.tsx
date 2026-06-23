@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
@@ -492,7 +492,6 @@ export default function AcademyPage() {
   const [loadingList, setLoadingList] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [generatedTitles, setGeneratedTitles] = useState<string[]>([])
-  const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     sgsService.listAnalyses()
@@ -603,11 +602,19 @@ export default function AcademyPage() {
         )}
 
         {pageTab === 'analyses' && phase !== 'done' && (
-          <div
-            onClick={() => fileRef.current?.click()}
-            className="border-2 border-dashed border-surface-300 rounded-2xl p-10 text-center cursor-pointer hover:border-brand-500/50 hover:bg-brand-500/5 transition-all"
+          <label
+            htmlFor="sgs-pdf-input"
+            className="block border-2 border-dashed border-surface-300 rounded-2xl p-10 text-center cursor-pointer hover:border-brand-500/50 hover:bg-brand-500/5 transition-all"
           >
-            <input ref={fileRef} type="file" accept=".pdf" className="hidden" onChange={handleFileChange} />
+            <input
+              id="sgs-pdf-input"
+
+              type="file"
+              accept=".pdf,application/pdf"
+              className="hidden"
+              onChange={handleFileChange}
+              disabled={phase === 'uploading'}
+            />
             {phase === 'uploading' ? (
               <div className="flex flex-col items-center gap-3">
                 <svg className="animate-spin h-10 w-10 text-brand-400" viewBox="0 0 24 24" fill="none">
@@ -628,10 +635,12 @@ export default function AcademyPage() {
                     17 SGS dersine göre otomatik sınıflandırma, ders güven skoru, video planı
                   </p>
                 </div>
-                <Button size="sm" variant="secondary"><FileText size={14} /> PDF Seç</Button>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-100 border border-surface-200 text-sm text-gray-300">
+                  <FileText size={14} /> PDF Seç
+                </span>
               </div>
             )}
-          </div>
+          </label>
         )}
 
         {pageTab === 'analyses' && error && (
