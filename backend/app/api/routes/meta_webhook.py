@@ -33,11 +33,21 @@ async def meta_verify(request: Request):
     token = params.get("hub.verify_token")
     challenge = params.get("hub.challenge")
 
+    logger.info(
+        f"[meta] webhook doğrulama isteği — "
+        f"mode={mode} "
+        f"verify_token={token} "
+        f"env_token={settings.META_VERIFY_TOKEN!r}"
+    )
+
     if mode == "subscribe" and token == settings.META_VERIFY_TOKEN:
         logger.info("[meta] webhook doğrulandı ✓")
         return PlainTextResponse(challenge)
 
-    logger.warning(f"[meta] webhook doğrulama başarısız token={token}")
+    logger.warning(
+        f"[meta] webhook doğrulama BAŞARISIZ — "
+        f"token eşleşmiyor: gelen={token!r} beklenen={settings.META_VERIFY_TOKEN!r}"
+    )
     raise HTTPException(status_code=403, detail="Verify token hatalı")
 
 

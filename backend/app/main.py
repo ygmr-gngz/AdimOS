@@ -6,14 +6,20 @@ from app.core.config import settings
 from app.api.router import router
 
 
+import logging
+_startup_logger = logging.getLogger("adimos.startup")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.modules.automation.scheduler import start_scheduler, stop_scheduler
-    print(f"AdimOS API başlatılıyor — ortam: {settings.ENVIRONMENT}")
+    _startup_logger.info(f"AdimOS API başlatılıyor — ortam: {settings.ENVIRONMENT}")
+    _startup_logger.info(f"META_VERIFY_TOKEN loaded: {bool(settings.META_VERIFY_TOKEN)}")
+    _startup_logger.info(f"META_ACCESS_TOKEN loaded: {bool(settings.META_ACCESS_TOKEN)}")
+    _startup_logger.info(f"INSTAGRAM_BUSINESS_ACCOUNT_ID loaded: {bool(settings.INSTAGRAM_BUSINESS_ACCOUNT_ID)}")
     start_scheduler()
     yield
     stop_scheduler()
-    print("AdimOS API kapatılıyor")
+    _startup_logger.info("AdimOS API kapatılıyor")
 
 
 app = FastAPI(
