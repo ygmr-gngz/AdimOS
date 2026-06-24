@@ -19,7 +19,7 @@ const TABS: { value: FilterTab; label: string }[] = [
 ]
 
 export default function KnowledgePage() {
-  const [activeTab, setActiveTab] = useState<FilterTab>('all')
+  const [activeTab, setActiveTab] = useState<FilterTab>('knowledge_center')
   const [syncing, setSyncing] = useState(false)
 
   const sourceModule = activeTab === 'all' ? undefined : activeTab as DocumentSourceModule
@@ -49,8 +49,8 @@ export default function KnowledgePage() {
       <div className="space-y-6 animate-fade-in">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-bold text-white mb-1">Bilgi Tabanı</h2>
-            <p className="text-sm text-gray-500">PDF ve dokümanlarınızı yükleyin, AI&apos;ın öğrenmesini sağlayın</p>
+            <h2 className="text-xl font-bold text-white mb-1">Bilgi Merkezi</h2>
+            <p className="text-sm text-gray-500">Konu notları, ders anlatımları ve içerik üretim kaynakları</p>
           </div>
           <button
             onClick={handleSyncSgs}

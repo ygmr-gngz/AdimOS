@@ -1,6 +1,6 @@
 """SGS çıkmış soru analizi ve video serisi üretim endpoint'leri."""
 import logging
-from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from app.modules.sgs.service import analyze_pdf_bytes, build_sgs_topic_video
 from app.db.repositories.sgs_repo import (
@@ -19,7 +19,12 @@ router = APIRouter()
 # ── PDF Analiz ────────────────────────────────────────────────
 
 @router.post("/analyze")
-async def analyze_pdf(file: UploadFile = File(...)):
+async def analyze_pdf(
+    file: UploadFile = File(...),
+    document_type: str = Form("Çıkmış Sorular"),
+    year: str = Form(""),
+    semester: str = Form(""),
+):
     """SGS çıkmış soru PDF'ini analiz et → soru listesi + video serisi planı döndür."""
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Sadece PDF dosyası yüklenebilir")
@@ -44,11 +49,16 @@ async def analyze_pdf(file: UploadFile = File(...)):
             subjects=result.get("subjects", []),
             questions=result.get("questions", []),
             video_plan=result.get("video_plan", []),
+            document_type=document_type or "Çıkmış Sorular",
+            year=year or "",
+            semester=semester or "",
         )
         if saved:
             analysis_id = saved.get("id")
             result["analysis_id"] = analysis_id
-            # Bilgi Merkezi'nde de görünmesi için documents tablosuna kayıt aç
+            result["document_type"] = saved.get("document_type")
+            result["year"] = saved.get("year")
+            result["semester"] = saved.get("semester")
             try:
                 create_document(
                     file_name=result.get("pdf_name", file.filename),

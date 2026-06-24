@@ -8,7 +8,7 @@ import {
   GraduationCap, Upload, FileText, Play, ChevronDown,
   ChevronUp, Clock, BookOpen, Video, Trash2, RefreshCw, AlertTriangle, Edit2, List, Plus
 } from 'lucide-react'
-import { sgsService, SGS_LESSONS, type SgsAnalysis, type SgsAnalysisMeta, type SgsQuestion, type SgsRange } from '@/services/sgs.service'
+import { sgsService, SGS_LESSONS, SGS_DOCUMENT_TYPES, type SgsAnalysis, type SgsAnalysisMeta, type SgsQuestion, type SgsRange } from '@/services/sgs.service'
 import toast from 'react-hot-toast'
 
 type Phase = 'idle' | 'uploading' | 'done'
@@ -494,6 +494,11 @@ export default function AcademyPage() {
   const [loadingList, setLoadingList] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [generatedTitles, setGeneratedTitles] = useState<string[]>([])
+  const [uploadMeta, setUploadMeta] = useState({
+    document_type: SGS_DOCUMENT_TYPES[0] as string,
+    year: '',
+    semester: '',
+  })
 
   useEffect(() => {
     sgsService.listAnalyses()
@@ -509,7 +514,11 @@ export default function AcademyPage() {
     setError(null)
     setAnalysis(null)
     try {
-      const result = await sgsService.analyzePdf(file)
+      const result = await sgsService.analyzePdf(file, {
+        document_type: uploadMeta.document_type,
+        year: uploadMeta.year,
+        semester: uploadMeta.semester,
+      })
       setAnalysis(result)
       setPhase('done')
       const list = await sgsService.listAnalyses()
@@ -520,7 +529,7 @@ export default function AcademyPage() {
       setPhase('idle')
     }
     e.target.value = ''
-  }, [])
+  }, [uploadMeta])
 
   const handleLoadSaved = async (id: string) => {
     try {
@@ -604,45 +613,89 @@ export default function AcademyPage() {
         )}
 
         {pageTab === 'analyses' && phase !== 'done' && (
-          <label
-            htmlFor="sgs-pdf-input"
-            className="block border-2 border-dashed border-surface-300 rounded-2xl p-10 text-center cursor-pointer hover:border-brand-500/50 hover:bg-brand-500/5 transition-all"
-          >
-            <input
-              id="sgs-pdf-input"
-
-              type="file"
-              accept=".pdf,application/pdf"
-              className="hidden"
-              onChange={handleFileChange}
-              disabled={phase === 'uploading'}
-            />
-            {phase === 'uploading' ? (
-              <div className="flex flex-col items-center gap-3">
-                <svg className="animate-spin h-10 w-10 text-brand-400" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                <p className="text-sm text-brand-300 font-medium">PDF analiz ediliyor...</p>
-                <p className="text-xs text-gray-500">Sorular çıkarılıyor, derslere ayrılıyor, video planı oluşturuluyor</p>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-3">
-                <div className="w-16 h-16 rounded-2xl bg-brand-600/10 flex items-center justify-center">
-                  <Upload size={28} className="text-brand-400" />
+          <div className="space-y-3">
+            {/* Metadata formu */}
+            {phase === 'idle' && (
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-400 mb-1 block">Belge Türü</label>
+                  <select
+                    className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    value={uploadMeta.document_type}
+                    onChange={e => setUploadMeta(m => ({ ...m, document_type: e.target.value }))}
+                  >
+                    {SGS_DOCUMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-gray-200">SGS çıkmış soru PDF&apos;i yükle</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    17 SGS dersine göre otomatik sınıflandırma, ders güven skoru, video planı
-                  </p>
+                  <label className="text-xs font-medium text-gray-400 mb-1 block">Yıl</label>
+                  <input
+                    type="text"
+                    placeholder="örn: 2025"
+                    className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 placeholder-gray-600"
+                    value={uploadMeta.year}
+                    onChange={e => setUploadMeta(m => ({ ...m, year: e.target.value }))}
+                  />
                 </div>
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-100 border border-surface-200 text-sm text-gray-300">
-                  <FileText size={14} /> PDF Seç
-                </span>
+                <div>
+                  <label className="text-xs font-medium text-gray-400 mb-1 block">Dönem</label>
+                  <select
+                    className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    value={uploadMeta.semester}
+                    onChange={e => setUploadMeta(m => ({ ...m, semester: e.target.value }))}
+                  >
+                    <option value="">Seçiniz</option>
+                    <option value="1. Dönem">1. Dönem</option>
+                    <option value="2. Dönem">2. Dönem</option>
+                  </select>
+                </div>
               </div>
             )}
-          </label>
+
+            {/* Upload alanı */}
+            <label
+              htmlFor="sgs-pdf-input"
+              className={`block border-2 border-dashed rounded-2xl p-10 text-center transition-all ${
+                phase === 'uploading'
+                  ? 'border-brand-500/30 cursor-not-allowed'
+                  : 'border-surface-300 cursor-pointer hover:border-brand-500/50 hover:bg-brand-500/5'
+              }`}
+            >
+              <input
+                id="sgs-pdf-input"
+                type="file"
+                accept=".pdf,application/pdf"
+                className="hidden"
+                onChange={handleFileChange}
+                disabled={phase === 'uploading'}
+              />
+              {phase === 'uploading' ? (
+                <div className="flex flex-col items-center gap-3">
+                  <svg className="animate-spin h-10 w-10 text-brand-400" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  <p className="text-sm text-brand-300 font-medium">PDF analiz ediliyor...</p>
+                  <p className="text-xs text-gray-500">Sorular çıkarılıyor, derslere ayrılıyor, video planı oluşturuluyor</p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-16 h-16 rounded-2xl bg-brand-600/10 flex items-center justify-center">
+                    <Upload size={28} className="text-brand-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-200">SGS soru bankası PDF&apos;i yükle</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      17 SGS dersine göre otomatik sınıflandırma · ders güven skoru · video planı
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-100 border border-surface-200 text-sm text-gray-300">
+                    <FileText size={14} /> PDF Seç
+                  </span>
+                </div>
+              )}
+            </label>
+          </div>
         )}
 
         {pageTab === 'analyses' && error && (
@@ -683,7 +736,10 @@ export default function AcademyPage() {
                     <div className="min-w-0">
                       <p className="text-sm text-gray-200 font-medium truncate">{a.pdf_name}</p>
                       <p className="text-xs text-gray-500">
-                        {a.total_questions} soru · {a.video_plan.length} video planı ·{' '}
+                        {a.document_type && <span className="text-brand-400/70">{a.document_type}</span>}
+                        {a.year && <> · <span>{a.year}</span></>}
+                        {a.semester && <> · <span>{a.semester}</span></>}
+                        {' · '}{a.total_questions} soru · {a.video_plan.length} video planı ·{' '}
                         {new Date(a.created_at).toLocaleDateString('tr-TR')}
                       </p>
                     </div>

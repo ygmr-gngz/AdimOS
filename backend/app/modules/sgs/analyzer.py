@@ -19,7 +19,7 @@ _MAX_CHARS = 90_000
 SGS_LESSONS = [
     "Türkçe",
     "Matematik",
-    "Tarih-Genel Kültür",
+    "Tarih - Genel Kültür",
     "İngilizce",
     "Finansal Muhasebe",
     "Muhasebe Standartları",
@@ -41,7 +41,7 @@ DERS SINIFLANDIRMA REHBERI (örnekler):
 
 Türkçe: paragraf, cümle, sözcük, yazım, noktalama, anlam, anlatım bozukluğu, dil bilgisi, fiil, isim, sıfat, dil yanlışı, metinde anlam
 Matematik: sayı, toplam, çarpım, bölme, oran, yüzde, olasılık, geometri, alan, çevre, denklem, küme, mantık, fonksiyon
-Tarih-Genel Kültür: tarih, coğrafya, Türkiye, Osmanlı, Cumhuriyet, siyaset, kültür, sanat, Atatürk, uygarlık
+Tarih - Genel Kültür: tarih, coğrafya, Türkiye, Osmanlı, Cumhuriyet, siyaset, kültür, sanat, Atatürk, uygarlık
 İngilizce: english, grammar, vocabulary, tense, sentence, meaning, reading, translation, word
 Finansal Muhasebe: bilanço, yevmiye, mizan, aktif, pasif, borç, alacak, hesap, dönem sonu, stok, kasa, banka, amortisman, gelir tablosu, hesap planı, tek düzen
 Muhasebe Standartları: TMS, TFRS, standart, muhasebe politikası, dipnot, konsolidasyon, ölçüm, gerçeğe uygun değer, finansal tablo

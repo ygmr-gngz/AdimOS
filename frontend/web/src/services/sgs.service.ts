@@ -3,7 +3,7 @@ import apiClient from '@/lib/api-client'
 export const SGS_LESSONS = [
   'Türkçe',
   'Matematik',
-  'Tarih-Genel Kültür',
+  'Tarih - Genel Kültür',
   'İngilizce',
   'Finansal Muhasebe',
   'Muhasebe Standartları',
@@ -53,9 +53,21 @@ export interface SgsVideoPlanItem {
   description: string
 }
 
+export const SGS_DOCUMENT_TYPES = [
+  'Çıkmış Sorular',
+  'Deneme Sınavı',
+  'Soru Bankası',
+  'Cevap Anahtarı',
+] as const
+
+export type SgsDocumentType = typeof SGS_DOCUMENT_TYPES[number]
+
 export interface SgsAnalysis {
   analysis_id?: string | null
   pdf_name: string
+  document_type?: string
+  year?: string
+  semester?: string
   total_questions: number
   subjects: SgsSubject[]
   questions: SgsQuestion[]
@@ -65,6 +77,9 @@ export interface SgsAnalysis {
 export interface SgsAnalysisMeta {
   id: string
   pdf_name: string
+  document_type?: string
+  year?: string
+  semester?: string
   total_questions: number
   subjects: SgsSubject[]
   video_plan: SgsVideoPlanItem[]
@@ -106,9 +121,15 @@ export const sgsService = {
   async deleteRange(rangeId: string): Promise<void> {
     await apiClient.delete(`/sgs/ranges/${rangeId}`)
   },
-  async analyzePdf(file: File): Promise<SgsAnalysis> {
+  async analyzePdf(
+    file: File,
+    meta?: { document_type?: string; year?: string; semester?: string }
+  ): Promise<SgsAnalysis> {
     const form = new FormData()
     form.append('file', file)
+    if (meta?.document_type) form.append('document_type', meta.document_type)
+    if (meta?.year) form.append('year', meta.year)
+    if (meta?.semester) form.append('semester', meta.semester)
     const { data } = await apiClient.post('/sgs/analyze', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 120_000,

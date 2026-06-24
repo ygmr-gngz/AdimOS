@@ -45,8 +45,16 @@ def find_lesson_for_question(document_name, question_no):
     return resp.data[0]["lesson_name"] if resp.data else None
 
 
-def create_analysis(pdf_name: str, total_questions: int,
-                    subjects: list, questions: list, video_plan: list) -> dict | None:
+def create_analysis(
+    pdf_name: str,
+    total_questions: int,
+    subjects: list,
+    questions: list,
+    video_plan: list,
+    document_type: str = "Çıkmış Sorular",
+    year: str = "",
+    semester: str = "",
+) -> dict | None:
     supabase = get_supabase_client()
     resp = supabase.table("sgs_analyses").insert({
         "pdf_name": pdf_name,
@@ -55,6 +63,9 @@ def create_analysis(pdf_name: str, total_questions: int,
         "questions": questions,
         "video_plan": video_plan,
         "status": "completed",
+        "document_type": document_type,
+        "year": year,
+        "semester": semester,
     }).execute()
     return resp.data[0] if resp.data else None
 
