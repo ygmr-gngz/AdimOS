@@ -49,8 +49,8 @@ def process_document(file_name: str, file_bytes: bytes, mime_type: str = "applic
         raise e
 
 
-def list_documents() -> list[dict]:
-    return get_documents()
+def list_documents(source_module: str | None = None) -> list[dict]:
+    return get_documents(source_module=source_module)
 
 
 def fetch_document(document_id: str) -> dict | None:

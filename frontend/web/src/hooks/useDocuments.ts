@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { documentService } from '@/services/document.service'
-import type { Document } from '@/types/document'
+import type { Document, DocumentSourceModule } from '@/types/document'
 import toast from 'react-hot-toast'
 
-export function useDocuments() {
+export function useDocuments(sourceModule?: DocumentSourceModule) {
   const [documents, setDocuments] = useState<Document[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
@@ -13,7 +13,7 @@ export function useDocuments() {
   const fetchDocuments = useCallback(async () => {
     setIsLoading(true)
     try {
-      const response = await documentService.list()
+      const response = await documentService.list(sourceModule)
       setDocuments(response)
     } catch {
       toast.error('Dokümanlar yüklenemedi')
@@ -47,7 +47,7 @@ export function useDocuments() {
     }
   }, [])
 
-  useEffect(() => { fetchDocuments() }, [fetchDocuments])
+  useEffect(() => { fetchDocuments() }, [fetchDocuments, sourceModule])
 
   const reindexDocument = useCallback(async (id: string) => {
     try {

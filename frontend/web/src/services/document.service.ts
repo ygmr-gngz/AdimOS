@@ -1,5 +1,12 @@
 import apiClient from '@/lib/api-client'
-import type { Document } from '@/types/document'
+import type { Document, DocumentSourceModule } from '@/types/document'
+
+export interface SyncSgsResult {
+  synced: number
+  already_exists: number
+  errors: number
+  total_analyses: number
+}
 
 export const documentService = {
   async upload(file: File): Promise<Document> {
@@ -9,9 +16,15 @@ export const documentService = {
     return data
   },
 
-  async list(): Promise<Document[]> {
-    const { data } = await apiClient.get('/documents')
+  async list(sourceModule?: DocumentSourceModule): Promise<Document[]> {
+    const params = sourceModule ? { source_module: sourceModule } : undefined
+    const { data } = await apiClient.get('/documents', { params })
     return Array.isArray(data) ? data : data.documents ?? []
+  },
+
+  async syncSgs(): Promise<SyncSgsResult> {
+    const { data } = await apiClient.post('/documents/sync-sgs')
+    return data
   },
 
   async getById(id: string): Promise<Document> {

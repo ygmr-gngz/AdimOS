@@ -10,6 +10,7 @@ from app.db.repositories.sgs_repo import (
 from app.db.repositories.generated_contents_repo import (
     create_content, update_content,
 )
+from app.db.repositories.documents_repo import create_document
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -45,7 +46,20 @@ async def analyze_pdf(file: UploadFile = File(...)):
             video_plan=result.get("video_plan", []),
         )
         if saved:
-            result["analysis_id"] = saved.get("id")
+            analysis_id = saved.get("id")
+            result["analysis_id"] = analysis_id
+            # Bilgi Merkezi'nde de görünmesi için documents tablosuna kayıt aç
+            try:
+                create_document(
+                    file_name=result.get("pdf_name", file.filename),
+                    storage_path=f"sgs/{result.get('pdf_name', file.filename)}",
+                    file_size=len(pdf_bytes),
+                    mime_type="application/pdf",
+                    source_module="sgs_academy",
+                    sgs_analysis_id=analysis_id,
+                )
+            except Exception as doc_err:
+                logger.warning(f"[sgs] documents tablosuna kayıt açılamadı: {doc_err}")
     except Exception as db_err:
         logger.warning(f"[sgs] analiz kaydedilemedi (tablo yok olabilir): {db_err}")
         result["analysis_id"] = None

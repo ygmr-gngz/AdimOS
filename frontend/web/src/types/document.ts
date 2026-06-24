@@ -1,5 +1,7 @@
 export type DocumentStatus = 'uploaded' | 'processing' | 'indexed' | 'failed'
 
+export type DocumentSourceModule = 'knowledge_center' | 'sgs_academy' | 'crm' | 'content_automation'
+
 export interface Document {
   id: string
   user_id: string
@@ -9,6 +11,8 @@ export interface Document {
   mime_type: string
   status: DocumentStatus
   chunk_count: number
+  source_module: DocumentSourceModule
+  sgs_analysis_id?: string | null
   created_at: string
   updated_at: string
 }
