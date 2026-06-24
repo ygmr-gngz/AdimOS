@@ -238,12 +238,13 @@ function RangesPanel() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
-    const start = parseInt(form.start_question_no)
-    const end = parseInt(form.end_question_no)
-    if (!form.document_name.trim()) { toast.error('Belge adı gerekli'); return }
-    if (isNaN(start) || isNaN(end) || start < 1 || end < start) {
-      toast.error('Geçerli bir soru aralığı girin'); return
-    }
+    const start = parseInt(form.start_question_no, 10)
+    const end = parseInt(form.end_question_no, 10)
+    if (!form.document_name.trim()) { toast.error('Belge adı boş olamaz'); return }
+    if (!form.lesson_name) { toast.error('Ders seçilmedi'); return }
+    if (isNaN(start) || start < 1) { toast.error('Başlangıç soru numarası geçersiz (min: 1)'); return }
+    if (isNaN(end) || end < 1) { toast.error('Bitiş soru numarası geçersiz (min: 1)'); return }
+    if (start > end) { toast.error(`Başlangıç (${start}) bitiş (${end}) değerinden büyük olamaz`); return }
     setSaving(true)
     try {
       const saved = await sgsService.saveRange({
@@ -251,13 +252,14 @@ function RangesPanel() {
         start_question_no: start,
         end_question_no: end,
         lesson_name: form.lesson_name,
-        notes: form.notes.trim() || undefined,
+        notes: form.notes.trim() || '',
       })
       setRanges(prev => [...prev, saved])
       setForm(f => ({ ...f, start_question_no: '', end_question_no: '', notes: '' }))
       toast.success('Aralık kaydedildi')
-    } catch {
-      toast.error('Kaydedilemedi')
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(msg ? `Hata: ${msg}` : 'Aralık kaydedilemedi — lütfen tekrar deneyin')
     } finally {
       setSaving(false)
     }
@@ -280,7 +282,7 @@ function RangesPanel() {
         <h3 className="text-sm font-semibold text-gray-200 mb-4 flex items-center gap-2">
           <Plus size={14} className="text-brand-400" /> Yeni Aralık Tanımla
         </h3>
-        <form onSubmit={handleSave} className="space-y-4">
+        <form onSubmit={handleSave} className="space-y-4" noValidate>
           <div>
             <label className="text-xs font-medium text-gray-400 mb-1 block">Belge Adı</label>
             <input

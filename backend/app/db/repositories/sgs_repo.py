@@ -4,14 +4,16 @@ from app.db.supabase import get_supabase_client
 
 def save_range(document_name, start_no, end_no, lesson_name, notes="", document_id=None):
     supabase = get_supabase_client()
-    resp = supabase.table("sgs_question_ranges").insert({
+    payload = {
         "document_name": document_name,
-        "document_id": document_id,
-        "start_question_no": start_no,
-        "end_question_no": end_no,
+        "start_question_no": int(start_no),
+        "end_question_no": int(end_no),
         "lesson_name": lesson_name,
-        "notes": notes,
-    }).execute()
+        "notes": notes or "",
+    }
+    if document_id:
+        payload["document_id"] = document_id
+    resp = supabase.table("sgs_question_ranges").insert(payload).execute()
     return resp.data[0] if resp.data else None
 
 
