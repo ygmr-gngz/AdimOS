@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { clsx } from 'clsx'
 import {
   LayoutDashboard, BookOpen, Bot, Video, Users,
-  GraduationCap, BarChart2, Globe, Settings, LogOut, X, Instagram,
+  GraduationCap, BarChart2, Globe, Settings, LogOut, X, Instagram, Palette,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -123,6 +123,18 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             Kullanıcılar
           </Link>
         )}
+        <Link
+          href="/settings/brand"
+          className={clsx(
+            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 mb-1',
+            pathname === '/settings/brand'
+              ? 'bg-brand-600/20 text-brand-400 border border-brand-600/30'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-surface-100'
+          )}
+        >
+          <Palette size={17} />
+          Marka Ayarları
+        </Link>
         <Link
           href="/settings"
           className={clsx(

@@ -35,6 +35,12 @@ class EditRequest(BaseModel):
     message: str
 
 
+class MotivationRequest(BaseModel):
+    topic: str
+    platform: str = "reels"   # reels | shorts | carousel | post
+    tone: str = "sıcak ve samimi"
+
+
 def _background_generate(content_id: str, fn, *args):
     from app.api.routes.notifications import push_notification
     try:
@@ -92,6 +98,96 @@ def generate_topic_explanation(req: ContentRequest, bg: BackgroundTasks):
     row = create_content(req.topic, "topic_explanation")
     bg.add_task(_background_generate, row["id"], create_topic_explanation_video, req.topic, req.category)
     return {"content_id": row["id"], "status": "generating"}
+
+
+# ── Motivasyon videosu
+def _bg_motivation(content_id: str, topic: str, platform: str, tone: str):
+    from app.api.routes.notifications import push_notification
+    from app.modules.content.motivation_generator import generate_motivation_storyboard
+    from app.modules.sgs.service import build_sgs_topic_video
+    from app.modules.content.scene_engine import configure_watermark
+    from app.db.repositories.brand_repo import get_brand_settings, get_logo_bytes
+
+    try:
+        # Marka filigranını yükle
+        brand = get_brand_settings()
+        if brand.get("watermark_enabled", True):
+            logo = get_logo_bytes()
+            configure_watermark(
+                logo,
+                opacity=brand.get("watermark_opacity", 0.07),
+                position=brand.get("watermark_position", "center"),
+                size=brand.get("watermark_size", 0.30),
+                enabled=True,
+            )
+
+        storyboard = generate_motivation_storyboard(topic, platform, tone)
+        scenes = storyboard.get("scenes", [])
+        if not scenes:
+            raise RuntimeError("Storyboard sahne içermiyor")
+
+        # Sahne verilerinden dummy soru ID'leri oluştur (storyboard'u recycle ediyoruz)
+        fake_plan = {
+            "title": storyboard.get("title", f"Motivasyon: {topic}"),
+            "topic": topic,
+            "subject": "Motivasyon",
+            "question_ids": [],
+            "description": storyboard.get("description", ""),
+            "_storyboard_override": storyboard,  # service'e direkt geçir
+        }
+
+        # Video üret (storyboard_override ile)
+        from app.modules.sgs.storyboard import generate_sgs_topic_storyboard
+        from app.modules.content.audio_generator import generate_audio_segment
+        from app.modules.content.scene_engine import render_scene
+        from app.modules.content.video_assembler import assemble_video
+        from moviepy.editor import AudioFileClip
+        from app.modules.voice.tts import synthesize
+
+        clips = []
+        audio_clips = []
+        preview_narration = ""
+
+        for i, scene in enumerate(scenes):
+            narration = str(scene.get("narration", "")).strip() or scene.get("title", "devam")
+            audio_path, audio_dur = generate_audio_segment(narration)
+            clip = render_scene(scene, i + 1, len(scenes))
+            clip = clip.set_duration(audio_dur)
+            aclip = AudioFileClip(audio_path)
+            audio_clips.append(aclip)
+            clip = clip.set_audio(aclip)
+            clips.append(clip)
+            if i == 1:
+                preview_narration = narration
+
+        video_path = assemble_video(clips)
+        for ac in audio_clips:
+            try: ac.close()
+            except Exception: pass
+
+        try:
+            audio_b64 = synthesize(preview_narration[:800], voice="nova")
+        except Exception:
+            audio_b64 = None
+
+        update_content(content_id, {
+            "status": "pending_approval",
+            "video_url": video_path,
+            "title": storyboard.get("title", topic),
+            "script": "\n\n".join(f"{s.get('title','')}\n{s.get('narration','')}" for s in scenes),
+            "audio_base64": audio_b64,
+        })
+        push_notification("content", f"Motivasyon videosu hazır: {storyboard.get('title', topic)}", "Onay bekliyor")
+    except Exception as e:
+        logger.error(f"[motivation] hata id={content_id}: {e}", exc_info=True)
+        update_content(content_id, {"status": "error", "error_detail": str(e)[:300]})
+
+
+@router.post("/motivation/generate")
+def generate_motivation(req: MotivationRequest, bg: BackgroundTasks):
+    row = create_content(f"Motivasyon: {req.topic[:50]}", "motivation_video")
+    bg.add_task(_bg_motivation, row["id"], req.topic, req.platform, req.tone)
+    return {"content_id": row["id"], "status": "generating", "topic": req.topic, "platform": req.platform}
 
 
 # ── List / Get

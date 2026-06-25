@@ -121,4 +121,17 @@ export const automationService = {
   async deleteContent(contentId: string): Promise<void> {
     await apiClient.delete(`/content/${contentId}`)
   },
+
+  async generateMotivation(params: {
+    topic: string
+    platform: 'reels' | 'shorts' | 'carousel' | 'post'
+    tone?: string
+  }): Promise<{ content_id: string; status: string; topic: string; platform: string }> {
+    const { data } = await apiClient.post('/content/motivation/generate', {
+      topic: params.topic,
+      platform: params.platform,
+      tone: params.tone ?? 'sıcak ve samimi',
+    })
+    return data
+  },
 }

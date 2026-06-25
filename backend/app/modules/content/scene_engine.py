@@ -12,6 +12,7 @@ Scene types:
   example, question, option_analysis, answer, exam_tip,
   summary, cta, shorts
 """
+import io as _io
 import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -37,6 +38,56 @@ WH    = (248, 248, 248)   # near-white
 LG    = (160, 155, 150)   # light gray
 MG    = ( 95,  90,  85)   # mid gray
 DG    = ( 52,  48,  44)   # dark gray
+
+# ── Logo watermark ───────────────────────────────────────────
+_WM_IMG: Image.Image | None = None
+_WM_OPACITY: float = 0.07
+_WM_POSITION: str = "center"
+_WM_ENABLED: bool = False
+
+
+def configure_watermark(
+    logo_bytes: bytes | None,
+    opacity: float = 0.07,
+    position: str = "center",
+    size: float = 0.30,
+    enabled: bool = True,
+) -> None:
+    """Video üretiminden önce çağrılır. Tüm sahnelere otomatik filigran ekler."""
+    global _WM_IMG, _WM_OPACITY, _WM_POSITION, _WM_ENABLED
+    _WM_OPACITY = max(0.0, min(float(opacity), 1.0))
+    _WM_POSITION = position
+    _WM_ENABLED = enabled and logo_bytes is not None and len(logo_bytes) > 0
+    if _WM_ENABLED:
+        raw = Image.open(_io.BytesIO(logo_bytes)).convert("RGBA")
+        target_w = max(1, int(W * float(size)))
+        ratio = target_w / max(raw.width, 1)
+        target_h = max(1, int(raw.height * ratio))
+        _WM_IMG = raw.resize((target_w, target_h), Image.LANCZOS)
+    else:
+        _WM_IMG = None
+
+
+def _apply_watermark(img: Image.Image) -> Image.Image:
+    if _WM_IMG is None:
+        return img
+    wm = _WM_IMG.copy()
+    r, g, b, a = wm.split()
+    a = a.point(lambda x: int(x * _WM_OPACITY))
+    wm = Image.merge("RGBA", (r, g, b, a))
+    ww, wh = wm.size
+    pos_map = {
+        "center":       ((W - ww) // 2, (H - wh) // 2),
+        "top-right":    (W - ww - PAD, PAD + 28),
+        "top-left":     (PAD, PAD + 28),
+        "bottom-right": (W - ww - PAD, H - wh - PAD),
+        "bottom-left":  (PAD, H - wh - PAD),
+    }
+    px, py = pos_map.get(_WM_POSITION, pos_map["center"])
+    result = img.copy()
+    result.paste(wm, (px, py), wm)
+    return result
+
 
 # ── Pre-computed gradient background ────────────────────────
 _GRAD_BG: Image.Image | None = None
@@ -175,7 +226,10 @@ def _frame_start(t: float = 0.0):
     return base, ov, d
 
 def _composite(base, ov) -> np.ndarray:
-    return np.array(Image.alpha_composite(base.convert("RGBA"), ov).convert("RGB"))
+    merged = Image.alpha_composite(base.convert("RGBA"), ov)
+    if _WM_ENABLED and _WM_IMG is not None:
+        merged = _apply_watermark(merged)
+    return np.array(merged.convert("RGB"))
 
 def _brand(d, t: float, delay: float = 0.0):
     f = _f(18, bold=True)
