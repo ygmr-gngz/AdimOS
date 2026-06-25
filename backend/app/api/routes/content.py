@@ -104,22 +104,10 @@ def generate_topic_explanation(req: ContentRequest, bg: BackgroundTasks):
 def _bg_motivation(content_id: str, topic: str, platform: str, tone: str):
     from app.api.routes.notifications import push_notification
     from app.modules.content.motivation_generator import generate_motivation_storyboard
-    from app.modules.sgs.service import build_sgs_topic_video
-    from app.modules.content.scene_engine import configure_watermark
-    from app.db.repositories.brand_repo import get_brand_settings, get_logo_bytes
+    from app.db.repositories.brand_repo import configure_video_watermark
 
     try:
-        # Marka filigranını yükle
-        brand = get_brand_settings()
-        if brand.get("watermark_enabled", True):
-            logo = get_logo_bytes()
-            configure_watermark(
-                logo,
-                opacity=brand.get("watermark_opacity", 0.07),
-                position=brand.get("watermark_position", "center"),
-                size=brand.get("watermark_size", 0.30),
-                enabled=True,
-            )
+        configure_video_watermark("motivation_video")
 
         storyboard = generate_motivation_storyboard(topic, platform, tone)
         scenes = storyboard.get("scenes", [])

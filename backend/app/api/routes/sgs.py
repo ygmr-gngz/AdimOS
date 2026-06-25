@@ -248,6 +248,8 @@ class TopicVideoRequest(BaseModel):
 
 def _bg_topic_video(content_id: str, video_plan_item: dict, questions: list):
     try:
+        from app.db.repositories.brand_repo import configure_video_watermark
+        configure_video_watermark("sgs_topic_video")
         logger.info(f"[sgs] konu videosu başladı id={content_id} topic={video_plan_item.get('topic')}")
         result = build_sgs_topic_video(video_plan_item, questions)
         updates = {"status": "pending_approval"}

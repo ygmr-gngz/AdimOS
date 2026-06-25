@@ -5,14 +5,30 @@ from app.db.supabase import get_supabase_client
 logger = logging.getLogger(__name__)
 _SETTINGS_ID = "default"
 
-_defaults = {
+_defaults: dict = {
     "logo_url": None,
     "watermark_enabled": True,
-    "watermark_opacity": 0.07,
-    "watermark_position": "center",
-    "watermark_size": 0.30,
-    "logo_corner_position": "top-right",
+    "updated_at": None,
 }
+
+# Video türüne göre otomatik filigran ayarları
+# SGS eğitim: silik merkez filigran (logo okunmayı engellemez)
+# Motivasyon / kısa içerik: köşede görünür küçük logo
+_VIDEO_TYPE_WATERMARK: dict[str, dict] = {
+    "sgs_topic_video":    {"position": "center",       "opacity": 0.07, "size": 0.28},
+    "sgs_question_video": {"position": "center",       "opacity": 0.07, "size": 0.28},
+    "question_solution":  {"position": "center",       "opacity": 0.07, "size": 0.28},
+    "topic_explanation":  {"position": "center",       "opacity": 0.06, "size": 0.25},
+    "motivation_video":   {"position": "top-right",    "opacity": 0.90, "size": 0.11},
+    "short":              {"position": "bottom-right", "opacity": 0.85, "size": 0.10},
+    "reel":               {"position": "bottom-right", "opacity": 0.85, "size": 0.10},
+    "video":              {"position": "center",       "opacity": 0.06, "size": 0.25},
+    "post":               {"position": "bottom-right", "opacity": 0.90, "size": 0.11},
+}
+
+# Bellekte logo önbelleği (process yaşam süresi boyunca)
+_logo_cache: bytes | None = None
+_logo_cache_url: str | None = None
 
 
 def get_brand_settings() -> dict:
@@ -32,18 +48,47 @@ def update_brand_settings(updates: dict) -> dict:
 
 
 def get_logo_bytes() -> bytes | None:
-    """Logo URL'sini Supabase storage'dan indir, baytları döndür."""
+    """Logo baytlarını döndürür. Process içinde önbellekler."""
+    global _logo_cache, _logo_cache_url
     settings = get_brand_settings()
-    logo_url = settings.get("logo_url")
+    logo_url: str | None = settings.get("logo_url")
     if not logo_url:
         return None
+    if _logo_cache and _logo_cache_url == logo_url:
+        return _logo_cache
     try:
-        from app.db.supabase import get_supabase_client as _sc
-        sb = _sc()
-        path = logo_url.split("/brand-assets/")[-1] if "/brand-assets/" in logo_url else None
+        sb = get_supabase_client()
+        # URL'den path çıkar: .../object/public/brand-assets/logos/... → logos/...
+        marker = "/brand-assets/"
+        path = logo_url.split(marker)[-1] if marker in logo_url else None
         if not path:
             return None
-        return sb.storage.from_("brand-assets").download(path)
+        data = sb.storage.from_("brand-assets").download(path)
+        _logo_cache = data
+        _logo_cache_url = logo_url
+        return data
     except Exception as e:
         logger.warning(f"[brand] logo indirilemedi: {e}")
         return None
+
+
+def configure_video_watermark(video_type: str = "video") -> None:
+    """Video üretiminden önce çağrılır. Tür bazlı otomatik filigran konfigürasyonu."""
+    from app.modules.content.scene_engine import configure_watermark
+    settings = get_brand_settings()
+    if not settings.get("watermark_enabled", True):
+        configure_watermark(None, enabled=False)
+        return
+    logo = get_logo_bytes()
+    if not logo:
+        configure_watermark(None, enabled=False)
+        return
+    cfg = _VIDEO_TYPE_WATERMARK.get(video_type, _VIDEO_TYPE_WATERMARK["video"])
+    configure_watermark(
+        logo,
+        opacity=cfg["opacity"],
+        position=cfg["position"],
+        size=cfg["size"],
+        enabled=True,
+    )
+    logger.info(f"[brand] filigran ayarlandı: tür={video_type} konum={cfg['position']} opaklık={cfg['opacity']}")
