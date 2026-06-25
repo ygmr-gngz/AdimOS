@@ -5,8 +5,9 @@ from pydantic import BaseModel
 from app.modules.sgs.service import analyze_pdf_bytes, build_sgs_topic_video
 from app.db.repositories.sgs_repo import (
     create_analysis, list_analyses, get_analysis, delete_analysis, update_question_subject,
-    save_range, get_ranges, delete_range,
+    save_range, get_ranges, delete_range, get_all_questions,
 )
+from app.config.sgs_groups import SGS_LESSON_GROUPS, get_lessons_for_group
 from app.db.repositories.generated_contents_repo import (
     create_content, update_content,
 )
@@ -196,3 +197,106 @@ def list_ranges(document_name: str | None = None):
 def remove_range(range_id: str):
     delete_range(range_id)
     return {"message": "Aralık silindi"}
+
+
+# ── 15-16: Alan / Ders Bazlı Konu Frekans Analizi ────────────
+
+from fastapi import Query as Q
+from collections import Counter
+
+@router.get("/topic-analysis")
+def topic_analysis(
+    lesson: str | None = Q(None, description="Tek ders adı"),
+    group: str | None = Q(None, description="Alan adı: Hukuk, Muhasebe, Finans, Genel Dersler"),
+    year: str | None = Q(None, description="Yıl filtresi (örn: 2024)"),
+):
+    """15-16: Ders veya alan bazlı soru frekans analizi."""
+    group_lessons: list[str] | None = None
+    if group:
+        group_lessons = get_lessons_for_group(group)
+        if not group_lessons:
+            raise HTTPException(status_code=400, detail=f"Geçersiz alan: {group}. Geçerli alanlar: {list(SGS_LESSON_GROUPS.keys())}")
+
+    questions = get_all_questions(lesson_name=lesson, group_lessons=group_lessons, year=year)
+
+    topic_counts = Counter(q.get("topic", "Belirsiz") for q in questions)
+    lesson_counts = Counter(q.get("subject", "Belirsiz") for q in questions)
+    year_counts = Counter(q.get("source_year") or q.get("year", "?") for q in questions)
+
+    top_topics = [{"topic": t, "count": c} for t, c in topic_counts.most_common(20)]
+
+    return {
+        "lesson": lesson,
+        "group": group,
+        "year_filter": year,
+        "total": len(questions),
+        "top_topics": top_topics,
+        "lesson_breakdown": [{"lesson": l, "count": c} for l, c in lesson_counts.most_common()],
+        "year_breakdown": [{"year": y, "count": c} for y, c in sorted(year_counts.items())],
+        "sample_questions": questions[:30],
+    }
+
+
+# ── 17: Konu Analizinden Video Üretimi ───────────────────────
+
+class TopicVideoRequest(BaseModel):
+    lesson: str
+    topic: str
+    year: str | None = None
+    max_questions: int = 5
+
+
+def _bg_topic_video(content_id: str, video_plan_item: dict, questions: list):
+    try:
+        logger.info(f"[sgs] konu videosu başladı id={content_id} topic={video_plan_item.get('topic')}")
+        result = build_sgs_topic_video(video_plan_item, questions)
+        updates = {"status": "pending_approval"}
+        for field in ("video_path", "title", "script", "audio_base64"):
+            if result.get(field):
+                updates["video_url" if field == "video_path" else field] = result[field]
+        update_content(content_id, updates)
+        logger.info(f"[sgs] konu videosu tamamlandı id={content_id}")
+    except Exception as e:
+        logger.error(f"[sgs] konu video hatası id={content_id}: {e}", exc_info=True)
+        update_content(content_id, {"status": "error", "error_detail": str(e)[:300]})
+
+
+@router.post("/generate-topic-video")
+def generate_topic_video(req: TopicVideoRequest, bg: BackgroundTasks):
+    """17: Ders + konu için tüm analizlerden soru topla ve video üret."""
+    questions = get_all_questions(lesson_name=req.lesson, year=req.year)
+    topic_questions = [q for q in questions if q.get("topic", "") == req.topic]
+
+    if not topic_questions:
+        topic_questions = [q for q in questions if req.topic.lower() in q.get("topic", "").lower()]
+
+    if not topic_questions:
+        raise HTTPException(
+            status_code=404,
+            detail=f"'{req.topic}' konusunda soru bulunamadı. Ders: {req.lesson}"
+        )
+
+    selected = topic_questions[:req.max_questions]
+    q_ids = [q["id"] for q in selected]
+
+    title = f"SGS {req.lesson}: {req.topic} Çıkmış Sorular"
+    video_plan_item = {
+        "title": title,
+        "topic": req.topic,
+        "subject": req.lesson,
+        "question_ids": q_ids,
+        "estimated_duration": f"{len(selected) * 2}-{len(selected) * 3} dakika",
+        "description": f"{req.lesson} dersinden {req.topic} konusunun çıkmış sorularının çözümü.",
+    }
+
+    row = create_content(title, "sgs_topic_video")
+    bg.add_task(_bg_topic_video, row["id"], video_plan_item, selected)
+
+    return {
+        "content_id": row["id"],
+        "status": "generating",
+        "title": title,
+        "question_count": len(selected),
+        "topic": req.topic,
+        "lesson": req.lesson,
+    }

@@ -6,7 +6,7 @@ import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
 import {
   GraduationCap, Upload, FileText, Play, ChevronDown,
-  ChevronUp, Clock, BookOpen, Video, Trash2, RefreshCw, AlertTriangle, Edit2, List, Plus
+  ChevronUp, Clock, BookOpen, Video, Trash2, RefreshCw, AlertTriangle, Edit2, List, Plus, BarChart2
 } from 'lucide-react'
 import { sgsService, SGS_LESSONS, SGS_LESSON_GROUPS, SGS_DOCUMENT_TYPES, type SgsAnalysis, type SgsAnalysisMeta, type SgsQuestion, type SgsRange } from '@/services/sgs.service'
 import toast from 'react-hot-toast'
@@ -385,6 +385,236 @@ function RangesPanel() {
   )
 }
 
+// ── Alan Analizi Paneli (15-16-17) ───────────────────────────
+
+function GroupAnalysisPanel() {
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
+  const [selectedLesson, setSelectedLesson] = useState<string | null>(null)
+  const [yearFilter, setYearFilter] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [analysis, setAnalysis] = useState<{
+    total: number
+    top_topics: { topic: string; count: number }[]
+    lesson_breakdown: { lesson: string; count: number }[]
+    year_breakdown: { year: string; count: number }[]
+  } | null>(null)
+  const [generatingTopic, setGeneratingTopic] = useState<string | null>(null)
+
+  const handleAnalyze = async () => {
+    if (!selectedGroup && !selectedLesson) return
+    setLoading(true)
+    setAnalysis(null)
+    try {
+      const result = await sgsService.getTopicAnalysis({
+        group: selectedLesson ? undefined : selectedGroup ?? undefined,
+        lesson: selectedLesson ?? undefined,
+        year: yearFilter || undefined,
+      })
+      setAnalysis(result)
+    } catch {
+      toast.error('Analiz alınamadı')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleGenerateVideo = async (lesson: string, topic: string) => {
+    setGeneratingTopic(topic)
+    try {
+      const res = await sgsService.generateTopicVideo({
+        lesson,
+        topic,
+        year: yearFilter || undefined,
+        max_questions: 5,
+      })
+      toast.success(`"${res.title}" video üretimi başladı (${res.question_count} soru)`)
+    } catch {
+      toast.error('Video üretimi başlatılamadı')
+    } finally {
+      setGeneratingTopic(null)
+    }
+  }
+
+  const activeLesson = selectedLesson ?? (selectedGroup ? `${selectedGroup} (tümü)` : null)
+
+  return (
+    <div className="space-y-6">
+      {/* Alan seçici */}
+      <div className="bg-surface-50 rounded-xl border border-surface-200 p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-gray-200">Alan Seç</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {Object.entries(SGS_LESSON_GROUPS).map(([group, lessons]) => {
+            const colorClass = GROUP_COLORS[group] ?? 'text-gray-400 bg-surface-100 border-surface-200'
+            const isActive = selectedGroup === group
+            return (
+              <button
+                key={group}
+                onClick={() => { setSelectedGroup(isActive ? null : group); setSelectedLesson(null); setAnalysis(null) }}
+                className={`p-3 rounded-xl border text-left transition-all ${isActive ? colorClass : 'bg-surface-100 border-surface-200 text-gray-500 hover:border-surface-300'}`}
+              >
+                <p className={`text-sm font-semibold ${isActive ? colorClass.split(' ')[0] : 'text-gray-300'}`}>{group}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{lessons.length} ders</p>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Ders seçici (grup seçiliyken) */}
+        {selectedGroup && (
+          <div className="flex flex-wrap gap-1.5 pt-1 border-t border-surface-200">
+            <button
+              onClick={() => { setSelectedLesson(null); setAnalysis(null) }}
+              className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${!selectedLesson ? 'bg-brand-600/20 border-brand-500/50 text-brand-300' : 'bg-surface-100 border-surface-200 text-gray-500 hover:text-gray-300'}`}
+            >
+              Tüm {selectedGroup}
+            </button>
+            {([...SGS_LESSON_GROUPS[selectedGroup as keyof typeof SGS_LESSON_GROUPS]] as string[]).map(lesson => (
+              <button
+                key={lesson}
+                onClick={() => { setSelectedLesson(selectedLesson === lesson ? null : lesson); setAnalysis(null) }}
+                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${selectedLesson === lesson ? 'bg-brand-600/20 border-brand-500/50 text-brand-300' : 'bg-surface-100 border-surface-200 text-gray-500 hover:text-gray-300'}`}
+              >
+                {lesson}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Yıl filtresi + Analiz Et */}
+        <div className="flex gap-3 items-end pt-1">
+          <div className="flex-1 max-w-[160px]">
+            <label className="text-xs font-medium text-gray-400 mb-1 block">Yıl (isteğe bağlı)</label>
+            <input
+              type="text"
+              placeholder="örn: 2024"
+              value={yearFilter}
+              onChange={e => setYearFilter(e.target.value)}
+              className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 placeholder-gray-600"
+            />
+          </div>
+          <Button
+            onClick={handleAnalyze}
+            disabled={!selectedGroup && !selectedLesson}
+            isLoading={loading}
+          >
+            Analiz Et
+          </Button>
+        </div>
+      </div>
+
+      {/* Sonuçlar */}
+      {analysis && (
+        <div className="space-y-4">
+          {/* Özet */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
+              <p className="text-2xl font-bold text-white">{analysis.total}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Toplam Soru</p>
+            </div>
+            <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
+              <p className="text-2xl font-bold text-brand-400">{analysis.top_topics.length}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Farklı Konu</p>
+            </div>
+            <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
+              <p className="text-2xl font-bold text-white">{analysis.year_breakdown.length}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Yıl</p>
+            </div>
+          </div>
+
+          {/* Ders kırılımı (grup görünümünde) */}
+          {!selectedLesson && analysis.lesson_breakdown.length > 1 && (
+            <div className="bg-surface-50 rounded-xl border border-surface-200 p-4">
+              <p className="text-xs font-semibold text-gray-400 mb-3">Ders Dağılımı</p>
+              <div className="space-y-2">
+                {analysis.lesson_breakdown.map(({ lesson, count }) => (
+                  <div key={lesson} className="flex items-center gap-3">
+                    <span className="text-xs text-gray-400 w-48 shrink-0 truncate">{lesson}</span>
+                    <div className="flex-1 bg-surface-200 rounded-full h-1.5">
+                      <div
+                        className="bg-brand-500 h-1.5 rounded-full"
+                        style={{ width: `${Math.round((count / analysis.total) * 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-mono text-gray-500 w-8 text-right">{count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* En sık çıkan konular + Video üret */}
+          <div className="bg-surface-50 rounded-xl border border-surface-200 overflow-hidden">
+            <div className="px-5 py-3 border-b border-surface-200 flex items-center justify-between">
+              <p className="text-sm font-semibold text-gray-300">En Sık Çıkan Konular</p>
+              <span className="text-xs text-gray-500">{activeLesson}</span>
+            </div>
+            <div className="divide-y divide-surface-200">
+              {analysis.top_topics.slice(0, 15).map(({ topic, count }, i) => {
+                const lesson = selectedLesson ?? (analysis.lesson_breakdown[0]?.lesson ?? '')
+                const isGenerating = generatingTopic === topic
+                return (
+                  <div key={topic} className="flex items-center gap-3 px-5 py-3">
+                    <span className="text-xs font-mono text-gray-600 w-5 shrink-0">#{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-200 truncate">{topic}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <div className="w-24 bg-surface-200 rounded-full h-1">
+                          <div
+                            className="bg-brand-500/60 h-1 rounded-full"
+                            style={{ width: `${Math.round((count / (analysis.top_topics[0]?.count || 1)) * 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-gray-500">{count} soru</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => lesson && handleGenerateVideo(lesson, topic)}
+                      disabled={!lesson || !!generatingTopic}
+                      className="shrink-0 flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-brand-600/10 border border-brand-500/20 text-brand-400 hover:bg-brand-600/20 disabled:opacity-40 transition-colors"
+                    >
+                      {isGenerating ? (
+                        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                      ) : (
+                        <Video size={11} />
+                      )}
+                      Video Üret
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Yıl dağılımı */}
+          {analysis.year_breakdown.length > 1 && (
+            <div className="bg-surface-50 rounded-xl border border-surface-200 p-4">
+              <p className="text-xs font-semibold text-gray-400 mb-3">Yıl Dağılımı</p>
+              <div className="flex flex-wrap gap-2">
+                {analysis.year_breakdown.map(({ year, count }) => (
+                  <span key={year} className="text-xs px-2.5 py-1 rounded-lg bg-surface-200 text-gray-400">
+                    {year || '?'} <span className="text-gray-600">({count})</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!analysis && !loading && (
+        <div className="flex flex-col items-center justify-center py-16 text-center text-gray-600">
+          <BookOpen size={36} className="mb-3 text-gray-700" />
+          <p className="text-sm">Bir alan veya ders seçip &quot;Analiz Et&quot; butonuna bas</p>
+          <p className="text-xs mt-1">Tüm yüklenen PDF&apos;lerdeki sorular toplanır ve frekans analizi yapılır</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 const GROUP_COLORS: Record<string, string> = {
   'Genel Dersler': 'text-blue-400 bg-blue-500/10 border-blue-500/20',
   'Hukuk': 'text-purple-400 bg-purple-500/10 border-purple-500/20',
@@ -613,7 +843,7 @@ function AnalysisResult({
 }
 
 export default function AcademyPage() {
-  const [pageTab, setPageTab] = useState<'analyses' | 'ranges'>('analyses')
+  const [pageTab, setPageTab] = useState<'analyses' | 'ranges' | 'group-analysis'>('analyses')
   const [phase, setPhase] = useState<Phase>('idle')
   const [analysis, setAnalysis] = useState<SgsAnalysis | null>(null)
   const [savedAnalyses, setSavedAnalyses] = useState<SgsAnalysisMeta[]>([])
@@ -727,10 +957,19 @@ export default function AcademyPage() {
             >
               <List size={13} /> Soru Aralıkları
             </button>
+            <button
+              onClick={() => setPageTab('group-analysis')}
+              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                pageTab === 'group-analysis' ? 'bg-surface-50 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              <BarChart2 size={13} /> Alan Analizi
+            </button>
           </div>
         </div>
 
         {pageTab === 'ranges' && <RangesPanel />}
+        {pageTab === 'group-analysis' && <GroupAnalysisPanel />}
 
         {pageTab === 'analyses' && generatedTitles.length > 0 && (
           <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-xl">

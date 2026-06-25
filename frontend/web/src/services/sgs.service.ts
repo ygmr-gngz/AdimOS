@@ -119,6 +119,34 @@ export const sgsService = {
   async deleteRange(rangeId: string): Promise<void> {
     await apiClient.delete(`/sgs/ranges/${rangeId}`)
   },
+
+  async getTopicAnalysis(params: {
+    lesson?: string
+    group?: string
+    year?: string
+  }): Promise<{
+    lesson: string | null
+    group: string | null
+    year_filter: string | null
+    total: number
+    top_topics: { topic: string; count: number }[]
+    lesson_breakdown: { lesson: string; count: number }[]
+    year_breakdown: { year: string; count: number }[]
+    sample_questions: SgsQuestion[]
+  }> {
+    const { data } = await apiClient.get('/sgs/topic-analysis', { params })
+    return data
+  },
+
+  async generateTopicVideo(params: {
+    lesson: string
+    topic: string
+    year?: string
+    max_questions?: number
+  }): Promise<{ content_id: string; status: string; title: string; question_count: number }> {
+    const { data } = await apiClient.post('/sgs/generate-topic-video', params)
+    return data
+  },
   async analyzePdf(
     file: File,
     meta?: { document_type?: string; year?: string; semester?: string }

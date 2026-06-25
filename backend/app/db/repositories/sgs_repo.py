@@ -45,6 +45,38 @@ def find_lesson_for_question(document_name, question_no):
     return resp.data[0]["lesson_name"] if resp.data else None
 
 
+def get_all_questions(
+    lesson_name: str | None = None,
+    group_lessons: list[str] | None = None,
+    year: str | None = None,
+) -> list[dict]:
+    """Tüm analizlerden ders/grup/yıl bazlı soru listesi döner."""
+    supabase = get_supabase_client()
+    query = supabase.table("sgs_analyses").select("id, pdf_name, year, semester, questions")
+    if year:
+        query = query.eq("year", year)
+    resp = query.execute()
+
+    result = []
+    for analysis in (resp.data or []):
+        for q in (analysis.get("questions") or []):
+            subj = q.get("subject", "")
+            if subj == "Belirsiz":
+                continue
+            if lesson_name and subj != lesson_name:
+                continue
+            if group_lessons and subj not in group_lessons:
+                continue
+            result.append({
+                **q,
+                "source_pdf": analysis.get("pdf_name", ""),
+                "source_year": analysis.get("year", ""),
+                "source_semester": analysis.get("semester", ""),
+                "analysis_id": analysis.get("id", ""),
+            })
+    return result
+
+
 def create_analysis(
     pdf_name: str,
     total_questions: int,
