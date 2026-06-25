@@ -64,32 +64,45 @@ async def meta_webhook(request: Request):
     if body.get("object") not in ("instagram", "page"):
         return {"status": "ignored", "reason": "object not instagram/page"}
 
+    logger.info(f"[meta] webhook alındı: {body.get('object')} — {len(body.get('entry', []))} entry")
+
     for entry in body.get("entry", []):
+        # ── Format 1: Eski Messenger / Instagram (messaging[]) ──
         for messaging in entry.get("messaging", []):
-            sender_id = messaging.get("sender", {}).get("id")
-            recipient_id = messaging.get("recipient", {}).get("id")
-            timestamp = messaging.get("timestamp", 0)
-            message = messaging.get("message", {})
-            message_id = message.get("mid", "")
-            message_text = message.get("text", "")
+            _handle_messaging_event(messaging)
 
-            if not sender_id or not message_text or not message_id:
-                continue
-
-            # Arka planda işle (webhook hızlı 200 dönmeli)
-            try:
-                process_incoming_dm(
-                    sender_id=sender_id,
-                    recipient_id=recipient_id,
-                    message_text=message_text,
-                    message_id=message_id,
-                    timestamp=timestamp,
-                    raw_payload=messaging,
-                )
-            except Exception as e:
-                logger.error(f"[meta] DM işlenemedi: {e}", exc_info=True)
+        # ── Format 2: Yeni Instagram Platform API (changes[]) ──
+        for change in entry.get("changes", []):
+            if change.get("field") == "messages":
+                _handle_messaging_event(change.get("value", {}))
 
     return {"status": "ok"}
+
+
+def _handle_messaging_event(messaging: dict) -> None:
+    sender_id = messaging.get("sender", {}).get("id")
+    recipient_id = messaging.get("recipient", {}).get("id")
+    timestamp = messaging.get("timestamp", 0)
+    message = messaging.get("message", {})
+    message_id = message.get("mid", "")
+    message_text = message.get("text", "")
+
+    if not sender_id or not message_text or not message_id:
+        logger.debug(f"[meta] mesaj atlandı — sender={sender_id} text={bool(message_text)} mid={bool(message_id)}")
+        return
+
+    logger.info(f"[meta] DM alındı — sender={sender_id} text={message_text[:60]!r}")
+    try:
+        process_incoming_dm(
+            sender_id=sender_id,
+            recipient_id=recipient_id,
+            message_text=message_text,
+            message_id=message_id,
+            timestamp=timestamp,
+            raw_payload=messaging,
+        )
+    except Exception as e:
+        logger.error(f"[meta] DM işlenemedi: {e}", exc_info=True)
 
 
 # ── POST /meta/test-dm-flow — Test (Protected) ───────────────
