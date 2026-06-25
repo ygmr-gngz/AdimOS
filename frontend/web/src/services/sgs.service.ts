@@ -1,26 +1,24 @@
 import apiClient from '@/lib/api-client'
 
-export const SGS_LESSONS = [
-  'Türkçe',
-  'Matematik',
-  'Tarih - Genel Kültür',
-  'İngilizce',
-  'Finansal Muhasebe',
-  'Muhasebe Standartları',
-  'Muhasebe Bilgi Sistemi',
-  'Maliyet Muhasebesi',
-  'Mali Tablolar Analizi',
-  'Muhasebe Denetimi',
-  'İktisat',
-  'Maliye',
-  'Meslek Hukuku',
-  'İş ve Sosyal Güvenlik Hukuku',
-  'Vergi Hukuku',
-  'Ticaret Hukuku',
-  'Borçlar Hukuku',
-] as const
+export const SGS_LESSON_GROUPS = {
+  'Genel Dersler': ['Türkçe', 'Matematik', 'Tarih - Genel Kültür', 'İngilizce'],
+  'Hukuk': ['Ticaret Hukuku', 'Borçlar Hukuku', 'Vergi Hukuku', 'Meslek Hukuku', 'İş ve Sosyal Güvenlik Hukuku'],
+  'Muhasebe': ['Finansal Muhasebe', 'Muhasebe Standartları', 'Muhasebe Bilgi Sistemi', 'Maliyet Muhasebesi', 'Mali Tablolar Analizi', 'Muhasebe Denetimi'],
+  'Finans': ['Maliye', 'İktisat'],
+} as const
 
-export type SgsLesson = typeof SGS_LESSONS[number] | 'Belirsiz'
+export type SgsLessonGroup = keyof typeof SGS_LESSON_GROUPS
+
+export const SGS_LESSONS = Object.values(SGS_LESSON_GROUPS).flat() as string[]
+
+export function getLessonGroup(lesson: string): SgsLessonGroup | null {
+  for (const [group, lessons] of Object.entries(SGS_LESSON_GROUPS)) {
+    if ((lessons as readonly string[]).includes(lesson)) return group as SgsLessonGroup
+  }
+  return null
+}
+
+export type SgsLesson = string
 
 export interface SgsQuestion {
   id: number

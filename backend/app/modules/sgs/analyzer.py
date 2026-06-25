@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 _client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 _MAX_CHARS = 90_000
+_COMPACT_THRESHOLD = 55_000  # Bu sınırın üstünde kompakt format kullan (explanation yok)
 
 # SGS sınavındaki 17 ders — tek kaynak
 SGS_LESSONS = [
@@ -62,22 +63,58 @@ Borçlar Hukuku: borç, alacak, sözleşme, teklif, kabul, haksız fiil, sebepsi
 def analyze_sgs_pdf(pdf_text: str, pdf_name: str = "") -> dict:
     """
     PDF metni → yapılandırılmış soru analizi + video serisi planı.
-    Her soru için lesson_confidence (0.0-1.0) ve lesson_reason döner.
-    Güven skoru 0.6'nın altındaysa subject = "Belirsiz" olarak işaretlenir.
+    Büyük PDF'lerde (>_COMPACT_THRESHOLD) explanation/lesson_reason çıkarılır,
+    token bütçesi korunur ve 16k output limiti içinde kalınır.
     """
     text_chunk = pdf_text[:_MAX_CHARS]
+    is_large = len(text_chunk) > _COMPACT_THRESHOLD
+
     if len(pdf_text) > _MAX_CHARS:
-        logger.warning(f"[sgs-analyzer] PDF çok uzun ({len(pdf_text)} karakter), ilk {_MAX_CHARS} karakter analiz ediliyor")
+        logger.warning(f"[sgs-analyzer] PDF çok uzun ({len(pdf_text)} karakter), ilk {_MAX_CHARS} karakter kullanılıyor")
+    if is_large:
+        logger.info(f"[sgs-analyzer] Büyük PDF ({len(text_chunk)} karakter) — kompakt format kullanılıyor")
 
     lessons_str = "\n".join(f"- {l}" for l in SGS_LESSONS)
 
+    if is_large:
+        question_example = """\
+    {{
+      "id": 1,
+      "subject": "Finansal Muhasebe",
+      "topic": "Bilanço",
+      "year": "2023",
+      "difficulty": "orta",
+      "question_text": "Tam soru metni...",
+      "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+      "correct_option": "C",
+      "lesson_confidence": 0.95
+    }}"""
+        extra_instructions = "NOT: Bu büyük bir PDF. explanation ve lesson_reason alanlarını YAZMA, token tasarrufu için."
+    else:
+        question_example = """\
+    {{
+      "id": 1,
+      "subject": "Finansal Muhasebe",
+      "topic": "Bilanço",
+      "year": "2023",
+      "difficulty": "orta",
+      "question_text": "Tam soru metni...",
+      "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+      "correct_option": "C",
+      "explanation": "C şıkkı doğrudur çünkü...",
+      "lesson_confidence": 0.95,
+      "lesson_reason": "Soruda bilanço, aktif, pasif kavramları geçiyor."
+    }}"""
+        extra_instructions = ""
+
     prompt = f"""Sen SGS (Staj ve Yeterlik Sınavı) sınav soruları uzmanısın.
 Aşağıdaki PDF metni SGS çıkmış sorularını içeriyor.
+{extra_instructions}
 
 GÖREV:
 1. Tüm soruları çıkar (soru metni + şıklar + doğru cevap)
 2. Her soruyu SGS ders listesinden birine ata (SADECE aşağıdaki liste)
-3. Her soru için lesson_confidence (0.0-1.0) ve lesson_reason ver
+3. Her soru için lesson_confidence (0.0-1.0) ver
 4. Aynı konudan soruları grupla, video serisi planı oluştur
 
 SGS DERS LİSTESİ (SADECE bu 17 dersten birini kullan):
@@ -88,9 +125,8 @@ SGS DERS LİSTESİ (SADECE bu 17 dersten birini kullan):
 SINIFLANDIRMA KURALLARI:
 - Sorudaki anahtar kelimeler ve kavramlar hangi derse işaret ediyor?
 - Emin değilsen lesson_confidence < 0.6 olarak işaretle
-- Güven skoru 0.6'nın altındaysa subject alanına "Belirsiz" yaz, gerçek tahminini lesson_reason'a ekle
+- Güven skoru 0.6'nın altındaysa subject alanına "Belirsiz" yaz
 - HİÇBİR ZAMAN kendi uydurduğun ders adı yazma, sadece yukarıdaki 17 dersten birini kullan
-- Muhasebe sorusu Türkçe dersi olarak işaretlenemez; Türkçe sorusu muhasebe dersi olamaz
 
 ZORLUK SEVİYELERİ:
 - "kolay": kavram bilgisi yeterli
@@ -117,19 +153,7 @@ Türkçe olarak yanıtla. SADECE JSON döndür:
     }}
   ],
   "questions": [
-    {{
-      "id": 1,
-      "subject": "Finansal Muhasebe",
-      "topic": "Bilanço",
-      "year": "2023",
-      "difficulty": "orta",
-      "question_text": "Tam soru metni...",
-      "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
-      "correct_option": "C",
-      "explanation": "C şıkkı doğrudur çünkü...",
-      "lesson_confidence": 0.95,
-      "lesson_reason": "Soruda bilanço, aktif, pasif kavramları geçiyor."
-    }}
+{question_example}
   ],
   "video_plan": [
     {{
@@ -144,16 +168,36 @@ Türkçe olarak yanıtla. SADECE JSON döndür:
   ]
 }}"""
 
-    logger.info(f"[sgs-analyzer] analiz başladı: {pdf_name}, {len(text_chunk)} karakter")
+    max_tokens = 16000 if is_large else 12000
+    logger.info(f"[sgs-analyzer] analiz başladı: {pdf_name}, {len(text_chunk)} karakter, max_tokens={max_tokens}")
+
     try:
         r = _client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             temperature=0.1,
-            max_tokens=8000,
+            max_tokens=max_tokens,
         )
-        result = json.loads(r.choices[0].message.content)
+
+        finish_reason = r.choices[0].finish_reason
+        raw_content = r.choices[0].message.content or ""
+
+        if finish_reason == "length":
+            logger.error(
+                f"[sgs-analyzer] HATA: max_tokens ({max_tokens}) aşıldı — "
+                f"JSON kesildi. PDF: {pdf_name}, karakter: {len(text_chunk)}"
+            )
+            raise ValueError(
+                f"PDF çok büyük veya çok fazla soru içeriyor ({len(text_chunk)} karakter). "
+                f"Lütfen PDF'i bölerek tekrar yükleyin."
+            )
+
+        try:
+            result = json.loads(raw_content)
+        except json.JSONDecodeError as je:
+            logger.error(f"[sgs-analyzer] JSON parse hatası: {je} — içerik: {raw_content[:200]}")
+            raise ValueError("LLM yanıtı geçerli JSON değil. Lütfen tekrar deneyin.") from je
 
         # Güven skoru düşük sorularda subject'i "Belirsiz" yap
         for q in result.get("questions", []):
@@ -164,9 +208,12 @@ Türkçe olarak yanıtla. SADECE JSON döndür:
 
         logger.info(
             f"[sgs-analyzer] tamamlandı: {result.get('total_questions', '?')} soru, "
-            f"{len(result.get('video_plan', []))} video planı"
+            f"{len(result.get('video_plan', []))} video planı, finish_reason={finish_reason}"
         )
         return result
+
+    except ValueError:
+        raise
     except Exception as e:
-        logger.error(f"[sgs-analyzer] hata: {e}", exc_info=True)
+        logger.error(f"[sgs-analyzer] beklenmedik hata: {e}", exc_info=True)
         raise RuntimeError(f"SGS analizi başarısız: {e}") from e

@@ -8,7 +8,7 @@ import {
   GraduationCap, Upload, FileText, Play, ChevronDown,
   ChevronUp, Clock, BookOpen, Video, Trash2, RefreshCw, AlertTriangle, Edit2, List, Plus
 } from 'lucide-react'
-import { sgsService, SGS_LESSONS, SGS_DOCUMENT_TYPES, type SgsAnalysis, type SgsAnalysisMeta, type SgsQuestion, type SgsRange } from '@/services/sgs.service'
+import { sgsService, SGS_LESSONS, SGS_LESSON_GROUPS, SGS_DOCUMENT_TYPES, getLessonGroup, type SgsAnalysis, type SgsAnalysisMeta, type SgsQuestion, type SgsRange } from '@/services/sgs.service'
 import toast from 'react-hot-toast'
 
 type Phase = 'idle' | 'uploading' | 'done'
@@ -152,7 +152,11 @@ function QuestionRow({
                 disabled={saving}
               >
                 <option value="Belirsiz">Belirsiz</option>
-                {SGS_LESSONS.map(l => <option key={l} value={l}>{l}</option>)}
+                {Object.entries(SGS_LESSON_GROUPS).map(([group, lessons]) => (
+                  <optgroup key={group} label={group}>
+                    {lessons.map(l => <option key={l} value={l}>{l}</option>)}
+                  </optgroup>
+                ))}
               </select>
             ) : (
               <button
@@ -321,7 +325,11 @@ function RangesPanel() {
               value={form.lesson_name}
               onChange={e => setForm(f => ({ ...f, lesson_name: e.target.value }))}
             >
-              {SGS_LESSONS.map(l => <option key={l} value={l}>{l}</option>)}
+              {Object.entries(SGS_LESSON_GROUPS).map(([group, lessons]) => (
+                <optgroup key={group} label={group}>
+                  {lessons.map(l => <option key={l} value={l}>{l}</option>)}
+                </optgroup>
+              ))}
             </select>
           </div>
           <div>
@@ -377,6 +385,62 @@ function RangesPanel() {
   )
 }
 
+const GROUP_COLORS: Record<string, string> = {
+  'Genel Dersler': 'text-blue-400 bg-blue-500/10 border-blue-500/20',
+  'Hukuk': 'text-purple-400 bg-purple-500/10 border-purple-500/20',
+  'Muhasebe': 'text-green-400 bg-green-500/10 border-green-500/20',
+  'Finans': 'text-orange-400 bg-orange-500/10 border-orange-500/20',
+}
+
+function CategorySummary({ questions }: { questions: SgsAnalysis['questions'] }) {
+  const [openGroup, setOpenGroup] = useState<string | null>(null)
+
+  const groupStats = Object.entries(SGS_LESSON_GROUPS).map(([group, lessons]) => {
+    const groupQuestions = questions.filter(q => (lessons as readonly string[]).includes(q.subject))
+    const lessonBreakdown = lessons.map(lesson => ({
+      lesson,
+      count: questions.filter(q => q.subject === lesson).length,
+    })).filter(l => l.count > 0)
+    return { group, count: groupQuestions.length, lessons: lessonBreakdown }
+  }).filter(g => g.count > 0)
+
+  if (groupStats.length === 0) return null
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Alan Dağılımı</p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {groupStats.map(({ group, count, lessons }) => {
+          const colorClass = GROUP_COLORS[group] ?? 'text-gray-400 bg-surface-100 border-surface-200'
+          const isOpen = openGroup === group
+          return (
+            <div key={group} className={`rounded-xl border overflow-hidden ${colorClass.split(' ').slice(1).join(' ')}`}>
+              <button
+                onClick={() => setOpenGroup(isOpen ? null : group)}
+                className="w-full p-3 text-left"
+              >
+                <p className={`text-lg font-bold ${colorClass.split(' ')[0]}`}>{count}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{group}</p>
+                <p className="text-[10px] text-gray-600 mt-0.5">{lessons.length} ders</p>
+              </button>
+              {isOpen && (
+                <div className="border-t border-white/5 px-3 pb-3 space-y-1">
+                  {lessons.map(({ lesson, count: lCount }) => (
+                    <div key={lesson} className="flex items-center justify-between">
+                      <span className="text-xs text-gray-400 truncate">{lesson}</span>
+                      <span className="text-xs font-mono text-gray-500 ml-2 shrink-0">({lCount})</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function AnalysisResult({
   analysis, onGenerate, onLessonChange,
 }: {
@@ -386,17 +450,22 @@ function AnalysisResult({
 }) {
   const [tab, setTab] = useState<'plan' | 'questions'>('plan')
   const [subjFilter, setSubjFilter] = useState<string>('Tümü')
+  const [groupFilter, setGroupFilter] = useState<string | null>(null)
 
   const subjects = Array.from(new Set(analysis.questions.map(q => q.subject)))
   const uncertainCount = analysis.questions.filter(q =>
     q.subject === 'Belirsiz' || (q.lesson_confidence !== undefined && q.lesson_confidence < 0.6)
   ).length
 
-  const filteredQ = subjFilter === 'Tümü'
-    ? analysis.questions
-    : subjFilter === 'Belirsiz'
-    ? analysis.questions.filter(q => q.subject === 'Belirsiz' || (q.lesson_confidence !== undefined && q.lesson_confidence < 0.6))
-    : analysis.questions.filter(q => q.subject === subjFilter)
+  const filteredQ = analysis.questions.filter(q => {
+    if (subjFilter === 'Belirsiz') return q.subject === 'Belirsiz' || (q.lesson_confidence !== undefined && q.lesson_confidence < 0.6)
+    if (subjFilter !== 'Tümü') return q.subject === subjFilter
+    if (groupFilter) {
+      const groupLessons = SGS_LESSON_GROUPS[groupFilter as keyof typeof SGS_LESSON_GROUPS]
+      return groupLessons ? (groupLessons as readonly string[]).includes(q.subject) : true
+    }
+    return true
+  })
 
   return (
     <div className="space-y-5">
@@ -418,6 +487,8 @@ function AnalysisResult({
           <p className="text-xs text-gray-500 mt-0.5">Belirsiz Ders</p>
         </div>
       </div>
+
+      <CategorySummary questions={analysis.questions} />
 
       {uncertainCount > 0 && (
         <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl flex items-start gap-2">
@@ -452,33 +523,88 @@ function AnalysisResult({
 
       {tab === 'questions' && (
         <div className="space-y-4">
+          {/* Grup filtresi */}
           <div className="flex flex-wrap gap-2">
-            {['Tümü', ...(uncertainCount > 0 ? ['Belirsiz'] : []), ...subjects.filter(s => s !== 'Belirsiz')].map(s => (
+            <button
+              onClick={() => { setGroupFilter(null); setSubjFilter('Tümü') }}
+              className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                !groupFilter && subjFilter === 'Tümü'
+                  ? 'bg-brand-600/20 border-brand-500/50 text-brand-300'
+                  : 'bg-surface-100 border-surface-200 text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              Tümü ({analysis.total_questions})
+            </button>
+            {uncertainCount > 0 && (
               <button
-                key={s}
-                onClick={() => setSubjFilter(s)}
+                onClick={() => { setGroupFilter(null); setSubjFilter('Belirsiz') }}
                 className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-                  subjFilter === s
-                    ? s === 'Belirsiz'
-                      ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300'
-                      : 'bg-brand-600/20 border-brand-500/50 text-brand-300'
+                  subjFilter === 'Belirsiz'
+                    ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300'
                     : 'bg-surface-100 border-surface-200 text-gray-500 hover:text-gray-300'
                 }`}
               >
-                {s}{s === 'Belirsiz' && ` (${uncertainCount})`}
+                Belirsiz ({uncertainCount})
               </button>
-            ))}
+            )}
+            {Object.entries(SGS_LESSON_GROUPS).map(([group, lessons]) => {
+              const count = analysis.questions.filter(q => (lessons as readonly string[]).includes(q.subject)).length
+              if (count === 0) return null
+              const colorClass = GROUP_COLORS[group] ?? 'text-gray-400 bg-surface-100 border-surface-200'
+              const isActive = groupFilter === group && subjFilter === 'Tümü'
+              return (
+                <button
+                  key={group}
+                  onClick={() => { setGroupFilter(group); setSubjFilter('Tümü') }}
+                  className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                    isActive
+                      ? colorClass
+                      : 'bg-surface-100 border-surface-200 text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  {group} ({count})
+                </button>
+              )
+            })}
           </div>
 
+          {/* Ders filtresi (grup seçiliyken) */}
+          {groupFilter && (
+            <div className="flex flex-wrap gap-1.5 pl-2 border-l-2 border-surface-300">
+              {(SGS_LESSON_GROUPS[groupFilter as keyof typeof SGS_LESSON_GROUPS] as readonly string[])
+                .filter(lesson => subjects.includes(lesson))
+                .map(lesson => {
+                  const count = analysis.questions.filter(q => q.subject === lesson).length
+                  return (
+                    <button
+                      key={lesson}
+                      onClick={() => setSubjFilter(subjFilter === lesson ? 'Tümü' : lesson)}
+                      className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                        subjFilter === lesson
+                          ? 'bg-brand-600/20 border-brand-500/50 text-brand-300'
+                          : 'bg-surface-50 border-surface-200 text-gray-500 hover:text-gray-300'
+                      }`}
+                    >
+                      {lesson} ({count})
+                    </button>
+                  )
+                })}
+            </div>
+          )}
+
           <div className="space-y-2">
-            {filteredQ.map(q => (
-              <QuestionRow
-                key={q.id}
-                question={q}
-                analysisId={analysis.analysis_id}
-                onLessonChange={onLessonChange}
-              />
-            ))}
+            {filteredQ.length === 0 ? (
+              <p className="text-sm text-gray-600 text-center py-6">Bu filtrede soru yok</p>
+            ) : (
+              filteredQ.map(q => (
+                <QuestionRow
+                  key={q.id}
+                  question={q}
+                  analysisId={analysis.analysis_id}
+                  onLessonChange={onLessonChange}
+                />
+              ))
+            )}
           </div>
         </div>
       )}
@@ -524,7 +650,9 @@ export default function AcademyPage() {
       const list = await sgsService.listAnalyses()
       setSavedAnalyses(list)
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Bilinmeyen hata'
+      const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string }
+      const detail = axiosErr?.response?.data?.detail
+      const msg = detail ?? axiosErr?.message ?? 'Analiz başarısız'
       setError(msg)
       setPhase('idle')
     }
@@ -699,8 +827,28 @@ export default function AcademyPage() {
         )}
 
         {pageTab === 'analyses' && error && (
-          <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
-            <p className="text-sm text-red-400">{error}</p>
+          <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl space-y-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={16} className="text-red-400 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-red-300">Analiz Hatası</p>
+                <p className="text-xs text-red-400/80 mt-0.5 break-words">{error}</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <label
+                htmlFor="sgs-pdf-input"
+                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/30 text-red-300 cursor-pointer hover:bg-red-500/30 transition-colors"
+              >
+                <RefreshCw size={12} /> Yeniden Dene
+              </label>
+              <button
+                onClick={() => setError(null)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-surface-100 border border-surface-200 text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                Kapat
+              </button>
+            </div>
           </div>
         )}
 
