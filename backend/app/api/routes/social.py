@@ -65,11 +65,47 @@ def instagram_status():
 
 @router.get("/youtube/status")
 def youtube_status():
-    """YouTube OAuth durumunu döndür."""
-    has_token = bool(settings.YOUTUBE_REFRESH_TOKEN and len(settings.YOUTUBE_REFRESH_TOKEN) > 10)
+    """YouTube bağlantı durumu — env var veya Supabase token."""
+    from app.db.supabase import get_supabase_client
+    has_env = bool(settings.YOUTUBE_REFRESH_TOKEN and len(settings.YOUTUBE_REFRESH_TOKEN) > 10)
+    has_db = False
+    try:
+        sb = get_supabase_client()
+        row = sb.table("platform_tokens").select("refresh_token").eq("platform", "youtube").execute()
+        has_db = bool(row.data and row.data[0].get("refresh_token"))
+    except Exception:
+        pass
+    connected = has_env or has_db
     return {
-        "configured": has_token,
-        "client_id_preview": _mask(settings.YOUTUBE_CLIENT_ID),
-        "refresh_token_configured": has_token,
-        "error": None if has_token else "YOUTUBE_REFRESH_TOKEN eksik. Google Cloud Console'dan alın.",
+        "connected": connected,
+        "source": "env" if has_env else ("supabase" if has_db else None),
+        "client_id_configured": bool(settings.YOUTUBE_CLIENT_ID),
+        "error": None if connected else "YouTube henüz bağlanmamış.",
     }
+
+
+@router.get("/youtube/auth-url")
+def youtube_auth_url():
+    """Google OAuth URL'si oluştur — kullanıcı bu linki tarayıcıda açar."""
+    if not settings.YOUTUBE_CLIENT_ID or not settings.YOUTUBE_CLIENT_SECRET:
+        from fastapi import HTTPException
+        raise HTTPException(400, "YOUTUBE_CLIENT_ID ve YOUTUBE_CLIENT_SECRET Railway'e eklenmeli.")
+    from google_auth_oauthlib.flow import Flow
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": settings.YOUTUBE_CLIENT_ID,
+                "client_secret": settings.YOUTUBE_CLIENT_SECRET,
+                "redirect_uris": [settings.YOUTUBE_REDIRECT_URI],
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+            }
+        },
+        scopes=[
+            "https://www.googleapis.com/auth/youtube.upload",
+            "https://www.googleapis.com/auth/youtube",
+        ],
+        redirect_uri=settings.YOUTUBE_REDIRECT_URI,
+    )
+    auth_url, _ = flow.authorization_url(access_type="offline", prompt="consent")
+    return {"auth_url": auth_url, "redirect_uri": settings.YOUTUBE_REDIRECT_URI}

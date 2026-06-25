@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from app.api.routes import health, documents, chat, voice, agents, dashboard, crm, academy, automation, content, debug, webhooks, sgs, notifications, social, brand
+from app.api.routes import health, documents, chat, voice, agents, dashboard, crm, academy, automation, content, debug, webhooks, sgs, notifications, social, brand, oauth
 from app.api.routes import users
 from app.api.routes.meta_webhook import router as meta_router, protected_router as meta_protected_router
 from app.core.auth import get_current_user
@@ -10,6 +10,7 @@ router = APIRouter()
 router.include_router(health.router,        prefix="/health",   tags=["health"])
 router.include_router(webhooks.router,      prefix="/webhooks", tags=["webhooks"])
 router.include_router(meta_router,          prefix="/meta",     tags=["meta"])
+router.include_router(oauth.router,         prefix="/oauth",    tags=["oauth"])
 
 # Protected — auth zorunlu
 _protected = APIRouter(dependencies=[Depends(get_current_user)])

@@ -80,9 +80,9 @@ interface InstagramStatus {
 }
 
 interface YoutubeStatus {
-  configured: boolean
-  client_id_preview: string
-  refresh_token_configured: boolean
+  connected: boolean
+  source: 'env' | 'supabase' | null
+  client_id_configured: boolean
   error: string | null
 }
 
@@ -101,6 +101,7 @@ function SocialConnectionCard() {
   const [igStatus, setIgStatus] = useState<InstagramStatus | null>(null)
   const [ytStatus, setYtStatus] = useState<YoutubeStatus | null>(null)
   const [loading, setLoading] = useState(false)
+  const [ytConnecting, setYtConnecting] = useState(false)
 
   const testConnections = async () => {
     setLoading(true)
@@ -115,6 +116,21 @@ function SocialConnectionCard() {
       toast.error('Bağlantı durumu alınamadı')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleYouTubeConnect = async () => {
+    setYtConnecting(true)
+    try {
+      const { data } = await apiClient.get('/social/youtube/auth-url')
+      window.open(data.auth_url, '_blank', 'width=600,height=700')
+      toast.success('Google giriş penceresi açıldı. Giriş yaptıktan sonra durumu yenileyin.')
+      setTimeout(testConnections, 8000)
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } } }
+      toast.error(e?.response?.data?.detail ?? 'Auth URL alınamadı')
+    } finally {
+      setYtConnecting(false)
     }
   }
 
@@ -190,29 +206,45 @@ function SocialConnectionCard() {
               <Youtube size={16} className="text-red-400" />
               <span className="text-sm font-semibold text-gray-200">YouTube</span>
             </div>
-            {ytStatus && (
-              <StatusBadge ok={ytStatus.configured} label={ytStatus.configured ? 'Bağlı' : 'Bağlantı Yok'} />
-            )}
+            <div className="flex items-center gap-2">
+              {ytStatus && (
+                <StatusBadge ok={ytStatus.connected} label={ytStatus.connected ? 'Bağlı' : 'Bağlantı Yok'} />
+              )}
+              {ytStatus && !ytStatus.connected && (
+                <Button size="sm" onClick={handleYouTubeConnect} isLoading={ytConnecting}>
+                  <Youtube size={12} /> Bağlan
+                </Button>
+              )}
+            </div>
           </div>
 
           {ytStatus ? (
             <div className="space-y-2">
-              <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                <span className="text-gray-600">Client ID:</span>
-                <code className="text-gray-300 bg-surface-200 px-1.5 py-0.5 rounded">{ytStatus.client_id_preview}</code>
-                <StatusBadge ok={ytStatus.refresh_token_configured} label={ytStatus.refresh_token_configured ? 'Token var' : 'Token yok'} />
-              </div>
-              {ytStatus.error && (
-                <div className="p-2.5 bg-red-500/10 border border-red-500/20 rounded-lg">
-                  <p className="text-xs text-red-400">{ytStatus.error}</p>
+              {ytStatus.connected ? (
+                <div className="p-2.5 bg-green-500/10 border border-green-500/20 rounded-lg">
+                  <p className="text-xs text-green-300">
+                    YouTube bağlı
+                    {ytStatus.source === 'supabase' && ' · OAuth ile bağlandı'}
+                    {ytStatus.source === 'env' && ' · Railway env var'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {ytStatus.error && (
+                    <p className="text-xs text-red-400">{ytStatus.error}</p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    <strong className="text-gray-300">Önkoşul:</strong> Railway&apos;e{' '}
+                    <code className="text-gray-400">YOUTUBE_CLIENT_ID</code> ve{' '}
+                    <code className="text-gray-400">YOUTUBE_CLIENT_SECRET</code> eklenmiş olmalı.
+                    Sonra <strong className="text-brand-400">Bağlan</strong> butonuna bas.
+                  </p>
                 </div>
               )}
             </div>
           ) : (
             <p className="text-xs text-gray-600">
-              Railway &rarr; Variables&apos;da <code className="text-gray-400">YOUTUBE_CLIENT_ID</code>,{' '}
-              <code className="text-gray-400">YOUTUBE_CLIENT_SECRET</code> ve{' '}
-              <code className="text-gray-400">YOUTUBE_REFRESH_TOKEN</code> tanımlanmalı.
+              Durumu görmek için <strong className="text-brand-400">Durumu Test Et</strong> butonuna bas.
             </p>
           )}
         </div>
