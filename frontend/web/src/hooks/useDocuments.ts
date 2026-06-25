@@ -20,7 +20,7 @@ export function useDocuments(sourceModule?: DocumentSourceModule) {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [sourceModule])
 
   const uploadDocument = useCallback(async (file: File) => {
     setIsUploading(true)
@@ -47,7 +47,7 @@ export function useDocuments(sourceModule?: DocumentSourceModule) {
     }
   }, [])
 
-  useEffect(() => { fetchDocuments() }, [fetchDocuments, sourceModule])
+  useEffect(() => { fetchDocuments() }, [fetchDocuments])
 
   const reindexDocument = useCallback(async (id: string) => {
     try {
