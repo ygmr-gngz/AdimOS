@@ -6,7 +6,7 @@ from app.modules.sgs.service import analyze_pdf_bytes, build_sgs_topic_video
 from app.db.repositories.sgs_repo import (
     create_analysis, list_analyses, get_analysis, delete_analysis, update_question_subject,
     save_range, get_ranges, delete_range, get_all_questions,
-    get_questions_by_ranges, get_areas_summary,
+    get_questions_by_ranges, get_areas_summary, bulk_link_ranges_to_analysis,
 )
 from app.config.sgs_groups import SGS_LESSON_GROUPS, get_lessons_for_group
 from app.db.repositories.generated_contents_repo import (
@@ -198,6 +198,19 @@ def list_ranges(document_name: str | None = None):
 def remove_range(range_id: str):
     delete_range(range_id)
     return {"message": "Aralık silindi"}
+
+
+class BulkLinkRequest(BaseModel):
+    analysis_id: str
+
+
+@router.post("/ranges/bulk-link")
+def bulk_link_ranges(body: BulkLinkRequest):
+    """document_id boş olan tüm aralıkları seçilen analize bağla."""
+    result = bulk_link_ranges_to_analysis(body.analysis_id)
+    if result.get("error"):
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
 
 
 # ── 15-16: Alan / Ders Bazlı Konu Frekans Analizi ────────────

@@ -83,7 +83,9 @@ def _names_match(range_name: str, pdf_name: str) -> bool:
 
 def _find_analysis(rng: dict, analyses_by_id: dict, analyses_list: list) -> dict | None:
     """Bir aralık için en iyi analiz eşleşmesini bul.
-    Önce document_id (kesin), sonra isim benzerliği.
+    1. document_id ile kesin eşleşme
+    2. İsim fuzzy benzerliği
+    3. Tek analiz varsa otomatik kullan (tek PDF yüklenmiş senaryo)
     """
     doc_id = rng.get("document_id")
     if doc_id and doc_id in analyses_by_id:
@@ -92,6 +94,9 @@ def _find_analysis(rng: dict, analyses_by_id: dict, analyses_list: list) -> dict
     for a in analyses_list:
         if _names_match(range_name, a.get("pdf_name", "")):
             return a
+    # Tek analiz varsa ve document_id bağlı değilse → onu kullan
+    if len(analyses_list) == 1 and not doc_id:
+        return analyses_list[0]
     return None
 
 
@@ -173,12 +178,30 @@ def get_areas_summary(year: str | None = None) -> list[dict]:
             lesson_ranges = [r for r in all_ranges if r["lesson_name"] == lesson]
             expected = sum(r["end_question_no"] - r["start_question_no"] + 1 for r in lesson_ranges)
             found = 0
+            has_pdf_match = False
             for r in lesson_ranges:
                 a = _find_analysis(r, analyses_by_id, all_analyses)
                 if a:
+                    has_pdf_match = True
                     s, e = r["start_question_no"], r["end_question_no"]
                     found += sum(1 for q in (a.get("questions") or []) if s <= q.get("id", 0) <= e)
-            lessons_data.append({"name": lesson, "expected": expected, "found": found, "range_count": len(lesson_ranges)})
+
+            if len(lesson_ranges) == 0:
+                lesson_status = "no_range"
+            elif found > 0:
+                lesson_status = "ready"
+            elif has_pdf_match:
+                lesson_status = "no_questions"
+            else:
+                lesson_status = "no_pdf"
+
+            lessons_data.append({
+                "name": lesson,
+                "expected": expected,
+                "found": found,
+                "range_count": len(lesson_ranges),
+                "status": lesson_status,
+            })
             area_expected += expected
             area_found += found
 
@@ -193,6 +216,22 @@ def get_areas_summary(year: str | None = None) -> list[dict]:
             "lessons": lessons_data,
         })
     return areas
+
+
+def bulk_link_ranges_to_analysis(analysis_id: str) -> dict:
+    """document_id boş olan tüm aralıkları verilen analize bağla."""
+    supabase = get_supabase_client()
+    check = supabase.table("sgs_analyses").select("id, pdf_name").eq("id", analysis_id).execute()
+    if not check.data:
+        return {"linked": 0, "error": "Analiz bulunamadı"}
+    pdf_name = check.data[0]["pdf_name"]
+    resp = (
+        supabase.table("sgs_question_ranges")
+        .update({"document_id": analysis_id, "document_name": pdf_name})
+        .is_("document_id", "null")
+        .execute()
+    )
+    return {"linked": len(resp.data or []), "pdf_name": pdf_name}
 
 
 def get_all_questions(

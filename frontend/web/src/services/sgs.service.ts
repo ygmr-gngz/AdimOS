@@ -85,11 +85,14 @@ export interface SgsAnalysisMeta {
   created_at: string
 }
 
+export type SgsLessonStatus = 'no_range' | 'no_pdf' | 'no_questions' | 'ready'
+
 export interface SgsAreaLesson {
   name: string
   expected: number
   found: number
   range_count: number
+  status: SgsLessonStatus
 }
 
 export interface SgsArea {
@@ -236,6 +239,11 @@ export const sgsService = {
     const { data } = await apiClient.get(`/sgs/lessons/${encodeURIComponent(lesson)}/topic-analysis`, {
       params: year ? { year } : undefined,
     })
+    return data
+  },
+
+  async bulkLinkRanges(analysisId: string): Promise<{ linked: number; pdf_name: string }> {
+    const { data } = await apiClient.post('/sgs/ranges/bulk-link', { analysis_id: analysisId })
     return data
   },
 }

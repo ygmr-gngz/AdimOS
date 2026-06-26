@@ -236,6 +236,11 @@ function AreaAnalysisPanel() {
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [generatingTopic, setGeneratingTopic] = useState<string | null>(null)
 
+  // Aralık bağlama state
+  const [showLinkModal, setShowLinkModal] = useState(false)
+  const [linkingAnalysisId, setLinkingAnalysisId] = useState('')
+  const [linking, setLinking] = useState(false)
+
   // Aralık yönetimi state
   const [ranges, setRanges] = useState<SgsRange[]>([])
   const [rangesLoading, setRangesLoading] = useState(true)
@@ -318,6 +323,24 @@ function AreaAnalysisPanel() {
     }
   }
 
+  const handleBulkLink = async () => {
+    if (!linkingAnalysisId) { toast.error('Lütfen bir PDF seçin'); return }
+    setLinking(true)
+    try {
+      const res = await sgsService.bulkLinkRanges(linkingAnalysisId)
+      toast.success(`${res.linked} aralık "${res.pdf_name}" analizine bağlandı`)
+      setShowLinkModal(false)
+      setLinkingAnalysisId('')
+      loadAreas(yearFilter || undefined)
+      const newRanges = await sgsService.listRanges()
+      setRanges(newRanges)
+    } catch {
+      toast.error('Bağlama başarısız')
+    } finally {
+      setLinking(false)
+    }
+  }
+
   const handleSaveRange = async (e: React.FormEvent) => {
     e.preventDefault()
     const start = parseInt(rangeForm.start_question_no, 10)
@@ -363,8 +386,8 @@ function AreaAnalysisPanel() {
 
   return (
     <div className="space-y-6">
-      {/* Yıl Filtresi */}
-      <div className="flex items-end gap-3">
+      {/* Yıl Filtresi + Bağlama */}
+      <div className="flex items-end gap-3 flex-wrap">
         <div className="max-w-[180px]">
           <label className="text-xs font-medium text-gray-400 mb-1 block">Yıl Filtresi</label>
           <input
@@ -378,7 +401,46 @@ function AreaAnalysisPanel() {
         <Button size="sm" variant="secondary" onClick={() => loadAreas(yearFilter || undefined)} isLoading={areasLoading}>
           <RefreshCw size={13} /> Yenile
         </Button>
+        <Button size="sm" variant="secondary" onClick={() => setShowLinkModal(m => !m)}>
+          <List size={13} /> Aralıkları PDF&apos;e Bağla
+        </Button>
       </div>
+
+      {/* Toplu Bağlama Paneli */}
+      {showLinkModal && (
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 space-y-3">
+          <p className="text-sm font-semibold text-yellow-300 flex items-center gap-2">
+            <AlertTriangle size={14} /> PDF Bağlantısı Eksik Aralıklar
+          </p>
+          <p className="text-xs text-yellow-400/80">
+            document_id bağlı olmayan tüm aralıkları aşağıdaki PDF analizine bağla.
+            Bu işlem sadece bağsız aralıkları günceller.
+          </p>
+          {pdfOptions.length === 0 ? (
+            <p className="text-xs text-gray-500">Yüklü PDF analizi bulunamadı.</p>
+          ) : (
+            <div className="flex gap-3 items-end flex-wrap">
+              <div className="flex-1 min-w-[200px]">
+                <select
+                  className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  value={linkingAnalysisId}
+                  onChange={e => setLinkingAnalysisId(e.target.value)}
+                >
+                  <option value="">— PDF seçin —</option>
+                  {pdfOptions.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.pdf_name}{a.year ? ` (${a.year})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Button onClick={handleBulkLink} isLoading={linking} disabled={!linkingAnalysisId}>
+                Bağla
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Alan Kartları */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -445,7 +507,6 @@ function AreaAnalysisPanel() {
           <div className="divide-y divide-surface-200">
             {currentArea.lessons.map(lesson => {
               const isActive = selectedLesson === lesson.name
-              const hasData = lesson.found > 0
               const discrepancy = lesson.expected - lesson.found
               return (
                 <div
@@ -469,19 +530,20 @@ function AreaAnalysisPanel() {
                         {lesson.expected > 0 ? (
                           <>
                             <span className="text-xs text-gray-500">{lesson.expected} beklenen</span>
-                            {hasData && (
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                                discrepancy === 0
-                                  ? 'bg-green-500/10 text-green-400'
-                                  : discrepancy > 0
-                                    ? 'bg-yellow-500/10 text-yellow-400'
-                                    : 'bg-surface-200 text-gray-500'
-                              }`}>
-                                {lesson.found} bulundu{discrepancy > 0 ? ` · ${discrepancy} eksik` : ''}
+                            {lesson.status === 'ready' && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-400">
+                                {lesson.found} soru hazır{discrepancy > 0 ? ` · ${discrepancy} eksik` : ''}
                               </span>
                             )}
-                            {!hasData && lesson.range_count > 0 && (
-                              <span className="text-[10px] text-orange-400">PDF eşleşmedi</span>
+                            {lesson.status === 'no_questions' && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400">
+                                PDF bağlı · soru parse edilmedi
+                              </span>
+                            )}
+                            {lesson.status === 'no_pdf' && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/10 text-orange-400">
+                                PDF bağlantısı yok
+                              </span>
                             )}
                           </>
                         ) : (
