@@ -1084,7 +1084,7 @@ function AreaAnalysisPanel() {
                                   </div>
                                 </div>
                                 <button
-                                  onClick={e => { e.stopPropagation(); lesson && handleGenerateVideo(lesson, topic) }}
+                                  onClick={e => { e.stopPropagation(); if (lesson) handleGenerateVideo(lesson, topic) }}
                                   disabled={!lesson || !!generatingTopic}
                                   className="shrink-0 flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-brand-600/10 border border-brand-500/20 text-brand-400 hover:bg-brand-600/20 disabled:opacity-40 transition-colors"
                                 >

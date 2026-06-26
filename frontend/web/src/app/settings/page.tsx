@@ -97,6 +97,154 @@ function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   )
 }
 
+interface DmFlowResult {
+  matched_flow: string | null
+  reply: string
+  crm_status: string | null
+  would_create_crm_lead: boolean
+}
+
+function InstagramDmTest() {
+  const [text, setText] = useState('Merhaba')
+  const [result, setResult] = useState<DmFlowResult | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const run = async () => {
+    if (!text.trim()) return
+    setLoading(true)
+    try {
+      const { data } = await apiClient.post('/meta/test-dm-flow', {
+        sender_id: 'test_preview',
+        message_text: text.trim(),
+      })
+      setResult(data)
+    } catch {
+      toast.error('Test başarısız — backend çalışıyor mu?')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="border border-surface-300 rounded-xl p-3 space-y-2">
+      <p className="text-xs font-semibold text-gray-400">DM Akış Testi (gerçek mesaj göndermez)</p>
+      <div className="flex gap-2">
+        <input
+          className="flex-1 bg-surface-50 border border-surface-300 rounded-lg px-3 py-1.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-brand-500"
+          placeholder="Simüle edilecek DM metni…"
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && run()}
+        />
+        <Button size="sm" onClick={run} isLoading={loading}>Test Et</Button>
+      </div>
+      {result && (
+        <div className="bg-surface-50 border border-surface-200 rounded-lg p-3 space-y-2">
+          <div className="flex items-center gap-3 flex-wrap text-[11px]">
+            <span className={`px-2 py-0.5 rounded-full font-medium ${
+              result.matched_flow
+                ? 'bg-green-500/15 text-green-400'
+                : 'bg-surface-200 text-gray-500'
+            }`}>
+              {result.matched_flow ? `Akış: ${result.matched_flow}` : 'Akış eşleşmedi → Karşılama'}
+            </span>
+            {result.crm_status && (
+              <span className="bg-brand-500/15 text-brand-400 px-2 py-0.5 rounded-full">
+                CRM: {result.crm_status}
+              </span>
+            )}
+            {result.would_create_crm_lead && (
+              <span className="bg-yellow-500/15 text-yellow-400 px-2 py-0.5 rounded-full">
+                CRM Lead oluşturulacak
+              </span>
+            )}
+          </div>
+          <div className="bg-surface-100 rounded-lg px-3 py-2">
+            <p className="text-[10px] text-gray-600 mb-1">Bot yanıtı:</p>
+            <p className="text-xs text-gray-300 whitespace-pre-wrap">{result.reply}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const IG_CHECKLIST = [
+  {
+    label: 'App Live Mode',
+    detail: 'Meta Developers → App Dashboard → App Mode: Live (Development modda sadece test kullanıcıları DM alabilir)',
+    critical: true,
+  },
+  {
+    label: 'messages webhook subscription',
+    detail: 'Meta Developers → Webhooks → Instagram → messages alanı ✓ işaretli olmalı',
+    critical: true,
+  },
+  {
+    label: 'instagram_manage_messages izni',
+    detail: 'Meta Developers → App Review → Permissions → instagram_manage_messages: Approved',
+    critical: true,
+  },
+  {
+    label: 'META_ACCESS_TOKEN Railway\'de var',
+    detail: 'Page Access Token (User Token değil). graph.facebook.com/me?access_token=TOKEN ile doğrulayın.',
+    critical: false,
+  },
+  {
+    label: 'INSTAGRAM_BUSINESS_ACCOUNT_ID Railway\'de var',
+    detail: 'Instagram Business Account\'ın numeric ID\'si. graph.facebook.com/me/accounts ile sayfanın IG ID\'sini bulun.',
+    critical: false,
+  },
+  {
+    label: 'Webhook Callback URL ayarlı',
+    detail: 'Meta Developers → Webhooks → Callback URL: https://adimos-production.up.railway.app/api/v1/meta/webhook',
+    critical: false,
+  },
+  {
+    label: 'META_VERIFY_TOKEN eşleşiyor',
+    detail: 'Railway\'deki META_VERIFY_TOKEN == Meta Developers → Webhooks\'taki Verify Token',
+    critical: false,
+  },
+  {
+    label: 'dm_service.py — now() bug düzeltildi',
+    detail: 'dm_service.py\'de "now()" string\'i datetime.now(timezone.utc).isoformat() ile değiştirilmeli (kullanıcı yapar)',
+    critical: false,
+  },
+]
+
+function InstagramChecklist() {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="border border-surface-300 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-gray-400 hover:text-gray-200 transition-colors"
+      >
+        <span className="flex items-center gap-1.5">
+          <CheckCircle size={12} className="text-brand-400" />
+          Meta Developer Portal Kontrol Listesi
+        </span>
+        <span className="text-gray-600">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="divide-y divide-surface-200 border-t border-surface-300">
+          {IG_CHECKLIST.map((item, i) => (
+            <div key={i} className="px-3 py-2.5 space-y-0.5">
+              <div className="flex items-center gap-2">
+                {item.critical && (
+                  <span className="text-[9px] bg-red-500/20 text-red-400 px-1 rounded font-bold uppercase">Kritik</span>
+                )}
+                <p className="text-xs font-medium text-gray-300">{item.label}</p>
+              </div>
+              <p className="text-[11px] text-gray-600">{item.detail}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SocialConnectionCard() {
   const [igStatus, setIgStatus] = useState<InstagramStatus | null>(null)
   const [ytStatus, setYtStatus] = useState<YoutubeStatus | null>(null)
@@ -150,17 +298,18 @@ function SocialConnectionCard() {
 
       <div className="space-y-5">
         {/* Instagram */}
-        <div className="p-4 bg-surface-100 rounded-xl border border-surface-200">
-          <div className="flex items-center justify-between mb-3">
+        <div className="p-4 bg-surface-100 rounded-xl border border-surface-200 space-y-4">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Instagram size={16} className="text-pink-400" />
-              <span className="text-sm font-semibold text-gray-200">Instagram Business</span>
+              <span className="text-sm font-semibold text-gray-200">Instagram Business DM</span>
             </div>
             {igStatus && (
-              <StatusBadge ok={igStatus.connected} label={igStatus.connected ? 'Bağlı' : 'Bağlantı Yok'} />
+              <StatusBadge ok={igStatus.connected} label={igStatus.connected ? 'API Bağlı' : 'API Hatası'} />
             )}
           </div>
 
+          {/* API bağlantı durumu */}
           {igStatus ? (
             <div className="space-y-2">
               <div className="grid grid-cols-2 gap-2 text-xs">
@@ -179,8 +328,8 @@ function SocialConnectionCard() {
               {igStatus.connected && igStatus.account_name && (
                 <div className="p-2.5 bg-green-500/10 border border-green-500/20 rounded-lg">
                   <p className="text-xs text-green-300">
-                    <strong>{igStatus.account_name}</strong> hesabına bağlı
-                    {igStatus.followers && ` · ${igStatus.followers.toLocaleString('tr-TR')} takipçi`}
+                    ✓ <strong>{igStatus.account_name}</strong> hesabına bağlı
+                    {igStatus.followers != null && ` · ${igStatus.followers.toLocaleString('tr-TR')} takipçi`}
                   </p>
                 </div>
               )}
@@ -193,10 +342,15 @@ function SocialConnectionCard() {
           ) : (
             <p className="text-xs text-gray-600">
               Railway &rarr; Variables&apos;da <code className="text-gray-400">META_ACCESS_TOKEN</code> ve{' '}
-              <code className="text-gray-400">INSTAGRAM_BUSINESS_ACCOUNT_ID</code> tanımlanmalı.{' '}
-              <strong className="text-brand-400">Durumu Test Et</strong> butonuna basarak bağlantıyı kontrol edin.
+              <code className="text-gray-400">INSTAGRAM_BUSINESS_ACCOUNT_ID</code> tanımlanmalı.
             </p>
           )}
+
+          {/* DM Akış Testi */}
+          <InstagramDmTest />
+
+          {/* Meta Developer Portal Kontrol Listesi */}
+          <InstagramChecklist />
         </div>
 
         {/* YouTube */}
