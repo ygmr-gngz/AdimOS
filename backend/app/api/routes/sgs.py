@@ -6,6 +6,7 @@ from app.modules.sgs.service import analyze_pdf_bytes, build_sgs_topic_video
 from app.db.repositories.sgs_repo import (
     create_analysis, list_analyses, get_analysis, delete_analysis, update_question_subject,
     save_range, get_ranges, delete_range, get_all_questions,
+    get_questions_by_ranges, get_areas_summary,
 )
 from app.config.sgs_groups import SGS_LESSON_GROUPS, get_lessons_for_group
 from app.db.repositories.generated_contents_repo import (
@@ -287,8 +288,10 @@ def _bg_topic_video(content_id: str, video_plan_item: dict, questions: list):
 
 @router.post("/generate-topic-video")
 def generate_topic_video(req: TopicVideoRequest, bg: BackgroundTasks):
-    """17: Ders + konu için tüm analizlerden soru topla ve video üret."""
-    questions = get_all_questions(lesson_name=req.lesson, year=req.year)
+    """17: Ders + konu için soru topla (aralık öncelikli) ve video üret."""
+    questions = get_questions_by_ranges(lesson_name=req.lesson, year=req.year)
+    if not questions:
+        questions = get_all_questions(lesson_name=req.lesson, year=req.year)
     topic_questions = [q for q in questions if q.get("topic", "") == req.topic]
 
     if not topic_questions:
@@ -323,4 +326,60 @@ def generate_topic_video(req: TopicVideoRequest, bg: BackgroundTasks):
         "question_count": len(selected),
         "topic": req.topic,
         "lesson": req.lesson,
+    }
+
+
+# ── 18+: Alan Bazlı Analiz (Aralık Öncelikli) ────────────────
+
+@router.get("/areas")
+def list_areas(year: str | None = Q(None)):
+    """Alan bazlı soru özeti — manuel aralıklar birincil kaynak."""
+    return {"areas": get_areas_summary(year=year)}
+
+
+@router.get("/areas/{area_name}/topic-analysis")
+def area_topic_analysis(area_name: str, year: str | None = Q(None)):
+    """Alan bazlı konu frekans analizi — aralık öncelikli, yoksa AI'ya dön."""
+    group_lessons = get_lessons_for_group(area_name)
+    if not group_lessons:
+        raise HTTPException(400, f"Geçersiz alan: {area_name}")
+
+    questions = get_questions_by_ranges(group_lessons=group_lessons, year=year)
+    data_source = "ranges"
+    if not questions:
+        questions = get_all_questions(group_lessons=group_lessons, year=year)
+        data_source = "ai"
+
+    topic_counts = Counter(q.get("topic", "Belirsiz") for q in questions)
+    lesson_counts = Counter(q.get("subject", "Belirsiz") for q in questions)
+    year_counts = Counter(q.get("source_year") or q.get("year", "?") for q in questions)
+
+    return {
+        "area": area_name,
+        "total": len(questions),
+        "top_topics": [{"topic": t, "count": c} for t, c in topic_counts.most_common(20)],
+        "lesson_breakdown": [{"lesson": l, "count": c} for l, c in lesson_counts.most_common()],
+        "year_breakdown": [{"year": y, "count": c} for y, c in sorted(year_counts.items())],
+        "data_source": data_source,
+    }
+
+
+@router.get("/lessons/{lesson_name}/topic-analysis")
+def lesson_topic_analysis(lesson_name: str, year: str | None = Q(None)):
+    """Ders bazlı konu analizi — aralık öncelikli, yoksa AI'ya dön."""
+    questions = get_questions_by_ranges(lesson_name=lesson_name, year=year)
+    data_source = "ranges"
+    if not questions:
+        questions = get_all_questions(lesson_name=lesson_name, year=year)
+        data_source = "ai"
+
+    topic_counts = Counter(q.get("topic", "Belirsiz") for q in questions)
+    year_counts = Counter(q.get("source_year") or q.get("year", "?") for q in questions)
+
+    return {
+        "lesson": lesson_name,
+        "total": len(questions),
+        "top_topics": [{"topic": t, "count": c} for t, c in topic_counts.most_common(20)],
+        "year_breakdown": [{"year": y, "count": c} for y, c in sorted(year_counts.items())],
+        "data_source": data_source,
     }

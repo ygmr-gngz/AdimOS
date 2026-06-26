@@ -85,6 +85,30 @@ export interface SgsAnalysisMeta {
   created_at: string
 }
 
+export interface SgsAreaLesson {
+  name: string
+  expected: number
+  found: number
+  range_count: number
+}
+
+export interface SgsArea {
+  name: string
+  expected_total: number
+  found_total: number
+  discrepancy: number
+  status: 'ok' | 'warning' | 'missing'
+  lessons: SgsAreaLesson[]
+}
+
+export interface SgsTopicAnalysis {
+  total: number
+  top_topics: { topic: string; count: number }[]
+  lesson_breakdown?: { lesson: string; count: number }[]
+  year_breakdown: { year: string; count: number }[]
+  data_source: 'ranges' | 'ai'
+}
+
 export interface SgsRange {
   id: string
   document_name: string
@@ -194,5 +218,24 @@ export const sgsService = {
     await apiClient.patch(`/sgs/analyses/${analysisId}/question/${questionId}`, {
       new_subject: newSubject,
     })
+  },
+
+  async getAreas(year?: string): Promise<SgsArea[]> {
+    const { data } = await apiClient.get('/sgs/areas', { params: year ? { year } : undefined })
+    return data.areas ?? []
+  },
+
+  async getAreaTopicAnalysis(area: string, year?: string): Promise<SgsTopicAnalysis> {
+    const { data } = await apiClient.get(`/sgs/areas/${encodeURIComponent(area)}/topic-analysis`, {
+      params: year ? { year } : undefined,
+    })
+    return data
+  },
+
+  async getLessonTopicAnalysis(lesson: string, year?: string): Promise<SgsTopicAnalysis> {
+    const { data } = await apiClient.get(`/sgs/lessons/${encodeURIComponent(lesson)}/topic-analysis`, {
+      params: year ? { year } : undefined,
+    })
+    return data
   },
 }

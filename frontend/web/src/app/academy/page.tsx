@@ -6,9 +6,10 @@ import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
 import {
   GraduationCap, Upload, FileText, Play, ChevronDown,
-  ChevronUp, Clock, BookOpen, Video, Trash2, RefreshCw, AlertTriangle, Edit2, List, Plus, BarChart2
+  ChevronUp, Clock, BookOpen, Video, Trash2, RefreshCw, AlertTriangle, Edit2, List, Plus, BarChart2,
+  CheckCircle2
 } from 'lucide-react'
-import { sgsService, SGS_LESSONS, SGS_LESSON_GROUPS, SGS_DOCUMENT_TYPES, type SgsAnalysis, type SgsAnalysisMeta, type SgsQuestion, type SgsRange } from '@/services/sgs.service'
+import { sgsService, SGS_LESSONS, SGS_LESSON_GROUPS, SGS_DOCUMENT_TYPES, type SgsAnalysis, type SgsAnalysisMeta, type SgsQuestion, type SgsRange, type SgsArea, type SgsTopicAnalysis } from '@/services/sgs.service'
 import toast from 'react-hot-toast'
 
 type Phase = 'idle' | 'uploading' | 'done'
@@ -221,11 +222,26 @@ function QuestionRow({
   )
 }
 
-function RangesPanel() {
+
+
+// ── Alan + Soru Aralıkları Birleşik Paneli ───────────────────
+
+function AreaAnalysisPanel() {
+  const [areas, setAreas] = useState<SgsArea[]>([])
+  const [areasLoading, setAreasLoading] = useState(true)
+  const [yearFilter, setYearFilter] = useState('')
+  const [selectedArea, setSelectedArea] = useState<string | null>(null)
+  const [selectedLesson, setSelectedLesson] = useState<string | null>(null)
+  const [topicAnalysis, setTopicAnalysis] = useState<SgsTopicAnalysis | null>(null)
+  const [analysisLoading, setAnalysisLoading] = useState(false)
+  const [generatingTopic, setGeneratingTopic] = useState<string | null>(null)
+
+  // Aralık yönetimi state
   const [ranges, setRanges] = useState<SgsRange[]>([])
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({
+  const [rangesLoading, setRangesLoading] = useState(true)
+  const [showRangeForm, setShowRangeForm] = useState(false)
+  const [savingRange, setSavingRange] = useState(false)
+  const [rangeForm, setRangeForm] = useState({
     document_name: '',
     start_question_no: '',
     end_question_no: '',
@@ -233,200 +249,62 @@ function RangesPanel() {
     notes: '',
   })
 
+  const loadAreas = async (year?: string) => {
+    setAreasLoading(true)
+    try {
+      const data = await sgsService.getAreas(year || undefined)
+      setAreas(data)
+    } catch {
+      toast.error('Alan özeti alınamadı')
+    } finally {
+      setAreasLoading(false)
+    }
+  }
+
   useEffect(() => {
+    loadAreas()
     sgsService.listRanges()
       .then(setRanges)
       .catch(() => {})
-      .finally(() => setLoading(false))
+      .finally(() => setRangesLoading(false))
   }, [])
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const start = parseInt(form.start_question_no, 10)
-    const end = parseInt(form.end_question_no, 10)
-    if (!form.document_name.trim()) { toast.error('Belge adı boş olamaz'); return }
-    if (!form.lesson_name) { toast.error('Ders seçilmedi'); return }
-    if (isNaN(start) || start < 1) { toast.error('Başlangıç soru numarası geçersiz (min: 1)'); return }
-    if (isNaN(end) || end < 1) { toast.error('Bitiş soru numarası geçersiz (min: 1)'); return }
-    if (start > end) { toast.error(`Başlangıç (${start}) bitiş (${end}) değerinden büyük olamaz`); return }
-    setSaving(true)
-    try {
-      const saved = await sgsService.saveRange({
-        document_name: form.document_name.trim(),
-        start_question_no: start,
-        end_question_no: end,
-        lesson_name: form.lesson_name,
-        notes: form.notes.trim() || '',
-      })
-      setRanges(prev => [...prev, saved])
-      setForm(f => ({ ...f, start_question_no: '', end_question_no: '', notes: '' }))
-      toast.success('Aralık kaydedildi')
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(msg ? `Hata: ${msg}` : 'Aralık kaydedilemedi — lütfen tekrar deneyin')
-    } finally {
-      setSaving(false)
+  const handleYearFilter = (y: string) => {
+    setYearFilter(y)
+    setTopicAnalysis(null)
+  }
+
+  const handleAreaClick = (area: string) => {
+    if (selectedArea === area) {
+      setSelectedArea(null)
+      setSelectedLesson(null)
+      setTopicAnalysis(null)
+    } else {
+      setSelectedArea(area)
+      setSelectedLesson(null)
+      setTopicAnalysis(null)
     }
   }
 
-  const handleDelete = async (id: string) => {
+  const handleAnalyze = async (areaName: string, lessonName?: string) => {
+    setAnalysisLoading(true)
+    setTopicAnalysis(null)
     try {
-      await sgsService.deleteRange(id)
-      setRanges(prev => prev.filter(r => r.id !== id))
-      toast.success('Aralık silindi')
+      const result = lessonName
+        ? await sgsService.getLessonTopicAnalysis(lessonName, yearFilter || undefined)
+        : await sgsService.getAreaTopicAnalysis(areaName, yearFilter || undefined)
+      setTopicAnalysis(result)
     } catch {
-      toast.error('Silinemedi')
-    }
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Form */}
-      <div className="bg-surface-50 rounded-xl border border-surface-200 p-5">
-        <h3 className="text-sm font-semibold text-gray-200 mb-4 flex items-center gap-2">
-          <Plus size={14} className="text-brand-400" /> Yeni Aralık Tanımla
-        </h3>
-        <form onSubmit={handleSave} className="space-y-4" noValidate>
-          <div>
-            <label className="text-xs font-medium text-gray-400 mb-1 block">Belge Adı</label>
-            <input
-              className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 placeholder-gray-600"
-              placeholder="örn: 2026-1 SGS Çıkmış Sorular"
-              value={form.document_name}
-              onChange={e => setForm(f => ({ ...f, document_name: e.target.value }))}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-gray-400 mb-1 block">Başlangıç Sorusu</label>
-              <input
-                type="number" min={1}
-                className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                placeholder="1"
-                value={form.start_question_no}
-                onChange={e => setForm(f => ({ ...f, start_question_no: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-400 mb-1 block">Bitiş Sorusu</label>
-              <input
-                type="number" min={1}
-                className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                placeholder="20"
-                value={form.end_question_no}
-                onChange={e => setForm(f => ({ ...f, end_question_no: e.target.value }))}
-              />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-400 mb-1 block">Ders</label>
-            <select
-              className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
-              value={form.lesson_name}
-              onChange={e => setForm(f => ({ ...f, lesson_name: e.target.value }))}
-            >
-              {Object.entries(SGS_LESSON_GROUPS).map(([group, lessons]) => (
-                <optgroup key={group} label={group}>
-                  {lessons.map(l => <option key={l} value={l}>{l}</option>)}
-                </optgroup>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-400 mb-1 block">Not (isteğe bağlı)</label>
-            <input
-              className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 placeholder-gray-600"
-              placeholder="örn: İlk 20 soru Türkçe bölümüne ait"
-              value={form.notes}
-              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-            />
-          </div>
-          <Button type="submit" isLoading={saving} disabled={saving}>
-            <Plus size={14} /> Kaydet
-          </Button>
-        </form>
-      </div>
-
-      {/* Tablo */}
-      <div className="bg-surface-50 rounded-xl border border-surface-200 overflow-hidden">
-        <div className="px-5 py-3 border-b border-surface-200 flex items-center gap-2">
-          <List size={14} className="text-gray-500" />
-          <span className="text-sm font-semibold text-gray-300">Kayıtlı Aralıklar ({ranges.length})</span>
-        </div>
-        {loading ? (
-          <div className="p-8 text-center text-gray-600 text-sm">Yükleniyor...</div>
-        ) : ranges.length === 0 ? (
-          <div className="p-8 text-center text-gray-600 text-sm">Henüz aralık tanımlanmadı</div>
-        ) : (
-          <div className="divide-y divide-surface-200">
-            {ranges.map(r => (
-              <div key={r.id} className="flex items-center justify-between px-5 py-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-mono bg-surface-200 text-gray-300 px-2 py-0.5 rounded">
-                      {r.start_question_no}–{r.end_question_no}
-                    </span>
-                    <span className="text-sm font-medium text-brand-300">{r.lesson_name}</span>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-0.5 truncate">{r.document_name}{r.notes ? ` · ${r.notes}` : ''}</p>
-                </div>
-                <button
-                  onClick={() => handleDelete(r.id)}
-                  className="p-1.5 text-gray-600 hover:text-red-400 transition-colors shrink-0 ml-3"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ── Alan Analizi Paneli (15-16-17) ───────────────────────────
-
-function GroupAnalysisPanel() {
-  const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
-  const [selectedLesson, setSelectedLesson] = useState<string | null>(null)
-  const [yearFilter, setYearFilter] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [analysis, setAnalysis] = useState<{
-    total: number
-    top_topics: { topic: string; count: number }[]
-    lesson_breakdown: { lesson: string; count: number }[]
-    year_breakdown: { year: string; count: number }[]
-  } | null>(null)
-  const [generatingTopic, setGeneratingTopic] = useState<string | null>(null)
-
-  const handleAnalyze = async () => {
-    if (!selectedGroup && !selectedLesson) return
-    setLoading(true)
-    setAnalysis(null)
-    try {
-      const result = await sgsService.getTopicAnalysis({
-        group: selectedLesson ? undefined : selectedGroup ?? undefined,
-        lesson: selectedLesson ?? undefined,
-        year: yearFilter || undefined,
-      })
-      setAnalysis(result)
-    } catch {
-      toast.error('Analiz alınamadı')
+      toast.error('Konu analizi alınamadı')
     } finally {
-      setLoading(false)
+      setAnalysisLoading(false)
     }
   }
 
   const handleGenerateVideo = async (lesson: string, topic: string) => {
     setGeneratingTopic(topic)
     try {
-      const res = await sgsService.generateTopicVideo({
-        lesson,
-        topic,
-        year: yearFilter || undefined,
-        max_questions: 5,
-      })
+      const res = await sgsService.generateTopicVideo({ lesson, topic, year: yearFilter || undefined, max_questions: 5 })
       toast.success(`"${res.title}" video üretimi başladı (${res.question_count} soru)`)
     } catch {
       toast.error('Video üretimi başlatılamadı')
@@ -435,182 +313,447 @@ function GroupAnalysisPanel() {
     }
   }
 
-  const activeLesson = selectedLesson ?? (selectedGroup ? `${selectedGroup} (tümü)` : null)
+  const handleSaveRange = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const start = parseInt(rangeForm.start_question_no, 10)
+    const end = parseInt(rangeForm.end_question_no, 10)
+    if (!rangeForm.document_name.trim()) { toast.error('Belge adı boş olamaz'); return }
+    if (isNaN(start) || start < 1) { toast.error('Başlangıç soru numarası geçersiz'); return }
+    if (isNaN(end) || end < start) { toast.error(`Bitiş (${end}) başlangıçtan (${start}) küçük olamaz`); return }
+    setSavingRange(true)
+    try {
+      const saved = await sgsService.saveRange({
+        document_name: rangeForm.document_name.trim(),
+        start_question_no: start,
+        end_question_no: end,
+        lesson_name: rangeForm.lesson_name,
+        notes: rangeForm.notes.trim() || '',
+      })
+      setRanges(prev => [...prev, saved])
+      setRangeForm(f => ({ ...f, start_question_no: '', end_question_no: '', notes: '' }))
+      toast.success('Aralık kaydedildi')
+      setShowRangeForm(false)
+      loadAreas(yearFilter || undefined)
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(msg ? `Hata: ${msg}` : 'Aralık kaydedilemedi')
+    } finally {
+      setSavingRange(false)
+    }
+  }
+
+  const handleDeleteRange = async (id: string) => {
+    try {
+      await sgsService.deleteRange(id)
+      setRanges(prev => prev.filter(r => r.id !== id))
+      loadAreas(yearFilter || undefined)
+      toast.success('Aralık silindi')
+    } catch {
+      toast.error('Silinemedi')
+    }
+  }
+
+  const currentArea = areas.find(a => a.name === selectedArea)
 
   return (
     <div className="space-y-6">
-      {/* Alan seçici */}
-      <div className="bg-surface-50 rounded-xl border border-surface-200 p-5 space-y-4">
-        <h3 className="text-sm font-semibold text-gray-200">Alan Seç</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {Object.entries(SGS_LESSON_GROUPS).map(([group, lessons]) => {
-            const colorClass = GROUP_COLORS[group] ?? 'text-gray-400 bg-surface-100 border-surface-200'
-            const isActive = selectedGroup === group
-            return (
-              <button
-                key={group}
-                onClick={() => { setSelectedGroup(isActive ? null : group); setSelectedLesson(null); setAnalysis(null) }}
-                className={`p-3 rounded-xl border text-left transition-all ${isActive ? colorClass : 'bg-surface-100 border-surface-200 text-gray-500 hover:border-surface-300'}`}
-              >
-                <p className={`text-sm font-semibold ${isActive ? colorClass.split(' ')[0] : 'text-gray-300'}`}>{group}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{lessons.length} ders</p>
-              </button>
-            )
-          })}
+      {/* Yıl Filtresi */}
+      <div className="flex items-end gap-3">
+        <div className="max-w-[180px]">
+          <label className="text-xs font-medium text-gray-400 mb-1 block">Yıl Filtresi</label>
+          <input
+            type="text"
+            placeholder="örn: 2024 (isteğe bağlı)"
+            value={yearFilter}
+            onChange={e => handleYearFilter(e.target.value)}
+            className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 placeholder-gray-600"
+          />
+        </div>
+        <Button size="sm" variant="secondary" onClick={() => loadAreas(yearFilter || undefined)} isLoading={areasLoading}>
+          <RefreshCw size={13} /> Yenile
+        </Button>
+      </div>
+
+      {/* Alan Kartları */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {areasLoading ? (
+          Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-24 bg-surface-100 rounded-xl border border-surface-200 animate-pulse" />
+          ))
+        ) : areas.map(area => {
+          const color = GROUP_COLORS[area.name] ?? 'text-gray-400 bg-surface-100 border-surface-200'
+          const isActive = selectedArea === area.name
+          const hasData = area.expected_total > 0
+          const hasDiscrepancy = area.discrepancy > 0 && hasData
+
+          return (
+            <button
+              key={area.name}
+              onClick={() => handleAreaClick(area.name)}
+              className={`p-3 rounded-xl border text-left transition-all ${
+                isActive ? color : 'bg-surface-100 border-surface-200 hover:border-surface-300'
+              }`}
+            >
+              <div className="flex items-start justify-between">
+                <p className={`text-sm font-semibold ${isActive ? color.split(' ')[0] : 'text-gray-300'}`}>
+                  {area.name}
+                </p>
+                {hasData && (
+                  hasDiscrepancy
+                    ? <AlertTriangle size={11} className="text-yellow-400 shrink-0 mt-0.5" />
+                    : <CheckCircle2 size={11} className="text-green-400 shrink-0 mt-0.5" />
+                )}
+              </div>
+              <p className="text-lg font-bold text-white mt-1">{area.expected_total}</p>
+              <p className="text-[10px] text-gray-500 mt-0.5">
+                {hasData
+                  ? hasDiscrepancy
+                    ? `${area.found_total} bulundu · ${area.discrepancy} eksik`
+                    : `${area.found_total} soru eşleşti`
+                  : 'Aralık tanımlanmamış'}
+              </p>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Seçili Alan Detayı */}
+      {currentArea && (
+        <div className="bg-surface-50 rounded-xl border border-surface-200 overflow-hidden">
+          <div className="px-5 py-3 border-b border-surface-200 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className={`text-sm font-semibold ${GROUP_COLORS[currentArea.name]?.split(' ')[0] ?? 'text-gray-200'}`}>
+                {currentArea.name}
+              </span>
+              <span className="text-xs text-gray-500">·</span>
+              <span className="text-xs text-gray-500">{currentArea.expected_total} beklenen soru</span>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => { setSelectedLesson(null); handleAnalyze(currentArea.name) }}
+              isLoading={analysisLoading && !selectedLesson}
+            >
+              <BarChart2 size={12} /> Alan Analizi
+            </Button>
+          </div>
+          <div className="divide-y divide-surface-200">
+            {currentArea.lessons.map(lesson => {
+              const isActive = selectedLesson === lesson.name
+              const hasData = lesson.found > 0
+              const discrepancy = lesson.expected - lesson.found
+              return (
+                <div
+                  key={lesson.name}
+                  className={`flex items-center justify-between px-5 py-3 cursor-pointer transition-colors ${
+                    isActive ? 'bg-brand-600/10' : 'hover:bg-surface-100'
+                  }`}
+                  onClick={() => {
+                    const next = isActive ? null : lesson.name
+                    setSelectedLesson(next)
+                    setTopicAnalysis(null)
+                    if (next) handleAnalyze(currentArea.name, next)
+                  }}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="min-w-0">
+                      <p className={`text-sm font-medium truncate ${isActive ? 'text-brand-300' : 'text-gray-300'}`}>
+                        {lesson.name}
+                      </p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        {lesson.expected > 0 ? (
+                          <>
+                            <span className="text-xs text-gray-500">{lesson.expected} beklenen</span>
+                            {hasData && (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                                discrepancy === 0
+                                  ? 'bg-green-500/10 text-green-400'
+                                  : discrepancy > 0
+                                    ? 'bg-yellow-500/10 text-yellow-400'
+                                    : 'bg-surface-200 text-gray-500'
+                              }`}>
+                                {lesson.found} bulundu{discrepancy > 0 ? ` · ${discrepancy} eksik` : ''}
+                              </span>
+                            )}
+                            {!hasData && lesson.range_count > 0 && (
+                              <span className="text-[10px] text-orange-400">PDF eşleşmedi</span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-xs text-gray-600">Aralık yok</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {lesson.range_count > 0 && (
+                      <span className="text-[10px] bg-surface-200 text-gray-500 px-1.5 py-0.5 rounded">
+                        {lesson.range_count} aralık
+                      </span>
+                    )}
+                    <ChevronDown size={13} className={`text-gray-600 transition-transform ${isActive ? 'rotate-180' : ''}`} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Konu Analizi Sonuçları */}
+      {(analysisLoading || topicAnalysis) && (
+        <div className="space-y-4">
+          {analysisLoading ? (
+            <div className="flex justify-center py-10">
+              <svg className="animate-spin h-6 w-6 text-brand-400" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            </div>
+          ) : topicAnalysis && (
+            <>
+              {/* Özet */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
+                  <p className="text-2xl font-bold text-white">{topicAnalysis.total}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Toplam Soru</p>
+                </div>
+                <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
+                  <p className="text-2xl font-bold text-brand-400">{topicAnalysis.top_topics.length}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Farklı Konu</p>
+                </div>
+                <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
+                  <p className="text-2xl font-bold text-white">{topicAnalysis.year_breakdown.length}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Yıl</p>
+                </div>
+              </div>
+
+              {/* Veri kaynağı */}
+              <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${
+                topicAnalysis.data_source === 'ranges'
+                  ? 'bg-green-500/10 border border-green-500/20 text-green-400'
+                  : 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-400'
+              }`}>
+                {topicAnalysis.data_source === 'ranges'
+                  ? <CheckCircle2 size={12} />
+                  : <AlertTriangle size={12} />}
+                {topicAnalysis.data_source === 'ranges'
+                  ? 'Veri kaynağı: Soru Aralıkları (manuel)'
+                  : 'Veri kaynağı: AI Analizi (aralık bulunamadı)'}
+              </div>
+
+              {/* Ders dağılımı (alan görünümünde) */}
+              {!selectedLesson && topicAnalysis.lesson_breakdown && topicAnalysis.lesson_breakdown.length > 1 && (
+                <div className="bg-surface-50 rounded-xl border border-surface-200 p-4">
+                  <p className="text-xs font-semibold text-gray-400 mb-3">Ders Dağılımı</p>
+                  <div className="space-y-2">
+                    {topicAnalysis.lesson_breakdown.map(({ lesson, count }) => (
+                      <div key={lesson} className="flex items-center gap-3">
+                        <span className="text-xs text-gray-400 w-44 shrink-0 truncate">{lesson}</span>
+                        <div className="flex-1 bg-surface-200 rounded-full h-1.5">
+                          <div
+                            className="bg-brand-500 h-1.5 rounded-full"
+                            style={{ width: `${Math.round((count / topicAnalysis.total) * 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-mono text-gray-500 w-8 text-right">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* En sık konular + Video */}
+              <div className="bg-surface-50 rounded-xl border border-surface-200 overflow-hidden">
+                <div className="px-5 py-3 border-b border-surface-200 flex items-center justify-between">
+                  <p className="text-sm font-semibold text-gray-300">En Sık Çıkan Konular</p>
+                  <span className="text-xs text-gray-500">{selectedLesson ?? selectedArea}</span>
+                </div>
+                {topicAnalysis.top_topics.length === 0 ? (
+                  <div className="p-6 text-center text-sm text-gray-600">Bu alan/derse ait konu bulunamadı</div>
+                ) : (
+                  <div className="divide-y divide-surface-200">
+                    {topicAnalysis.top_topics.map(({ topic, count }, i) => {
+                      const lesson = selectedLesson
+                        ?? topicAnalysis.lesson_breakdown?.[0]?.lesson
+                        ?? currentArea?.lessons[0]?.name
+                        ?? ''
+                      const isGenerating = generatingTopic === topic
+                      return (
+                        <div key={topic} className="flex items-center gap-3 px-5 py-3">
+                          <span className="text-xs font-mono text-gray-600 w-5 shrink-0">#{i + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-gray-200 truncate">{topic}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <div className="w-24 bg-surface-200 rounded-full h-1">
+                                <div
+                                  className="bg-brand-500/60 h-1 rounded-full"
+                                  style={{ width: `${Math.round((count / (topicAnalysis.top_topics[0]?.count || 1)) * 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-xs text-gray-500">{count} soru</span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => lesson && handleGenerateVideo(lesson, topic)}
+                            disabled={!lesson || !!generatingTopic}
+                            className="shrink-0 flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-brand-600/10 border border-brand-500/20 text-brand-400 hover:bg-brand-600/20 disabled:opacity-40 transition-colors"
+                          >
+                            {isGenerating ? (
+                              <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                              </svg>
+                            ) : <Video size={11} />}
+                            Video Üret
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Yıl dağılımı */}
+              {topicAnalysis.year_breakdown.length > 1 && (
+                <div className="bg-surface-50 rounded-xl border border-surface-200 p-4">
+                  <p className="text-xs font-semibold text-gray-400 mb-3">Yıl Dağılımı</p>
+                  <div className="flex flex-wrap gap-2">
+                    {topicAnalysis.year_breakdown.map(({ year, count }) => (
+                      <span key={year} className="text-xs px-2.5 py-1 rounded-lg bg-surface-200 text-gray-400">
+                        {year || '?'} <span className="text-gray-600">({count})</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {!currentArea && !areasLoading && (
+        <div className="flex flex-col items-center justify-center py-12 text-center text-gray-600">
+          <BarChart2 size={36} className="mb-3 text-gray-700" />
+          <p className="text-sm">Bir alan kartına tıklayarak ders dağılımını ve konu analizini gör</p>
+          <p className="text-xs mt-1">Soru aralıkları tanımlandıkça kartlar otomatik güncellenir</p>
+        </div>
+      )}
+
+      {/* ── Soru Aralıkları Yönetimi ────────────────────────────── */}
+      <div className="border-t border-surface-200 pt-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <List size={14} className="text-gray-500" />
+            <span className="text-sm font-semibold text-gray-300">
+              Soru Aralıkları {!rangesLoading && `(${ranges.length})`}
+            </span>
+          </div>
+          <Button size="sm" variant="secondary" onClick={() => setShowRangeForm(f => !f)}>
+            <Plus size={13} /> {showRangeForm ? 'Formu Kapat' : 'Yeni Aralık'}
+          </Button>
         </div>
 
-        {/* Ders seçici (grup seçiliyken) */}
-        {selectedGroup && (
-          <div className="flex flex-wrap gap-1.5 pt-1 border-t border-surface-200">
-            <button
-              onClick={() => { setSelectedLesson(null); setAnalysis(null) }}
-              className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${!selectedLesson ? 'bg-brand-600/20 border-brand-500/50 text-brand-300' : 'bg-surface-100 border-surface-200 text-gray-500 hover:text-gray-300'}`}
-            >
-              Tüm {selectedGroup}
-            </button>
-            {([...SGS_LESSON_GROUPS[selectedGroup as keyof typeof SGS_LESSON_GROUPS]] as string[]).map(lesson => (
-              <button
-                key={lesson}
-                onClick={() => { setSelectedLesson(selectedLesson === lesson ? null : lesson); setAnalysis(null) }}
-                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${selectedLesson === lesson ? 'bg-brand-600/20 border-brand-500/50 text-brand-300' : 'bg-surface-100 border-surface-200 text-gray-500 hover:text-gray-300'}`}
-              >
-                {lesson}
-              </button>
-            ))}
+        {/* Yeni aralık formu */}
+        {showRangeForm && (
+          <div className="bg-surface-50 rounded-xl border border-surface-200 p-5 mb-4">
+            <form onSubmit={handleSaveRange} className="space-y-4" noValidate>
+              <div>
+                <label className="text-xs font-medium text-gray-400 mb-1 block">Belge Adı</label>
+                <input
+                  className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 placeholder-gray-600"
+                  placeholder="örn: 2026-1 SGS Çıkmış Sorular"
+                  value={rangeForm.document_name}
+                  onChange={e => setRangeForm(f => ({ ...f, document_name: e.target.value }))}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-400 mb-1 block">Başlangıç Sorusu</label>
+                  <input
+                    type="number" min={1}
+                    className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    placeholder="1"
+                    value={rangeForm.start_question_no}
+                    onChange={e => setRangeForm(f => ({ ...f, start_question_no: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-400 mb-1 block">Bitiş Sorusu</label>
+                  <input
+                    type="number" min={1}
+                    className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    placeholder="20"
+                    value={rangeForm.end_question_no}
+                    onChange={e => setRangeForm(f => ({ ...f, end_question_no: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-400 mb-1 block">Ders</label>
+                <select
+                  className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  value={rangeForm.lesson_name}
+                  onChange={e => setRangeForm(f => ({ ...f, lesson_name: e.target.value }))}
+                >
+                  {Object.entries(SGS_LESSON_GROUPS).map(([group, lessons]) => (
+                    <optgroup key={group} label={group}>
+                      {lessons.map(l => <option key={l} value={l}>{l}</option>)}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-400 mb-1 block">Not (isteğe bağlı)</label>
+                <input
+                  className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 placeholder-gray-600"
+                  placeholder="örn: İlk 20 soru Türkçe bölümüne ait"
+                  value={rangeForm.notes}
+                  onChange={e => setRangeForm(f => ({ ...f, notes: e.target.value }))}
+                />
+              </div>
+              <Button type="submit" isLoading={savingRange} disabled={savingRange}>
+                <Plus size={14} /> Kaydet
+              </Button>
+            </form>
           </div>
         )}
 
-        {/* Yıl filtresi + Analiz Et */}
-        <div className="flex gap-3 items-end pt-1">
-          <div className="flex-1 max-w-[160px]">
-            <label className="text-xs font-medium text-gray-400 mb-1 block">Yıl (isteğe bağlı)</label>
-            <input
-              type="text"
-              placeholder="örn: 2024"
-              value={yearFilter}
-              onChange={e => setYearFilter(e.target.value)}
-              className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 placeholder-gray-600"
-            />
-          </div>
-          <Button
-            onClick={handleAnalyze}
-            disabled={!selectedGroup && !selectedLesson}
-            isLoading={loading}
-          >
-            Analiz Et
-          </Button>
+        {/* Aralık listesi */}
+        <div className="bg-surface-50 rounded-xl border border-surface-200 overflow-hidden">
+          {rangesLoading ? (
+            <div className="p-6 text-center text-gray-600 text-sm">Yükleniyor...</div>
+          ) : ranges.length === 0 ? (
+            <div className="p-6 text-center text-gray-600 text-sm">
+              Henüz aralık tanımlanmadı. &quot;Yeni Aralık&quot; butonuyla başla.
+            </div>
+          ) : (
+            <div className="divide-y divide-surface-200">
+              {ranges.map(r => (
+                <div key={r.id} className="flex items-center justify-between px-5 py-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-mono bg-surface-200 text-gray-300 px-2 py-0.5 rounded">
+                        {r.start_question_no}–{r.end_question_no}
+                      </span>
+                      <span className="text-sm font-medium text-brand-300">{r.lesson_name}</span>
+                      <span className="text-xs text-gray-600">({r.end_question_no - r.start_question_no + 1} soru)</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5 truncate">
+                      {r.document_name}{r.notes ? ` · ${r.notes}` : ''}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteRange(r.id)}
+                    className="p-1.5 text-gray-600 hover:text-red-400 transition-colors shrink-0 ml-3"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Sonuçlar */}
-      {analysis && (
-        <div className="space-y-4">
-          {/* Özet */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
-              <p className="text-2xl font-bold text-white">{analysis.total}</p>
-              <p className="text-xs text-gray-500 mt-0.5">Toplam Soru</p>
-            </div>
-            <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
-              <p className="text-2xl font-bold text-brand-400">{analysis.top_topics.length}</p>
-              <p className="text-xs text-gray-500 mt-0.5">Farklı Konu</p>
-            </div>
-            <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
-              <p className="text-2xl font-bold text-white">{analysis.year_breakdown.length}</p>
-              <p className="text-xs text-gray-500 mt-0.5">Yıl</p>
-            </div>
-          </div>
-
-          {/* Ders kırılımı (grup görünümünde) */}
-          {!selectedLesson && analysis.lesson_breakdown.length > 1 && (
-            <div className="bg-surface-50 rounded-xl border border-surface-200 p-4">
-              <p className="text-xs font-semibold text-gray-400 mb-3">Ders Dağılımı</p>
-              <div className="space-y-2">
-                {analysis.lesson_breakdown.map(({ lesson, count }) => (
-                  <div key={lesson} className="flex items-center gap-3">
-                    <span className="text-xs text-gray-400 w-48 shrink-0 truncate">{lesson}</span>
-                    <div className="flex-1 bg-surface-200 rounded-full h-1.5">
-                      <div
-                        className="bg-brand-500 h-1.5 rounded-full"
-                        style={{ width: `${Math.round((count / analysis.total) * 100)}%` }}
-                      />
-                    </div>
-                    <span className="text-xs font-mono text-gray-500 w-8 text-right">{count}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* En sık çıkan konular + Video üret */}
-          <div className="bg-surface-50 rounded-xl border border-surface-200 overflow-hidden">
-            <div className="px-5 py-3 border-b border-surface-200 flex items-center justify-between">
-              <p className="text-sm font-semibold text-gray-300">En Sık Çıkan Konular</p>
-              <span className="text-xs text-gray-500">{activeLesson}</span>
-            </div>
-            <div className="divide-y divide-surface-200">
-              {analysis.top_topics.slice(0, 15).map(({ topic, count }, i) => {
-                const lesson = selectedLesson ?? (analysis.lesson_breakdown[0]?.lesson ?? '')
-                const isGenerating = generatingTopic === topic
-                return (
-                  <div key={topic} className="flex items-center gap-3 px-5 py-3">
-                    <span className="text-xs font-mono text-gray-600 w-5 shrink-0">#{i + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-200 truncate">{topic}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <div className="w-24 bg-surface-200 rounded-full h-1">
-                          <div
-                            className="bg-brand-500/60 h-1 rounded-full"
-                            style={{ width: `${Math.round((count / (analysis.top_topics[0]?.count || 1)) * 100)}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-gray-500">{count} soru</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => lesson && handleGenerateVideo(lesson, topic)}
-                      disabled={!lesson || !!generatingTopic}
-                      className="shrink-0 flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-brand-600/10 border border-brand-500/20 text-brand-400 hover:bg-brand-600/20 disabled:opacity-40 transition-colors"
-                    >
-                      {isGenerating ? (
-                        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                        </svg>
-                      ) : (
-                        <Video size={11} />
-                      )}
-                      Video Üret
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Yıl dağılımı */}
-          {analysis.year_breakdown.length > 1 && (
-            <div className="bg-surface-50 rounded-xl border border-surface-200 p-4">
-              <p className="text-xs font-semibold text-gray-400 mb-3">Yıl Dağılımı</p>
-              <div className="flex flex-wrap gap-2">
-                {analysis.year_breakdown.map(({ year, count }) => (
-                  <span key={year} className="text-xs px-2.5 py-1 rounded-lg bg-surface-200 text-gray-400">
-                    {year || '?'} <span className="text-gray-600">({count})</span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {!analysis && !loading && (
-        <div className="flex flex-col items-center justify-center py-16 text-center text-gray-600">
-          <BookOpen size={36} className="mb-3 text-gray-700" />
-          <p className="text-sm">Bir alan veya ders seçip &quot;Analiz Et&quot; butonuna bas</p>
-          <p className="text-xs mt-1">Tüm yüklenen PDF&apos;lerdeki sorular toplanır ve frekans analizi yapılır</p>
-        </div>
-      )}
     </div>
   )
 }
@@ -843,7 +986,7 @@ function AnalysisResult({
 }
 
 export default function AcademyPage() {
-  const [pageTab, setPageTab] = useState<'analyses' | 'ranges' | 'group-analysis'>('analyses')
+  const [pageTab, setPageTab] = useState<'analyses' | 'area-analysis'>('analyses')
   const [phase, setPhase] = useState<Phase>('idle')
   const [analysis, setAnalysis] = useState<SgsAnalysis | null>(null)
   const [savedAnalyses, setSavedAnalyses] = useState<SgsAnalysisMeta[]>([])
@@ -950,17 +1093,9 @@ export default function AcademyPage() {
               <BookOpen size={13} /> Analizler
             </button>
             <button
-              onClick={() => setPageTab('ranges')}
+              onClick={() => setPageTab('area-analysis')}
               className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                pageTab === 'ranges' ? 'bg-surface-50 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              <List size={13} /> Soru Aralıkları
-            </button>
-            <button
-              onClick={() => setPageTab('group-analysis')}
-              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                pageTab === 'group-analysis' ? 'bg-surface-50 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'
+                pageTab === 'area-analysis' ? 'bg-surface-50 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'
               }`}
             >
               <BarChart2 size={13} /> Alan Analizi
@@ -968,8 +1103,7 @@ export default function AcademyPage() {
           </div>
         </div>
 
-        {pageTab === 'ranges' && <RangesPanel />}
-        {pageTab === 'group-analysis' && <GroupAnalysisPanel />}
+        {pageTab === 'area-analysis' && <AreaAnalysisPanel />}
 
         {pageTab === 'analyses' && generatedTitles.length > 0 && (
           <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-xl">
