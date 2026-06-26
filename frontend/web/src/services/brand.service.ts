@@ -22,7 +22,7 @@ export const brandService = {
     return data
   },
 
-  async uploadLogo(file: File): Promise<{ logo_url: string; settings: BrandSettings }> {
+  async uploadLogo(file: File): Promise<{ success: boolean; logo_url: string; message: string }> {
     const form = new FormData()
     form.append('file', file)
     const { data } = await apiClient.post('/brand/logo', form, {

@@ -1,20 +1,38 @@
 """Marka varlıkları — logo yükleme (ayarlar otomatik)."""
 import io
 import logging
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File
-from pydantic import BaseModel
-from app.db.repositories.brand_repo import get_brand_settings, update_brand_settings, _logo_cache, _logo_cache_url
+from app.db.repositories.brand_repo import get_brand_settings, update_brand_settings
 from app.db.supabase import get_supabase_client
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 BUCKET = "brand-assets"
-ALLOWED_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
+
+ALLOWED_MIME: set[str] = {"image/png", "image/jpeg", "image/webp"}
+EXTENSION_MIME: dict[str, str] = {
+    ".png":  "image/png",
+    ".jpg":  "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
+MAX_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
+def _resolve_mime(file: UploadFile) -> str | None:
+    """content_type önce, yoksa uzantıdan çöz."""
+    ct = (file.content_type or "").strip().lower().split(";")[0]
+    if ct in ALLOWED_MIME:
+        return ct
+    if file.filename:
+        ext = Path(file.filename).suffix.lower()
+        return EXTENSION_MIME.get(ext)
+    return ct or None
 
 
 def _ensure_bucket() -> None:
-    """Bucket yoksa oluşturur."""
     supabase = get_supabase_client()
     try:
         buckets = supabase.storage.list_buckets()
@@ -26,15 +44,29 @@ def _ensure_bucket() -> None:
         logger.warning(f"[brand] bucket kontrol hatası: {e}")
 
 
-def _to_png_bytes(raw: bytes, content_type: str) -> tuple[bytes, str]:
-    """PNG değilse PNG'ye dönüştür (PIL üzerinden)."""
-    if content_type == "image/png":
-        return raw, "adim_logo.png"
+def _to_png_bytes(raw: bytes, mime: str) -> bytes:
+    if mime == "image/png":
+        return raw
     from PIL import Image
     img = Image.open(io.BytesIO(raw)).convert("RGBA")
     buf = io.BytesIO()
     img.save(buf, format="PNG")
-    return buf.getvalue(), "adim_logo.png"
+    return buf.getvalue()
+
+
+def _log_asset(file_name: str, file_path: str, public_url: str, mime: str, size: int) -> None:
+    try:
+        sb = get_supabase_client()
+        sb.table("brand_assets").insert({
+            "asset_type": "logo",
+            "file_name": file_name,
+            "file_path": file_path,
+            "public_url": public_url,
+            "mime_type": mime,
+            "size_bytes": size,
+        }).execute()
+    except Exception as e:
+        logger.debug(f"[brand] brand_assets kaydı atlandı: {e}")
 
 
 @router.get("/settings")
@@ -44,7 +76,6 @@ def get_settings():
 
 @router.put("/settings")
 def toggle_watermark(body: dict):
-    """Sadece watermark_enabled toggle'ı — geri kalan ayarlar otomatik."""
     enabled = body.get("watermark_enabled")
     if enabled is None:
         raise HTTPException(400, "watermark_enabled gerekli")
@@ -53,35 +84,90 @@ def toggle_watermark(body: dict):
 
 @router.post("/logo")
 async def upload_logo(file: UploadFile = File(...)):
-    if file.content_type not in ALLOWED_TYPES:
-        raise HTTPException(415, "Sadece PNG, JPG veya WebP yüklenebilir")
-    raw = await file.read()
-    if len(raw) > 5 * 1024 * 1024:
-        raise HTTPException(413, "Logo dosyası 5 MB'tan büyük olamaz")
+    # 1. MIME tipi tespiti (content_type + uzantı fallback)
+    mime = _resolve_mime(file)
+    if not mime:
+        logger.warning(f"[brand] tanımsız dosya tipi — content_type={file.content_type!r} filename={file.filename!r}")
+        raise HTTPException(
+            415,
+            detail={
+                "error": "format",
+                "message": f"Dosya formatı tanınamadı. PNG, JPG veya WebP yükleyin. (Alınan: {file.content_type!r})",
+            },
+        )
 
+    # 2. Dosya içeriği
+    try:
+        raw = await file.read()
+    except Exception as e:
+        logger.error(f"[brand] dosya okunamadı: {e}")
+        raise HTTPException(400, detail={"error": "read", "message": "Dosya okunamadı. Tekrar deneyin."})
+
+    # 3. Boyut kontrolü
+    if len(raw) > MAX_BYTES:
+        raise HTTPException(
+            413,
+            detail={
+                "error": "size",
+                "message": f"Dosya çok büyük ({len(raw) // 1024 // 1024:.1f} MB). Maks 5 MB yüklenebilir.",
+            },
+        )
+
+    # 4. Bucket garantisi
     _ensure_bucket()
 
-    png_bytes, filename = _to_png_bytes(raw, file.content_type or "image/png")
-    path = f"logos/{filename}"
+    # 5. PNG'ye dönüştür + yükle
+    path = "logos/adim_logo.png"
+    try:
+        png_bytes = _to_png_bytes(raw, mime)
+    except Exception as e:
+        logger.error(f"[brand] görsel dönüştürülemedi: {e}")
+        raise HTTPException(422, detail={"error": "convert", "message": "Görsel işlenemedi. Farklı bir dosya deneyin."})
 
     supabase = get_supabase_client()
-    # Varsa üstüne yaz
     try:
         supabase.storage.from_(BUCKET).remove([path])
     except Exception:
         pass
-    supabase.storage.from_(BUCKET).upload(path, png_bytes, {"content-type": "image/png", "upsert": "true"})
 
-    public_url = supabase.storage.from_(BUCKET).get_public_url(path)
-    update_brand_settings({"logo_url": public_url, "watermark_enabled": True})
+    try:
+        supabase.storage.from_(BUCKET).upload(
+            path, png_bytes, {"content-type": "image/png", "upsert": "true"}
+        )
+    except Exception as e:
+        logger.error(f"[brand] Supabase yükleme hatası: {e}")
+        raise HTTPException(
+            502,
+            detail={"error": "storage", "message": f"Storage yükleme hatası: {e}"},
+        )
 
-    # Önbelleği temizle
+    # 6. Public URL al
+    try:
+        public_url = supabase.storage.from_(BUCKET).get_public_url(path)
+    except Exception as e:
+        raise HTTPException(502, detail={"error": "url", "message": f"URL alınamadı: {e}"})
+
+    # 7. Ayarları güncelle
+    try:
+        update_brand_settings({"logo_url": public_url, "watermark_enabled": True})
+    except Exception as e:
+        logger.error(f"[brand] brand_settings güncellenemedi: {e}")
+        raise HTTPException(500, detail={"error": "db", "message": "Logo URL veritabanına kaydedilemedi."})
+
+    # 8. Önbelleği temizle
     import app.db.repositories.brand_repo as _br
     _br._logo_cache = None
     _br._logo_cache_url = None
 
-    logger.info(f"[brand] logo yüklendi: {public_url}")
-    return {"logo_url": public_url, "message": "Logo yüklendi, tüm videolara otomatik eklenecek"}
+    # 9. brand_assets kaydı (tablo yoksa atla)
+    _log_asset(file.filename or "adim_logo", path, public_url, "image/png", len(png_bytes))
+
+    logger.info(f"[brand] logo yüklendi: {public_url} ({len(png_bytes)//1024} KB)")
+    return {
+        "success": True,
+        "logo_url": public_url,
+        "message": "Logo başarıyla yüklendi",
+    }
 
 
 @router.delete("/logo")

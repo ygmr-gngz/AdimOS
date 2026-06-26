@@ -26,13 +26,32 @@ export default function BrandSettingsPage() {
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    // Ön doğrulama
+    const ALLOWED_MIME = ['image/png', 'image/jpeg', 'image/webp']
+    const ALLOWED_EXT = ['.png', '.jpg', '.jpeg', '.webp']
+    const ext = '.' + (file.name.split('.').pop() ?? '').toLowerCase()
+    if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.includes(ext)) {
+      toast.error(`Desteklenmeyen format: ${file.type || ext}. PNG, JPG veya WebP yükleyin.`)
+      e.target.value = ''
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error(`Dosya çok büyük (${(file.size / 1024 / 1024).toFixed(1)} MB). Maks 5 MB.`)
+      e.target.value = ''
+      return
+    }
+
     setUploading(true)
     try {
       const result = await brandService.uploadLogo(file)
       setSettings(prev => prev ? { ...prev, logo_url: result.logo_url, watermark_enabled: true } : null)
       toast.success('Logo yüklendi — tüm yeni videolara otomatik eklenecek')
-    } catch {
-      toast.error('Logo yüklenemedi. Dosya boyutunu ve formatını kontrol et (PNG/JPG/WebP, maks 5 MB)')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: { message?: string } | string } } })
+        ?.response?.data?.detail
+      const msg = typeof detail === 'object' ? detail?.message : typeof detail === 'string' ? detail : null
+      toast.error(msg ?? 'Logo yüklenemedi. Tekrar deneyin.')
     } finally {
       setUploading(false)
       e.target.value = ''
