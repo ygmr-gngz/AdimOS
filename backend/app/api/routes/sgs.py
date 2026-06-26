@@ -247,20 +247,42 @@ class TopicVideoRequest(BaseModel):
 
 
 def _bg_topic_video(content_id: str, video_plan_item: dict, questions: list):
+    from app.api.routes.notifications import push_notification
+    topic = video_plan_item.get("topic", "")
+    subject = video_plan_item.get("subject", "")
     try:
         from app.db.repositories.brand_repo import configure_video_watermark
         configure_video_watermark("sgs_topic_video")
-        logger.info(f"[sgs] konu videosu başladı id={content_id} topic={video_plan_item.get('topic')}")
+        logger.info(f"[sgs] konu videosu başladı id={content_id} topic={topic}")
         result = build_sgs_topic_video(video_plan_item, questions)
         updates = {"status": "pending_approval"}
         for field in ("video_path", "title", "script", "audio_base64"):
             if result.get(field):
                 updates["video_url" if field == "video_path" else field] = result[field]
         update_content(content_id, updates)
+        push_notification(
+            "content_ready",
+            f"SGS videosu hazır: {topic}",
+            status="success",
+            message=f"{subject} — {topic} konusu çözüm videosu oluşturuldu. Onay bekliyor.",
+            details={"content_id": content_id, "topic": topic, "subject": subject,
+                     "question_count": len(questions), "video_type": "sgs_topic_video"},
+            related_entity_type="content", related_entity_id=content_id,
+            action_url="/automation",
+        )
         logger.info(f"[sgs] konu videosu tamamlandı id={content_id}")
     except Exception as e:
         logger.error(f"[sgs] konu video hatası id={content_id}: {e}", exc_info=True)
         update_content(content_id, {"status": "error", "error_detail": str(e)[:300]})
+        push_notification(
+            "content_failed",
+            f"SGS videosu üretilemedi: {topic}",
+            status="error",
+            message=str(e)[:200],
+            details={"content_id": content_id, "topic": topic},
+            related_entity_type="content", related_entity_id=content_id,
+            action_url="/automation",
+        )
 
 
 @router.post("/generate-topic-video")

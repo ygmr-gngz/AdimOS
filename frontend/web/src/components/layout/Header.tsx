@@ -66,7 +66,7 @@ export default function Header({ onOpenAssistant, onOpenSidebar }: HeaderProps) 
 
       <div className="flex items-center gap-2">
         {/* Bildirim */}
-        <div ref={bellRef} className="relative">
+        <div ref={bellRef}>
           <button
             onClick={handleOpenNotif}
             className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-surface-200 text-gray-400 hover:text-gray-200 hover:border-surface-300 transition-colors text-xs font-medium"
@@ -80,7 +80,10 @@ export default function Header({ onOpenAssistant, onOpenSidebar }: HeaderProps) 
             )}
           </button>
           {notifOpen && (
-            <NotificationPanel onClose={() => setNotifOpen(false)} />
+            <NotificationPanel
+              onClose={() => setNotifOpen(false)}
+              onUnreadChange={setUnread}
+            />
           )}
         </div>
 
