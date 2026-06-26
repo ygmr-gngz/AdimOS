@@ -241,7 +241,9 @@ function AreaAnalysisPanel() {
   const [rangesLoading, setRangesLoading] = useState(true)
   const [showRangeForm, setShowRangeForm] = useState(false)
   const [savingRange, setSavingRange] = useState(false)
+  const [pdfOptions, setPdfOptions] = useState<SgsAnalysisMeta[]>([])
   const [rangeForm, setRangeForm] = useState({
+    document_id: '',
     document_name: '',
     start_question_no: '',
     end_question_no: '',
@@ -267,6 +269,9 @@ function AreaAnalysisPanel() {
       .then(setRanges)
       .catch(() => {})
       .finally(() => setRangesLoading(false))
+    sgsService.listAnalyses()
+      .then(setPdfOptions)
+      .catch(() => {})
   }, [])
 
   const handleYearFilter = (y: string) => {
@@ -317,13 +322,14 @@ function AreaAnalysisPanel() {
     e.preventDefault()
     const start = parseInt(rangeForm.start_question_no, 10)
     const end = parseInt(rangeForm.end_question_no, 10)
-    if (!rangeForm.document_name.trim()) { toast.error('Belge adı boş olamaz'); return }
+    if (!rangeForm.document_id) { toast.error('Lütfen bir PDF seçin'); return }
     if (isNaN(start) || start < 1) { toast.error('Başlangıç soru numarası geçersiz'); return }
     if (isNaN(end) || end < start) { toast.error(`Bitiş (${end}) başlangıçtan (${start}) küçük olamaz`); return }
     setSavingRange(true)
     try {
       const saved = await sgsService.saveRange({
-        document_name: rangeForm.document_name.trim(),
+        document_name: rangeForm.document_name,
+        document_id: rangeForm.document_id,
         start_question_no: start,
         end_question_no: end,
         lesson_name: rangeForm.lesson_name,
@@ -658,13 +664,32 @@ function AreaAnalysisPanel() {
           <div className="bg-surface-50 rounded-xl border border-surface-200 p-5 mb-4">
             <form onSubmit={handleSaveRange} className="space-y-4" noValidate>
               <div>
-                <label className="text-xs font-medium text-gray-400 mb-1 block">Belge Adı</label>
-                <input
-                  className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 placeholder-gray-600"
-                  placeholder="örn: 2026-1 SGS Çıkmış Sorular"
-                  value={rangeForm.document_name}
-                  onChange={e => setRangeForm(f => ({ ...f, document_name: e.target.value }))}
-                />
+                <label className="text-xs font-medium text-gray-400 mb-1 block">PDF Seç</label>
+                {pdfOptions.length === 0 ? (
+                  <p className="text-xs text-yellow-400 py-2">
+                    Henüz yüklü PDF analizi yok. Önce &quot;Analizler&quot; sekmesinden PDF yükleyin.
+                  </p>
+                ) : (
+                  <select
+                    className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    value={rangeForm.document_id}
+                    onChange={e => {
+                      const picked = pdfOptions.find(a => a.id === e.target.value)
+                      setRangeForm(f => ({
+                        ...f,
+                        document_id: e.target.value,
+                        document_name: picked?.pdf_name ?? '',
+                      }))
+                    }}
+                  >
+                    <option value="">— PDF seçin —</option>
+                    {pdfOptions.map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.pdf_name}{a.year ? ` (${a.year}${a.semester ? ' · ' + a.semester : ''})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

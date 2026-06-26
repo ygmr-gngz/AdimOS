@@ -1,4 +1,7 @@
 """SGS analizleri için Supabase repo."""
+import re
+import unicodedata
+from difflib import SequenceMatcher
 from app.db.supabase import get_supabase_client
 
 
@@ -46,8 +49,50 @@ def find_lesson_for_question(document_name, question_no):
 
 
 def _norm_name(name: str) -> str:
-    """PDF ismi normalize — uzantı ve boşluk kaldır."""
-    return (name or "").lower().strip().removesuffix(".pdf").strip()
+    """PDF ismi normalize — Türkçe karakter, noktalama, uzantı standartlaştır."""
+    name = (name or "").strip()
+    # Türkçe I/İ/ı özel durumları (Python lower() yanlış sonuç verebilir)
+    name = name.replace("İ", "I").replace("ı", "i")
+    name = name.lower()
+    name = name.removesuffix(".pdf").strip()
+    # Diacritic kaldır: ş→s, ç→c, ğ→g, ö→o, ü→u, vb.
+    name = "".join(c for c in unicodedata.normalize("NFD", name)
+                   if unicodedata.category(c) != "Mn")
+    # Alt çizgi, tire, nokta → boşluk
+    name = re.sub(r"[_\-\.]+", " ", name)
+    # Harf/rakam olmayan → boşluk
+    name = re.sub(r"[^a-z0-9 ]+", " ", name)
+    return re.sub(r"\s+", " ", name).strip()
+
+
+def _names_match(range_name: str, pdf_name: str) -> bool:
+    """İki belge isminin aynı PDF'e ait olup olmadığını kontrol eder.
+    1. Normalize edilmiş tam eşleşme
+    2. Biri diğerini içeriyor (şantiye vs şantiye_2)
+    3. Fuzzy benzerlik ≥ %75
+    """
+    r, p = _norm_name(range_name), _norm_name(pdf_name)
+    if not r or not p:
+        return False
+    if r == p:
+        return True
+    if r in p or p in r:
+        return True
+    return SequenceMatcher(None, r, p).ratio() >= 0.75
+
+
+def _find_analysis(rng: dict, analyses_by_id: dict, analyses_list: list) -> dict | None:
+    """Bir aralık için en iyi analiz eşleşmesini bul.
+    Önce document_id (kesin), sonra isim benzerliği.
+    """
+    doc_id = rng.get("document_id")
+    if doc_id and doc_id in analyses_by_id:
+        return analyses_by_id[doc_id]
+    range_name = rng.get("document_name", "")
+    for a in analyses_list:
+        if _names_match(range_name, a.get("pdf_name", "")):
+            return a
+    return None
 
 
 def get_questions_by_ranges(
@@ -78,15 +123,12 @@ def get_questions_by_ranges(
         analyses_query = analyses_query.eq("year", year)
     analyses_resp = analyses_query.execute()
 
-    analyses_by_name: dict[str, dict] = {}
-    for a in (analyses_resp.data or []):
-        key = _norm_name(a.get("pdf_name", ""))
-        analyses_by_name[key] = a
+    all_analyses: list[dict] = analyses_resp.data or []
+    analyses_by_id: dict[str, dict] = {a["id"]: a for a in all_analyses}
 
     result = []
     for rng in target_ranges:
-        doc_key = _norm_name(rng.get("document_name", ""))
-        analysis = analyses_by_name.get(doc_key)
+        analysis = _find_analysis(rng, analyses_by_id, all_analyses)
         if not analysis:
             continue
         start, end = rng["start_question_no"], rng["end_question_no"]
@@ -119,10 +161,8 @@ def get_areas_summary(year: str | None = None) -> list[dict]:
         analyses_query = analyses_query.eq("year", year)
     analyses_resp = analyses_query.execute()
 
-    analyses_by_name: dict[str, dict] = {}
-    for a in (analyses_resp.data or []):
-        key = _norm_name(a.get("pdf_name", ""))
-        analyses_by_name[key] = a
+    all_analyses: list[dict] = analyses_resp.data or []
+    analyses_by_id: dict[str, dict] = {a["id"]: a for a in all_analyses}
 
     areas = []
     for area, lessons in SGS_LESSON_GROUPS.items():
@@ -134,7 +174,7 @@ def get_areas_summary(year: str | None = None) -> list[dict]:
             expected = sum(r["end_question_no"] - r["start_question_no"] + 1 for r in lesson_ranges)
             found = 0
             for r in lesson_ranges:
-                a = analyses_by_name.get(_norm_name(r.get("document_name", "")))
+                a = _find_analysis(r, analyses_by_id, all_analyses)
                 if a:
                     s, e = r["start_question_no"], r["end_question_no"]
                     found += sum(1 for q in (a.get("questions") or []) if s <= q.get("id", 0) <= e)
