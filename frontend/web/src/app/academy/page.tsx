@@ -9,7 +9,7 @@ import {
   ChevronUp, Clock, BookOpen, Video, Trash2, RefreshCw, AlertTriangle, Edit2, List, Plus, BarChart2,
   CheckCircle2, X, Layers
 } from 'lucide-react'
-import { sgsService, SGS_LESSONS, SGS_LESSON_GROUPS, SGS_DOCUMENT_TYPES, type SgsAnalysis, type SgsAnalysisMeta, type SgsQuestion, type SgsRange, type SgsArea, type SgsTopicAnalysis } from '@/services/sgs.service'
+import { sgsService, SGS_LESSONS, SGS_LESSON_GROUPS, SGS_DOCUMENT_TYPES, type SgsAnalysis, type SgsAnalysisMeta, type SgsQuestion, type SgsRange, type SgsArea, type SgsTopicAnalysis, type SgsParseResult } from '@/services/sgs.service'
 import toast from 'react-hot-toast'
 
 type Phase = 'idle' | 'uploading' | 'done'
@@ -566,6 +566,11 @@ function AreaAnalysisPanel() {
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [generatingTopic, setGeneratingTopic] = useState<string | null>(null)
 
+  // Parse pipeline state
+  const [parsing, setParsing] = useState(false)
+  const [parseResult, setParseResult] = useState<SgsParseResult | null>(null)
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null)
+
   // Aralık bağlama state
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [linkingAnalysisId, setLinkingAnalysisId] = useState('')
@@ -701,6 +706,22 @@ function AreaAnalysisPanel() {
       toast.error(msg ? `Hata: ${msg}` : 'Aralık kaydedilemedi')
     } finally {
       setSavingRange(false)
+    }
+  }
+
+  const handleParseQuestions = async (analysisId: string) => {
+    if (!analysisId) { toast.error('Parse edilecek PDF seçilmedi'); return }
+    setParsing(true)
+    setParseResult(null)
+    try {
+      const result = await sgsService.parseQuestions(analysisId)
+      setParseResult(result)
+      toast.success(`${result.questions_created} soru parse edildi ve veritabanına kaydedildi`)
+      loadAreas(yearFilter || undefined)
+    } catch {
+      toast.error('Parse işlemi başarısız — backend endpoint hazır mı?')
+    } finally {
+      setParsing(false)
     }
   }
 
@@ -874,28 +895,42 @@ function AreaAnalysisPanel() {
                       <p className={`text-sm font-medium truncate ${isActive ? 'text-brand-300' : 'text-gray-300'}`}>
                         {lesson.name}
                       </p>
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        {lesson.expected > 0 ? (
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        {lesson.status === 'no_range' ? (
+                          <span className="text-[10px] text-gray-600">Aralık tanımlanmamış</span>
+                        ) : (
                           <>
-                            <span className="text-xs text-gray-500">{lesson.expected} beklenen</span>
-                            {lesson.status === 'ready' && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-400">
-                                {lesson.found} soru hazır{discrepancy > 0 ? ` · ${discrepancy} eksik` : ''}
+                            <span className="flex items-center gap-0.5 text-[10px] text-green-500">
+                              <CheckCircle2 size={9} /> Aralık ({lesson.expected} soru)
+                            </span>
+                            <span className="text-gray-700 text-[10px]">›</span>
+                            {lesson.status === 'no_pdf' ? (
+                              <span className="flex items-center gap-0.5 text-[10px] text-orange-400">
+                                <AlertTriangle size={9} /> PDF bağlı değil
                               </span>
-                            )}
-                            {lesson.status === 'no_questions' && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400">
-                                PDF bağlı · soru parse edilmedi
-                              </span>
-                            )}
-                            {lesson.status === 'no_pdf' && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/10 text-orange-400">
-                                PDF bağlantısı yok
-                              </span>
+                            ) : (
+                              <>
+                                <span className="flex items-center gap-0.5 text-[10px] text-green-500">
+                                  <CheckCircle2 size={9} /> PDF bağlı
+                                </span>
+                                <span className="text-gray-700 text-[10px]">›</span>
+                                {lesson.status === 'no_questions' ? (
+                                  <span className="flex items-center gap-0.5 text-[10px] text-yellow-400">
+                                    <AlertTriangle size={9} /> Parse bekliyor
+                                  </span>
+                                ) : (
+                                  <>
+                                    <span className="flex items-center gap-0.5 text-[10px] text-green-500">
+                                      <CheckCircle2 size={9} /> {lesson.found} soru
+                                    </span>
+                                    {discrepancy > 0 && (
+                                      <span className="text-[10px] text-yellow-400">({discrepancy} eksik)</span>
+                                    )}
+                                  </>
+                                )}
+                              </>
                             )}
                           </>
-                        ) : (
-                          <span className="text-xs text-gray-600">Aralık yok</span>
                         )}
                       </div>
                     </div>
@@ -927,120 +962,200 @@ function AreaAnalysisPanel() {
             </div>
           ) : topicAnalysis && (
             <>
-              {/* Özet */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
-                  <p className="text-2xl font-bold text-white">{topicAnalysis.total}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Toplam Soru</p>
-                </div>
-                <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
-                  <p className="text-2xl font-bold text-brand-400">{topicAnalysis.top_topics.length}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Farklı Konu</p>
-                </div>
-                <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
-                  <p className="text-2xl font-bold text-white">{topicAnalysis.year_breakdown.length}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Yıl</p>
-                </div>
-              </div>
-
-              {/* Veri kaynağı */}
-              <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${
-                topicAnalysis.data_source === 'ranges'
-                  ? 'bg-green-500/10 border border-green-500/20 text-green-400'
-                  : 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-400'
-              }`}>
-                {topicAnalysis.data_source === 'ranges'
-                  ? <CheckCircle2 size={12} />
-                  : <AlertTriangle size={12} />}
-                {topicAnalysis.data_source === 'ranges'
-                  ? 'Veri kaynağı: Soru Aralıkları (manuel)'
-                  : 'Veri kaynağı: AI Analizi (aralık bulunamadı)'}
-              </div>
-
-              {/* Ders dağılımı (alan görünümünde) */}
-              {!selectedLesson && topicAnalysis.lesson_breakdown && topicAnalysis.lesson_breakdown.length > 1 && (
-                <div className="bg-surface-50 rounded-xl border border-surface-200 p-4">
-                  <p className="text-xs font-semibold text-gray-400 mb-3">Ders Dağılımı</p>
-                  <div className="space-y-2">
-                    {topicAnalysis.lesson_breakdown.map(({ lesson, count }) => (
-                      <div key={lesson} className="flex items-center gap-3">
-                        <span className="text-xs text-gray-400 w-44 shrink-0 truncate">{lesson}</span>
-                        <div className="flex-1 bg-surface-200 rounded-full h-1.5">
-                          <div
-                            className="bg-brand-500 h-1.5 rounded-full"
-                            style={{ width: `${Math.round((count / topicAnalysis.total) * 100)}%` }}
-                          />
-                        </div>
-                        <span className="text-xs font-mono text-gray-500 w-8 text-right">{count}</span>
-                      </div>
-                    ))}
+              {/* AI fallback — gösterme, parse CTA göster */}
+              {topicAnalysis.data_source === 'ai' ? (
+                <div className="bg-surface-50 rounded-xl border border-yellow-500/20 p-6 text-center space-y-3">
+                  <AlertTriangle size={28} className="mx-auto text-yellow-500" />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-200">Soru Parse Edilmedi</p>
+                    <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
+                      Alan analizi için soruların önce Question Database&apos;e parse edilmesi gerekiyor.
+                      AI tahmini gösterilmeyecek — yalnızca doğrulanmış veri kullanılır.
+                    </p>
                   </div>
+                  <div className="flex items-center justify-center gap-3 flex-wrap">
+                    {pdfOptions.length > 0 && (
+                      <Button
+                        onClick={() => handleParseQuestions(pdfOptions[0].id)}
+                        isLoading={parsing}
+                      >
+                        <BookOpen size={13} /> Soruları Parse Et
+                      </Button>
+                    )}
+                    {pdfOptions.length > 1 && (
+                      <span className="text-xs text-gray-600">
+                        {pdfOptions.length} PDF var — Soru Aralıkları bölümünden PDF seçip parse edin
+                      </span>
+                    )}
+                  </div>
+                  {pdfOptions.length === 0 && (
+                    <p className="text-xs text-gray-600">Önce &quot;Analizler&quot; sekmesinden PDF yükleyin</p>
+                  )}
                 </div>
-              )}
+              ) : (
+                <>
+                  {/* Parse sonucu başarı */}
+                  {parseResult && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-xs">
+                      <CheckCircle2 size={12} />
+                      {parseResult.questions_created} soru başarıyla parse edildi ve Question Database&apos;e kaydedildi
+                    </div>
+                  )}
 
-              {/* En sık konular + Video */}
-              <div className="bg-surface-50 rounded-xl border border-surface-200 overflow-hidden">
-                <div className="px-5 py-3 border-b border-surface-200 flex items-center justify-between">
-                  <p className="text-sm font-semibold text-gray-300">En Sık Çıkan Konular</p>
-                  <span className="text-xs text-gray-500">{selectedLesson ?? selectedArea}</span>
-                </div>
-                {topicAnalysis.top_topics.length === 0 ? (
-                  <div className="p-6 text-center text-sm text-gray-600">Bu alan/derse ait konu bulunamadı</div>
-                ) : (
-                  <div className="divide-y divide-surface-200">
-                    {topicAnalysis.top_topics.map(({ topic, count }, i) => {
-                      const lesson = selectedLesson
-                        ?? topicAnalysis.lesson_breakdown?.[0]?.lesson
-                        ?? currentArea?.lessons[0]?.name
-                        ?? ''
-                      const isGenerating = generatingTopic === topic
-                      return (
-                        <div key={topic} className="flex items-center gap-3 px-5 py-3">
-                          <span className="text-xs font-mono text-gray-600 w-5 shrink-0">#{i + 1}</span>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm text-gray-200 truncate">{topic}</p>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <div className="w-24 bg-surface-200 rounded-full h-1">
-                                <div
-                                  className="bg-brand-500/60 h-1 rounded-full"
-                                  style={{ width: `${Math.round((count / (topicAnalysis.top_topics[0]?.count || 1)) * 100)}%` }}
+                  {/* Özet */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
+                      <p className="text-2xl font-bold text-white">{topicAnalysis.total}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">Toplam Soru</p>
+                    </div>
+                    <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
+                      <p className="text-2xl font-bold text-brand-400">{topicAnalysis.top_topics.length}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">Farklı Konu</p>
+                    </div>
+                    <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
+                      <p className="text-2xl font-bold text-white">{topicAnalysis.year_breakdown.length}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">Yıl</p>
+                    </div>
+                  </div>
+
+                  {/* Veri kaynağı badge */}
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-xs">
+                    <CheckCircle2 size={12} />
+                    Veri kaynağı: ✓ Soru Aralıkları · ✓ Questions DB · ✓ Doğrulanmış veri
+                  </div>
+
+                  {/* Ders dağılımı (alan görünümünde) */}
+                  {!selectedLesson && topicAnalysis.lesson_breakdown && topicAnalysis.lesson_breakdown.length > 1 && (
+                    <div className="bg-surface-50 rounded-xl border border-surface-200 p-4">
+                      <p className="text-xs font-semibold text-gray-400 mb-3">Ders Dağılımı</p>
+                      <div className="space-y-2">
+                        {topicAnalysis.lesson_breakdown.map(({ lesson, count }) => (
+                          <div key={lesson} className="flex items-center gap-3">
+                            <span className="text-xs text-gray-400 w-44 shrink-0 truncate">{lesson}</span>
+                            <div className="flex-1 bg-surface-200 rounded-full h-1.5">
+                              <div
+                                className="bg-brand-500 h-1.5 rounded-full"
+                                style={{ width: `${Math.round((count / topicAnalysis.total) * 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-mono text-gray-500 w-8 text-right">{count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* En sık konular + Video + Detay */}
+                  <div className="bg-surface-50 rounded-xl border border-surface-200 overflow-hidden">
+                    <div className="px-5 py-3 border-b border-surface-200 flex items-center justify-between">
+                      <p className="text-sm font-semibold text-gray-300">En Sık Çıkan Konular</p>
+                      <span className="text-xs text-gray-500">{selectedLesson ?? selectedArea}</span>
+                    </div>
+                    {topicAnalysis.top_topics.length === 0 ? (
+                      <div className="p-6 text-center text-sm text-gray-600">Bu alan/derse ait konu bulunamadı</div>
+                    ) : (
+                      <div className="divide-y divide-surface-200">
+                        {topicAnalysis.top_topics.map(({ topic, count }, i) => {
+                          const lesson = selectedLesson
+                            ?? topicAnalysis.lesson_breakdown?.[0]?.lesson
+                            ?? currentArea?.lessons[0]?.name
+                            ?? ''
+                          const isGenerating = generatingTopic === topic
+                          const isExpanded = selectedTopic === topic
+                          return (
+                            <div key={topic}>
+                              <div
+                                className={`flex items-center gap-3 px-5 py-3 cursor-pointer transition-colors ${
+                                  isExpanded ? 'bg-brand-500/5' : 'hover:bg-surface-100'
+                                }`}
+                                onClick={() => setSelectedTopic(isExpanded ? null : topic)}
+                              >
+                                <span className="text-xs font-mono text-gray-600 w-5 shrink-0">#{i + 1}</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm text-gray-200 truncate">{topic}</p>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <div className="w-24 bg-surface-200 rounded-full h-1">
+                                      <div
+                                        className="bg-brand-500/60 h-1 rounded-full"
+                                        style={{ width: `${Math.round((count / (topicAnalysis.top_topics[0]?.count || 1)) * 100)}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-xs text-gray-500">{count} soru</span>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={e => { e.stopPropagation(); lesson && handleGenerateVideo(lesson, topic) }}
+                                  disabled={!lesson || !!generatingTopic}
+                                  className="shrink-0 flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-brand-600/10 border border-brand-500/20 text-brand-400 hover:bg-brand-600/20 disabled:opacity-40 transition-colors"
+                                >
+                                  {isGenerating ? (
+                                    <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                    </svg>
+                                  ) : <Video size={11} />}
+                                  Video Üret
+                                </button>
+                                <ChevronDown
+                                  size={13}
+                                  className={`text-gray-600 transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
                                 />
                               </div>
-                              <span className="text-xs text-gray-500">{count} soru</span>
+                              {isExpanded && (
+                                <div className="px-5 pb-3 pt-2 bg-brand-500/5 border-t border-brand-500/10 space-y-2">
+                                  <div className="flex items-center gap-4 flex-wrap">
+                                    <div>
+                                      <p className="text-[10px] text-gray-600 uppercase tracking-wide mb-0.5">Toplam</p>
+                                      <p className="text-sm font-bold text-brand-300">{count} soru</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] text-gray-600 uppercase tracking-wide mb-0.5">Çıkma Oranı</p>
+                                      <p className="text-sm font-bold text-gray-300">
+                                        %{Math.round((count / topicAnalysis.total) * 100)}
+                                      </p>
+                                    </div>
+                                    {lesson && (
+                                      <div>
+                                        <p className="text-[10px] text-gray-600 uppercase tracking-wide mb-0.5">Ders</p>
+                                        <p className="text-xs text-gray-400">{lesson}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {topicAnalysis.year_breakdown.length > 0 && (
+                                    <div>
+                                      <p className="text-[10px] text-gray-600 uppercase tracking-wide mb-1">Yıllar</p>
+                                      <div className="flex flex-wrap gap-1">
+                                        {topicAnalysis.year_breakdown.map(({ year }) => (
+                                          <span key={year} className="text-[10px] px-1.5 py-0.5 rounded bg-surface-200 text-gray-500">
+                                            {year || '?'}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
-                          </div>
-                          <button
-                            onClick={() => lesson && handleGenerateVideo(lesson, topic)}
-                            disabled={!lesson || !!generatingTopic}
-                            className="shrink-0 flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-brand-600/10 border border-brand-500/20 text-brand-400 hover:bg-brand-600/20 disabled:opacity-40 transition-colors"
-                          >
-                            {isGenerating ? (
-                              <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                              </svg>
-                            ) : <Video size={11} />}
-                            Video Üret
-                          </button>
-                        </div>
-                      )
-                    })}
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              {/* Yıl dağılımı */}
-              {topicAnalysis.year_breakdown.length > 1 && (
-                <div className="bg-surface-50 rounded-xl border border-surface-200 p-4">
-                  <p className="text-xs font-semibold text-gray-400 mb-3">Yıl Dağılımı</p>
-                  <div className="flex flex-wrap gap-2">
-                    {topicAnalysis.year_breakdown.map(({ year, count }) => (
-                      <span key={year} className="text-xs px-2.5 py-1 rounded-lg bg-surface-200 text-gray-400">
-                        {year || '?'} <span className="text-gray-600">({count})</span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
+                  {/* Yıl dağılımı */}
+                  {topicAnalysis.year_breakdown.length > 1 && (
+                    <div className="bg-surface-50 rounded-xl border border-surface-200 p-4">
+                      <p className="text-xs font-semibold text-gray-400 mb-3">Yıl Dağılımı</p>
+                      <div className="flex flex-wrap gap-2">
+                        {topicAnalysis.year_breakdown.map(({ year, count }) => (
+                          <span key={year} className="text-xs px-2.5 py-1 rounded-lg bg-surface-200 text-gray-400">
+                            {year || '?'} <span className="text-gray-600">({count})</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
@@ -1052,6 +1167,70 @@ function AreaAnalysisPanel() {
           <BarChart2 size={36} className="mb-3 text-gray-700" />
           <p className="text-sm">Bir alan kartına tıklayarak ders dağılımını ve konu analizini gör</p>
           <p className="text-xs mt-1">Soru aralıkları tanımlandıkça kartlar otomatik güncellenir</p>
+        </div>
+      )}
+
+      {/* ── Parse Pipeline ───────────────────────────────────────── */}
+      {ranges.length > 0 && pdfOptions.length > 0 && (
+        <div className="border-t border-surface-200 pt-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <BookOpen size={14} className="text-brand-400" />
+              <span className="text-sm font-semibold text-gray-300">Soru Parse Pipeline</span>
+            </div>
+          </div>
+          <div className="bg-surface-50 rounded-xl border border-surface-200 p-4 space-y-4">
+            <div className="flex items-center gap-3 text-xs flex-wrap">
+              <span className="flex items-center gap-1 text-green-400"><CheckCircle2 size={12} /> PDF Yüklendi</span>
+              <span className="text-gray-700">→</span>
+              <span className="flex items-center gap-1 text-green-400"><CheckCircle2 size={12} /> {ranges.length} Aralık Tanımlı</span>
+              <span className="text-gray-700">→</span>
+              <span className={`flex items-center gap-1 ${parseResult ? 'text-green-400' : 'text-yellow-400'}`}>
+                {parseResult ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+                {parseResult ? `${parseResult.questions_created} Soru Parse Edildi` : 'Parse Bekleniyor'}
+              </span>
+              <span className="text-gray-700">→</span>
+              <span className={`flex items-center gap-1 ${parseResult ? 'text-green-400' : 'text-gray-600'}`}>
+                {parseResult ? <CheckCircle2 size={12} /> : <Clock size={12} />}
+                Analiz Hazır
+              </span>
+            </div>
+
+            <div className="flex items-center gap-3 flex-wrap">
+              {pdfOptions.length === 1 ? (
+                <Button onClick={() => handleParseQuestions(pdfOptions[0].id)} isLoading={parsing} size="sm">
+                  <BookOpen size={13} /> {pdfOptions[0].pdf_name} — Soruları Parse Et
+                </Button>
+              ) : (
+                <>
+                  <select
+                    className="bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 flex-1 min-w-[200px]"
+                    defaultValue=""
+                    onChange={e => e.target.value && handleParseQuestions(e.target.value)}
+                  >
+                    <option value="">— Parse edilecek PDF seçin —</option>
+                    {pdfOptions.map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.pdf_name}{a.year ? ` (${a.year})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {parsing && <span className="text-xs text-brand-400 animate-pulse">Parse ediliyor...</span>}
+                </>
+              )}
+            </div>
+
+            {parseResult && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {parseResult.lessons.map(l => (
+                  <div key={l.lesson_name} className="bg-surface-100 rounded-lg px-3 py-2 text-center">
+                    <p className="text-sm font-bold text-brand-300">{l.count}</p>
+                    <p className="text-[10px] text-gray-500 truncate">{l.lesson_name}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

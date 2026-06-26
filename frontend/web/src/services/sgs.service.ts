@@ -85,6 +85,32 @@ export interface SgsAnalysisMeta {
   created_at: string
 }
 
+// ── Parse Pipeline Types ──────────────────────────────────────
+
+export interface SgsParseResult {
+  questions_created: number
+  lessons: { lesson_name: string; count: number }[]
+  analysis_id: string
+}
+
+export interface SgsQuestionStat {
+  lesson_name: string
+  lesson_group: string
+  total: number
+  topics: { topic: string; count: number }[]
+  years: { year: string; count: number }[]
+}
+
+export interface SgsTopicDetail {
+  topic: string
+  total_questions: number
+  lessons: { lesson_name: string; count: number }[]
+  years: { year: string; count: number }[]
+  frequency_pct: number
+}
+
+// ── Lesson Status ─────────────────────────────────────────────
+
 export type SgsLessonStatus = 'no_range' | 'no_pdf' | 'no_questions' | 'ready'
 
 export interface SgsAreaLesson {
@@ -244,6 +270,23 @@ export const sgsService = {
 
   async bulkLinkRanges(analysisId: string): Promise<{ linked: number; pdf_name: string }> {
     const { data } = await apiClient.post('/sgs/ranges/bulk-link', { analysis_id: analysisId })
+    return data
+  },
+
+  async parseQuestions(analysisId: string): Promise<SgsParseResult> {
+    const { data } = await apiClient.post('/sgs/questions/parse-by-ranges', { analysis_id: analysisId })
+    return data
+  },
+
+  async getQuestionStats(filters?: { year?: string; area?: string; lesson?: string }): Promise<SgsQuestionStat[]> {
+    const { data } = await apiClient.get('/sgs/question-stats', { params: filters ?? {} })
+    return data.stats ?? []
+  },
+
+  async getTopicDetail(topic: string, lesson?: string): Promise<SgsTopicDetail> {
+    const { data } = await apiClient.get('/sgs/topic-detail', {
+      params: { topic, ...(lesson ? { lesson } : {}) },
+    })
     return data
   },
 }
