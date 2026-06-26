@@ -7,7 +7,7 @@ import Badge from '@/components/ui/Badge'
 import {
   GraduationCap, Upload, FileText, Play, ChevronDown,
   ChevronUp, Clock, BookOpen, Video, Trash2, RefreshCw, AlertTriangle, Edit2, List, Plus, BarChart2,
-  CheckCircle2
+  CheckCircle2, X, Layers
 } from 'lucide-react'
 import { sgsService, SGS_LESSONS, SGS_LESSON_GROUPS, SGS_DOCUMENT_TYPES, type SgsAnalysis, type SgsAnalysisMeta, type SgsQuestion, type SgsRange, type SgsArea, type SgsTopicAnalysis } from '@/services/sgs.service'
 import toast from 'react-hot-toast'
@@ -226,6 +226,336 @@ function QuestionRow({
 
 // ── Alan + Soru Aralıkları Birleşik Paneli ───────────────────
 
+// ── Toplu Aralık Oluşturma Modalı ─────────────────────────────
+
+type BulkQplMode = '5' | '6' | 'custom'
+
+interface BulkEntry {
+  lesson_name: string
+  area: string
+  start_question_no: number
+  end_question_no: number
+  count: number
+  conflict?: string
+}
+
+const BULK_AREAS = ['Hukuk', 'Muhasebe', 'Finans', 'Genel Dersler', 'Tümü'] as const
+
+function BulkRangeModal({
+  pdfOptions,
+  existingRanges,
+  onClose,
+  onSaved,
+}: {
+  pdfOptions: SgsAnalysisMeta[]
+  existingRanges: SgsRange[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [step, setStep] = useState<'config' | 'preview'>('config')
+  const [analysisId, setAnalysisId] = useState(pdfOptions[0]?.id ?? '')
+  const [selectedArea, setSelectedArea] = useState<string>('Hukuk')
+  const [startNo, setStartNo] = useState(1)
+  const [qplMode, setQplMode] = useState<BulkQplMode>('6')
+  const [customCounts, setCustomCounts] = useState<Record<string, number>>({})
+  const [preview, setPreview] = useState<BulkEntry[]>([])
+  const [saving, setSaving] = useState(false)
+
+  const selectedPdf = pdfOptions.find(a => a.id === analysisId)
+
+  const currentLessons: readonly string[] = selectedArea === 'Tümü'
+    ? Object.values(SGS_LESSON_GROUPS).flat()
+    : (SGS_LESSON_GROUPS[selectedArea as keyof typeof SGS_LESSON_GROUPS] ?? [])
+
+  function buildEntries(): BulkEntry[] {
+    const areas = selectedArea === 'Tümü'
+      ? Object.keys(SGS_LESSON_GROUPS)
+      : [selectedArea]
+    const entries: BulkEntry[] = []
+    let cur = startNo
+
+    for (const area of areas) {
+      const lessons = SGS_LESSON_GROUPS[area as keyof typeof SGS_LESSON_GROUPS] ?? []
+      for (const lesson of lessons) {
+        const count = qplMode === 'custom'
+          ? (customCounts[lesson] ?? 6)
+          : parseInt(qplMode)
+        const start = cur
+        const end = cur + count - 1
+        cur += count
+
+        const conflict = existingRanges.find(r =>
+          r.lesson_name === lesson &&
+          r.start_question_no <= end &&
+          r.end_question_no >= start
+        )
+        entries.push({
+          lesson_name: lesson,
+          area,
+          start_question_no: start,
+          end_question_no: end,
+          count,
+          conflict: conflict
+            ? `${conflict.start_question_no}–${conflict.end_question_no} ile çakışıyor`
+            : undefined,
+        })
+      }
+    }
+    return entries
+  }
+
+  function handlePreview() {
+    if (!analysisId) { toast.error('Lütfen bir PDF seçin'); return }
+    if (startNo < 1) { toast.error('Başlangıç numarası geçersiz'); return }
+    setPreview(buildEntries())
+    setStep('preview')
+  }
+
+  async function handleSave() {
+    if (!selectedPdf) return
+    setSaving(true)
+    const toSave = preview.filter(e => !e.conflict)
+    try {
+      for (const entry of toSave) {
+        await sgsService.saveRange({
+          document_id: analysisId,
+          document_name: selectedPdf.pdf_name,
+          lesson_name: entry.lesson_name,
+          start_question_no: entry.start_question_no,
+          end_question_no: entry.end_question_no,
+        })
+      }
+      const skipped = preview.length - toSave.length
+      toast.success(
+        `${toSave.length} aralık oluşturuldu` +
+        (skipped > 0 ? `, ${skipped} çakışma atlandı` : '')
+      )
+      onSaved()
+    } catch {
+      toast.error('Kaydetme sırasında hata oluştu')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const totalQuestions = currentLessons.reduce((s, l) =>
+    s + (qplMode === 'custom' ? (customCounts[l] ?? 6) : parseInt(qplMode)), 0)
+  const cleanCount = preview.filter(e => !e.conflict).length
+  const conflictCount = preview.filter(e => e.conflict).length
+
+  const SEL = 'w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500'
+  const INP = 'w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 text-center'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="bg-surface-50 border border-surface-200 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 shrink-0">
+          <div className="flex items-center gap-2">
+            <Layers size={15} className="text-brand-400" />
+            <span className="text-sm font-bold text-gray-100">Toplu Aralık Oluştur</span>
+            <span className="text-xs text-gray-600 bg-surface-200 px-2 py-0.5 rounded">
+              {step === 'config' ? 'Yapılandır' : 'Önizle ve Kaydet'}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            {step === 'preview' && (
+              <button onClick={() => setStep('config')} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                ← Düzenle
+              </button>
+            )}
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-200 transition-colors">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          {step === 'config' ? (
+            <>
+              {/* PDF */}
+              <div>
+                <label className="text-xs font-medium text-gray-400 mb-1.5 block">PDF Seç</label>
+                {pdfOptions.length === 0 ? (
+                  <p className="text-xs text-yellow-400 py-2">Önce &quot;Analizler&quot; sekmesinden PDF yükleyin.</p>
+                ) : (
+                  <select className={SEL} value={analysisId} onChange={e => setAnalysisId(e.target.value)}>
+                    <option value="">— PDF seçin —</option>
+                    {pdfOptions.map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.pdf_name}{a.year ? ` (${a.year}${a.semester ? ' · ' + a.semester : ''})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Alan */}
+              <div>
+                <label className="text-xs font-medium text-gray-400 mb-1.5 block">Alan / Şablon</label>
+                <div className="flex flex-wrap gap-2">
+                  {BULK_AREAS.map(a => (
+                    <button
+                      key={a}
+                      onClick={() => setSelectedArea(a)}
+                      className={`text-xs py-1.5 px-3 rounded-lg border transition-colors ${
+                        selectedArea === a
+                          ? 'bg-brand-600/20 border-brand-500/40 text-brand-300'
+                          : 'bg-surface-100 border-surface-200 text-gray-400 hover:text-gray-200'
+                      }`}
+                    >
+                      {a}
+                      {a !== 'Tümü' && (
+                        <span className="ml-1 text-gray-600">
+                          ({SGS_LESSON_GROUPS[a as keyof typeof SGS_LESSON_GROUPS]?.length ?? 0} ders)
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Başlangıç + QPL */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-medium text-gray-400 mb-1.5 block">Başlangıç Soru No</label>
+                  <input
+                    type="number" min={1}
+                    className={INP}
+                    value={startNo}
+                    onChange={e => setStartNo(parseInt(e.target.value) || 1)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-400 mb-1.5 block">Her Dersten</label>
+                  <div className="flex gap-2">
+                    {(['5', '6', 'custom'] as const).map(m => (
+                      <button
+                        key={m}
+                        onClick={() => setQplMode(m)}
+                        className={`flex-1 text-xs py-2 rounded-lg border transition-colors ${
+                          qplMode === m
+                            ? 'bg-brand-600/20 border-brand-500/40 text-brand-300'
+                            : 'bg-surface-100 border-surface-200 text-gray-400 hover:text-gray-200'
+                        }`}
+                      >
+                        {m === 'custom' ? 'Özel' : `${m} soru`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Özel dağılım */}
+              {qplMode === 'custom' && (
+                <div className="bg-surface-100 rounded-xl border border-surface-200 p-4 space-y-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs font-medium text-gray-400">Ders Başına Soru Sayısı</p>
+                    <button
+                      onClick={() => setCustomCounts({})}
+                      className="text-[11px] text-gray-600 hover:text-gray-400 transition-colors"
+                    >
+                      Hepsini 6 yap
+                    </button>
+                  </div>
+                  {currentLessons.map(lesson => (
+                    <div key={lesson} className="flex items-center gap-3">
+                      <span className="text-xs text-gray-400 flex-1 min-w-0 truncate">{lesson}</span>
+                      <input
+                        type="number" min={1} max={99}
+                        className="w-16 bg-surface-50 border border-surface-300 rounded-lg px-2 py-1.5 text-sm text-gray-100 text-center focus:outline-none focus:ring-1 focus:ring-brand-500"
+                        value={customCounts[lesson] ?? 6}
+                        onChange={e => setCustomCounts(prev => ({
+                          ...prev,
+                          [lesson]: parseInt(e.target.value) || 1,
+                        }))}
+                      />
+                      <span className="text-xs text-gray-600 w-8">soru</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Özet */}
+              <div className="bg-brand-500/5 border border-brand-500/20 rounded-xl px-4 py-3 flex items-center justify-between">
+                <span className="text-xs text-gray-400">
+                  {currentLessons.length} ders · Başlangıç: <span className="text-gray-200 font-mono">{startNo}</span>
+                </span>
+                <span className="text-sm font-semibold text-brand-300">{totalQuestions} soru toplam</span>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Preview header */}
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-gray-500">
+                  <span className="font-medium text-gray-300">{selectedPdf?.pdf_name}</span>
+                  {' · '}{selectedArea}
+                </p>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-green-400">{cleanCount} yeni</span>
+                  {conflictCount > 0 && (
+                    <span className="text-xs text-orange-400 flex items-center gap-1">
+                      <AlertTriangle size={11} /> {conflictCount} çakışma
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-surface-100 rounded-xl overflow-hidden border border-surface-200">
+                {preview.map((entry, i) => (
+                  <div
+                    key={i}
+                    className={`flex items-center gap-3 px-4 py-2.5 border-b border-surface-200 last:border-0 ${
+                      entry.conflict ? 'opacity-40' : ''
+                    }`}
+                  >
+                    <span className="font-mono text-xs text-brand-300 bg-brand-500/10 px-2 py-0.5 rounded w-20 text-center shrink-0">
+                      {entry.start_question_no}–{entry.end_question_no}
+                    </span>
+                    <span className="text-sm text-gray-300 flex-1 truncate">{entry.lesson_name}</span>
+                    <span className="text-xs text-gray-600 shrink-0">{entry.count} soru</span>
+                    {entry.conflict ? (
+                      <span className="text-[10px] text-orange-400 shrink-0 max-w-[120px] text-right">{entry.conflict}</span>
+                    ) : (
+                      <CheckCircle2 size={12} className="text-green-500 shrink-0" />
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {conflictCount > 0 && (
+                <p className="text-xs text-orange-400/80">
+                  Çakışan aralıklar atlanacak. Sadece {cleanCount} yeni aralık kaydedilecek.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-200 shrink-0">
+          <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-300 px-4 py-2 transition-colors">
+            İptal
+          </button>
+          {step === 'config' ? (
+            <Button onClick={handlePreview}>
+              Önizle →
+            </Button>
+          ) : (
+            <Button onClick={handleSave} isLoading={saving} disabled={saving || cleanCount === 0}>
+              <CheckCircle2 size={14} /> {cleanCount} Aralık Kaydet
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Alan Analizi Paneli ────────────────────────────────────────
+
 function AreaAnalysisPanel() {
   const [areas, setAreas] = useState<SgsArea[]>([])
   const [areasLoading, setAreasLoading] = useState(true)
@@ -240,6 +570,9 @@ function AreaAnalysisPanel() {
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [linkingAnalysisId, setLinkingAnalysisId] = useState('')
   const [linking, setLinking] = useState(false)
+
+  // Toplu aralık modal
+  const [showBulkModal, setShowBulkModal] = useState(false)
 
   // Aralık yönetimi state
   const [ranges, setRanges] = useState<SgsRange[]>([])
@@ -379,6 +712,21 @@ function AreaAnalysisPanel() {
       toast.success('Aralık silindi')
     } catch {
       toast.error('Silinemedi')
+    }
+  }
+
+  const handleDeleteByArea = async (area: string) => {
+    const lessons = SGS_LESSON_GROUPS[area as keyof typeof SGS_LESSON_GROUPS] ?? []
+    const toDelete = ranges.filter(r => (lessons as readonly string[]).includes(r.lesson_name))
+    if (toDelete.length === 0) { toast.error('Bu alana ait aralık yok'); return }
+    if (!window.confirm(`${area} alanına ait ${toDelete.length} aralık silinecek. Emin misin?`)) return
+    try {
+      for (const r of toDelete) await sgsService.deleteRange(r.id)
+      setRanges(prev => prev.filter(r => !toDelete.some(d => d.id === r.id)))
+      loadAreas(yearFilter || undefined)
+      toast.success(`${toDelete.length} aralık silindi`)
+    } catch {
+      toast.error('Silme sırasında hata oluştu')
     }
   }
 
@@ -716,10 +1064,36 @@ function AreaAnalysisPanel() {
               Soru Aralıkları {!rangesLoading && `(${ranges.length})`}
             </span>
           </div>
-          <Button size="sm" variant="secondary" onClick={() => setShowRangeForm(f => !f)}>
-            <Plus size={13} /> {showRangeForm ? 'Formu Kapat' : 'Yeni Aralık'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={() => { setShowBulkModal(true); setShowRangeForm(false) }}>
+              <Layers size={13} /> Toplu Oluştur
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => { setShowRangeForm(f => !f); setShowBulkModal(false) }}>
+              <Plus size={13} /> {showRangeForm ? 'Kapat' : 'Yeni Aralık'}
+            </Button>
+          </div>
         </div>
+
+        {/* Alan bazlı silme */}
+        {ranges.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {Object.keys(SGS_LESSON_GROUPS).map(area => {
+              const areaLessons = SGS_LESSON_GROUPS[area as keyof typeof SGS_LESSON_GROUPS] ?? []
+              const count = ranges.filter(r => (areaLessons as readonly string[]).includes(r.lesson_name)).length
+              if (count === 0) return null
+              return (
+                <button
+                  key={area}
+                  onClick={() => handleDeleteByArea(area)}
+                  className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg bg-surface-100 border border-surface-200 text-gray-500 hover:text-red-400 hover:border-red-500/30 transition-colors"
+                  title={`${area} aralıklarını sil`}
+                >
+                  <Trash2 size={10} /> {area} ({count})
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         {/* Yeni aralık formu */}
         {showRangeForm && (
@@ -841,6 +1215,21 @@ function AreaAnalysisPanel() {
           )}
         </div>
       </div>
+
+      {/* Toplu Aralık Oluşturma Modalı */}
+      {showBulkModal && (
+        <BulkRangeModal
+          pdfOptions={pdfOptions}
+          existingRanges={ranges}
+          onClose={() => setShowBulkModal(false)}
+          onSaved={async () => {
+            setShowBulkModal(false)
+            const updated = await sgsService.listRanges()
+            setRanges(updated)
+            loadAreas(yearFilter || undefined)
+          }}
+        />
+      )}
     </div>
   )
 }
