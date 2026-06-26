@@ -43,7 +43,7 @@ def get_brand_settings() -> dict:
 
 def update_brand_settings(updates: dict) -> dict:
     supabase = get_supabase_client()
-    resp = supabase.table("brand_settings").update(updates).eq("id", _SETTINGS_ID).execute()
+    resp = supabase.table("brand_settings").upsert({"id": _SETTINGS_ID, **updates}).execute()
     return resp.data[0] if resp.data else {}
 
 
