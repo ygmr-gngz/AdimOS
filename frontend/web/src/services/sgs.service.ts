@@ -283,6 +283,25 @@ export const sgsService = {
     return data
   },
 
+  async uploadAndAutoParse(file: File): Promise<{
+    success: boolean
+    document_id: string
+    filename: string
+    detected: { year?: string; period?: string; group?: string; language?: string }
+    parsed: { total_questions: number; matched_ranges: number; unmatched_questions: number }
+    lessons: { lesson_name: string; count: number }[]
+    message: string
+    error?: string
+  }> {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await apiClient.post('/sgs/pdfs/upload-and-auto-parse', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 180_000,
+    })
+    return data
+  },
+
   async getQuestionStats(filters?: { year?: string; area?: string; lesson?: string }): Promise<SgsQuestionStat[]> {
     const { data } = await apiClient.get('/sgs/question-stats', { params: filters ?? {} })
     return data.stats ?? []
