@@ -6,7 +6,7 @@ import Button from '@/components/ui/Button'
 import toast from 'react-hot-toast'
 import {
   Film, Plus, X, ChevronRight, CheckCircle, XCircle,
-  Clock, RefreshCw, Play, AlertTriangle, Loader2,
+  Clock, RefreshCw, AlertTriangle, Loader2,
 } from 'lucide-react'
 import videoService, {
   VideoJob, VideoScene, VideoStatus, VideoType, VideoFormat,
@@ -582,6 +582,7 @@ export default function VideoPage() {
       if (hasActive) loadJobs()
     }, 10000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter])
 
   const handleApprove = async (job: VideoJob) => {
@@ -691,7 +692,7 @@ export default function VideoPage() {
           }}>
             <Film size={48} style={{ marginBottom: 16, opacity: 0.3 }} />
             <p style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Henüz video yok</p>
-            <p style={{ fontSize: 14 }}>İlk video görevinizi başlatmak için "Yeni Video Görevi" butonuna tıklayın.</p>
+            <p style={{ fontSize: 14 }}>İlk video görevinizi başlatmak için &quot;Yeni Video Görevi&quot; butonuna tıklayın.</p>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
