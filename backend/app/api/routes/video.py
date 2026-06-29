@@ -329,29 +329,25 @@ def _run_pipeline(job_id: str, payload: CreateVideoPayload):
         logger.info(f"[video] {job_id} Remotion render tetikleniyor — URL: {REMOTION_URL}")
 
         try:
-            # Önce health check
-            health = httpx.get(f"{REMOTION_URL}/health", timeout=5)
-            if health.status_code != 200:
-                raise Exception(f"Remotion servis sağlık kontrolü başarısız (HTTP {health.status_code})")
-            logger.info(f"[video] {job_id} Remotion health OK: {health.json()}")
+            # Health check — opsiyonel, sadece loglama
+            try:
+                health = httpx.get(f"{REMOTION_URL}/health", timeout=15)
+                logger.info(f"[video] {job_id} Remotion health: {health.status_code} {health.text[:100]}")
+            except Exception as he:
+                logger.warning(f"[video] {job_id} Health check başarısız (devam ediliyor): {he}")
 
             resp = httpx.post(
                 f"{REMOTION_URL}/render",
                 json={"job_id": job_id, "storyboard": storyboard},
-                timeout=30,
+                timeout=60,
             )
             if resp.status_code != 200:
                 raise Exception(f"Render isteği başarısız (HTTP {resp.status_code}): {resp.text[:200]}")
-            logger.info(f"[video] {job_id} Remotion render başlatıldı")
+            logger.info(f"[video] {job_id} Remotion render başlatıldı: {resp.json()}")
         except Exception as e:
-            logger.warning(f"[video] {job_id} Remotion bağlanamadı ({REMOTION_URL}): {e}")
-            # TTS dosyaları hazır — render sonra manual tetiklenebilir
+            logger.warning(f"[video] {job_id} Remotion render hatası ({REMOTION_URL}): {e}")
             _set_status(job_id, "ready_for_review", {
-                "error_message": (
-                    f"TTS tamamlandı, render bekliyor. "
-                    f"Remotion servisi erişilemiyor ({REMOTION_URL}). "
-                    f"Railway'de REMOTION_URL env değişkenini kontrol edin."
-                )
+                "error_message": f"TTS hazır, render hatası: {str(e)[:300]}"
             })
 
     except Exception as e:
