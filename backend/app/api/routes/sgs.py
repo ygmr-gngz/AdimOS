@@ -218,11 +218,29 @@ class ParseRequest(BaseModel):
 
 @router.post("/questions/parse-by-ranges")
 def parse_questions(body: ParseRequest):
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[parse endpoint] gelen body: analysis_id={body.analysis_id!r}")
+
+    if not body.analysis_id or not body.analysis_id.strip():
+        raise HTTPException(status_code=400, detail="analysis_id boş gönderilemez")
+
     from app.db.repositories.sgs_repo import parse_questions_by_ranges
-    result = parse_questions_by_ranges(body.analysis_id)
+    result = parse_questions_by_ranges(body.analysis_id.strip())
+
     if result.get("error"):
+        logger.warning(f"[parse endpoint] hata döndü: {result['error']}")
         raise HTTPException(status_code=400, detail=result["error"])
-    return result
+
+    return {
+        "success": True,
+        "parsed_count": result.get("questions_created", 0),
+        "failed_count": result.get("failed_count", 0),
+        "questions_created": result.get("questions_created", 0),
+        "lessons": result.get("lessons", []),
+        "analysis_id": result.get("analysis_id"),
+        "message": f"{result.get('questions_created', 0)} soru başarıyla parse edildi",
+    }
 
 
 

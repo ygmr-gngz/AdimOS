@@ -330,35 +330,83 @@ def update_question_subject(analysis_id: str, question_id: int, new_subject: str
     return resp.data[0] if resp.data else None
 
 def parse_questions_by_ranges(analysis_id: str) -> dict:
+    import logging
     from collections import Counter
     from app.config.sgs_groups import SGS_LESSON_GROUPS
+    logger = logging.getLogger(__name__)
 
     supabase = get_supabase_client()
+    logger.info(f"[parse] analysis_id={analysis_id}")
 
+    # 1. Analizi al
     resp = supabase.table("sgs_analyses").select("id,pdf_name,year,questions").eq("id", analysis_id).execute()
     if not resp.data:
-        return {"error": "Analiz bulunamadı"}
+        logger.warning(f"[parse] analiz bulunamadı: {analysis_id}")
+        return {"error": f"Analiz bulunamadı (id={analysis_id[:8]}...). Önce PDF'i yükleyin."}
     a = resp.data[0]
     questions = a.get("questions") or []
+    pdf_name = a.get("pdf_name", "")
+    logger.info(f"[parse] analiz bulundu: pdf={pdf_name}, soru_sayısı={len(questions)}")
 
+    if not questions:
+        return {"error": f"'{pdf_name}' analizinde hiç soru yok. PDF yeniden analiz edilmeli."}
+
+    # 2. Aralıkları al — önce document_id ile, yoksa document_name ile fallback
     ranges_resp = supabase.table("sgs_question_ranges").select("*").eq("document_id", analysis_id).execute()
-    if not ranges_resp.data:
-        return {"error": "Bu analize bağlı aralık yok — önce 'Aralıkları PDF'e Bağla' yapın"}
+    ranges = ranges_resp.data or []
 
-    def get_group(lesson_name):
+    if not ranges and pdf_name:
+        logger.info(f"[parse] document_id ile aralık bulunamadı, document_name ile deneniyor: {pdf_name}")
+        ranges_resp2 = supabase.table("sgs_question_ranges").select("*").eq("document_name", pdf_name).execute()
+        ranges = ranges_resp2.data or []
+        # Bulunan aralıkların document_id'sini güncelle (ileride tekrar bağlamaya gerek kalmasın)
+        if ranges:
+            ids = [r["id"] for r in ranges]
+            for rid in ids:
+                supabase.table("sgs_question_ranges").update({
+                    "document_id": analysis_id
+                }).eq("id", rid).execute()
+            logger.info(f"[parse] {len(ranges)} aralık otomatik bağlandı (document_name eşleşmesi)")
+
+    if not ranges:
+        total_ranges = supabase.table("sgs_question_ranges").select("id", count="exact").execute()
+        total_count = total_ranges.count or 0
+        logger.warning(f"[parse] hiç aralık bulunamadı. Toplam aralık sayısı: {total_count}")
+        return {
+            "error": (
+                f"'{pdf_name}' PDF'ine bağlı aralık bulunamadı. "
+                f"Soru Aralıkları bölümünde '{pdf_name}' PDF'ini seçip 'Aralıkları PDF'e Bağla' yapın."
+            )
+        }
+
+    logger.info(f"[parse] {len(ranges)} aralık bulundu")
+
+    # 3. Soru numarasını normalize et
+    def _get_q_no(q: dict) -> int | None:
+        for key in ("id", "question_id", "no", "number", "soru_no"):
+            val = q.get(key)
+            if val is not None:
+                try:
+                    return int(val)
+                except (ValueError, TypeError):
+                    continue
+        return None
+
+    def get_group(lesson_name: str) -> str:
         for group, lessons in SGS_LESSON_GROUPS.items():
             if lesson_name in lessons:
                 return group
         return "Genel"
 
+    # 4. Eşleştir
     to_insert = []
+    unmatched = []
     for q in questions:
-        q_no = q.get("id") or q.get("question_id") or q.get("no") or 0
-        try:
-            q_no = int(q_no)
-        except (ValueError, TypeError):
+        q_no = _get_q_no(q)
+        if q_no is None:
             continue
-        for r in ranges_resp.data:
+        matched = False
+        for r in ranges:
             if r["start_question_no"] <= q_no <= r["end_question_no"]:
                 lesson = r["lesson_name"]
                 to_insert.append({
@@ -371,17 +419,35 @@ def parse_questions_by_ranges(analysis_id: str) -> dict:
                     "subtopic": q.get("subtopic"),
                     "answer": q.get("answer"),
                 })
+                matched = True
                 break
+        if not matched:
+            unmatched.append(q_no)
+
+    logger.info(f"[parse] eşleşen={len(to_insert)}, eşleşmeyen={len(unmatched)}, ilk 5 eşleşmeyen={unmatched[:5]}")
 
     if not to_insert:
-        return {"error": "Hiç soru eşleşmedi — soru numaraları aralıklarla uyuşmuyor"}
+        range_summary = [(r["start_question_no"], r["end_question_no"]) for r in ranges[:3]]
+        sample_nos = [_get_q_no(q) for q in questions[:5] if _get_q_no(q)]
+        return {
+            "error": (
+                f"Hiç soru eşleşmedi. "
+                f"Analizdeki ilk soru numaraları: {sample_nos}. "
+                f"Tanımlı aralıklar (ilk 3): {range_summary}. "
+                f"Soru numaraları ile aralıklar örtüşmüyor — aralık başlangıç numarasını kontrol edin."
+            )
+        }
 
+    # 5. Kaydet
     supabase.table("sgs_questions").delete().eq("document_id", analysis_id).execute()
     supabase.table("sgs_questions").insert(to_insert).execute()
 
     lesson_counts = Counter(q["lesson_name"] for q in to_insert)
+    logger.info(f"[parse] {len(to_insert)} soru kaydedildi: {dict(lesson_counts)}")
+
     return {
         "questions_created": len(to_insert),
+        "failed_count": len(unmatched),
         "lessons": [{"lesson_name": k, "count": v} for k, v in lesson_counts.items()],
         "analysis_id": analysis_id,
     }

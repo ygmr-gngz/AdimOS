@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { clsx } from 'clsx'
 import {
   LayoutDashboard, BookOpen, Bot, Video, Users,
-  GraduationCap, BarChart2, Globe, Settings, LogOut, X, Instagram, Palette,
+  GraduationCap, BarChart2, Globe, Settings, LogOut, X, Instagram, Palette, Film,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -18,6 +18,7 @@ const navItems = [
   { href: '/crm',         label: 'Müşteri Yönetimi',   icon: Users },
   { href: '/instagram',   label: 'Instagram DM',        icon: Instagram },
   { href: '/academy',     label: 'SGS Akademi',        icon: GraduationCap },
+  { href: '/video',       label: 'Video Prodüksiyon',  icon: Film },
   { href: '/website',     label: 'Web Sitesi',         icon: Globe },
   { href: '/reports',     label: 'Raporlar',           icon: BarChart2 },
 ]

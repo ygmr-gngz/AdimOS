@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from app.api.routes import health, documents, chat, voice, agents, dashboard, crm, academy, automation, content, debug, webhooks, sgs, notifications, social, brand, oauth
+from app.api.routes import health, documents, chat, voice, agents, dashboard, crm, academy, automation, content, debug, webhooks, sgs, notifications, social, brand, oauth, video
 from app.api.routes import users
 from app.api.routes.meta_webhook import router as meta_router, protected_router as meta_protected_router
 from app.core.auth import get_current_user
@@ -29,6 +29,7 @@ _protected.include_router(sgs.router,           prefix="/sgs",           tags=["
 _protected.include_router(notifications.router, prefix="/notifications",  tags=["notifications"])
 _protected.include_router(social.router,            prefix="/social",    tags=["social"])
 _protected.include_router(brand.router,            prefix="/brand",     tags=["brand"])
+_protected.include_router(video.router,            prefix="/video",     tags=["video"])
 _protected.include_router(meta_protected_router,   prefix="/meta",      tags=["meta"])
 
 router.include_router(_protected)

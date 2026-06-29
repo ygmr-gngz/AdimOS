@@ -711,6 +711,7 @@ function AreaAnalysisPanel() {
 
   const handleParseQuestions = async (analysisId: string) => {
     if (!analysisId) { toast.error('Parse edilecek PDF seçilmedi'); return }
+    console.log('[parse] analysis_id gönderiliyor:', analysisId)
     setParsing(true)
     setParseResult(null)
     try {
@@ -718,8 +719,11 @@ function AreaAnalysisPanel() {
       setParseResult(result)
       toast.success(`${result.questions_created} soru parse edildi ve veritabanına kaydedildi`)
       loadAreas(yearFilter || undefined)
-    } catch {
-      toast.error('Parse işlemi başarısız — backend endpoint hazır mı?')
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      console.error('[parse] hata:', detail ?? err)
+      toast.error(detail ?? 'Parse işlemi başarısız')
     } finally {
       setParsing(false)
     }

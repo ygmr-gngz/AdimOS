@@ -15,6 +15,7 @@ const pageTitles: Record<string, string> = {
   '/academy': 'SGS Akademi',
   '/website': 'Web Sitesi',
   '/reports': 'Raporlar',
+  '/video': 'Video Prodüksiyon',
   '/settings': 'Ayarlar',
   '/chat': 'Sohbet',
   '/voice': 'Sesli Asistan',
