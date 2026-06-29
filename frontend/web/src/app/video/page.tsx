@@ -267,15 +267,66 @@ function PreviewModal({ job, onClose, onApprove, onReject }: {
 
 const QUIZ_OPTION_LABELS = ['A', 'B', 'C', 'D']
 
+// Tip bazlı konfigürasyon
+const TYPE_CONFIG: Record<VideoType, {
+  needsLesson: boolean
+  needsTopic: boolean
+  topicLabel: string
+  descriptionPlaceholder: string
+  defaultFormat: VideoFormat
+  defaultMinutes: number
+}> = {
+  lesson: {
+    needsLesson: true, needsTopic: true,
+    topicLabel: 'Konu',
+    descriptionPlaceholder: 'Bu derste özellikle hangi konu anlatılsın? Ton veya tarz notu ekleyebilirsin.',
+    defaultFormat: '16:9', defaultMinutes: 25,
+  },
+  quiz: {
+    needsLesson: true, needsTopic: true,
+    topicLabel: 'Konu / Soru Tipi',
+    descriptionPlaceholder: 'Hangi soru tipleri çözülsün? Özel not ekleyebilirsin.',
+    defaultFormat: '16:9', defaultMinutes: 15,
+  },
+  motivation: {
+    needsLesson: false, needsTopic: false,
+    topicLabel: 'Video Teması (isteğe bağlı)',
+    descriptionPlaceholder: 'İstersen video temasını yazabilirsin. Boş bırakırsan sistem otomatik oluşturacaktır.',
+    defaultFormat: '16:9', defaultMinutes: 3,
+  },
+  shorts: {
+    needsLesson: false, needsTopic: false,
+    topicLabel: 'Konu (isteğe bağlı)',
+    descriptionPlaceholder: 'Trend olabilecek kısa içerik fikri yazabilir veya boş bırakabilirsin.',
+    defaultFormat: '9:16', defaultMinutes: 1,
+  },
+}
+
+const INPUT_STYLE: React.CSSProperties = {
+  width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10,
+  padding: '12px 14px', fontSize: 15, outline: 'none',
+  boxSizing: 'border-box', color: '#0f172a', background: '#fff',
+}
+
 function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreated: (job: VideoJob) => void }) {
   const [step, setStep] = useState<'config' | 'questions'>('config')
   const [type, setType] = useState<VideoType>('quiz')
   const [title, setTitle] = useState('')
   const [lessonName, setLessonName] = useState('')
   const [topic, setTopic] = useState('')
+  const [description, setDescription] = useState('')
   const [format, setFormat] = useState<VideoFormat>('16:9')
-  const [targetMinutes, setTargetMinutes] = useState(12)
+  const [targetMinutes, setTargetMinutes] = useState(15)
   const [loading, setLoading] = useState(false)
+
+  const cfg = TYPE_CONFIG[type]
+
+  // Tip değişince format/süre sıfırla
+  const handleTypeChange = (t: VideoType) => {
+    setType(t)
+    setFormat(TYPE_CONFIG[t].defaultFormat)
+    setTargetMinutes(TYPE_CONFIG[t].defaultMinutes)
+  }
 
   const [questions, setQuestions] = useState<CreateVideoPayload['questions']>([
     { text: '', options: QUIZ_OPTION_LABELS.map(l => ({ label: l, text: '' })), correct_label: 'A', explanation: '' },
@@ -302,15 +353,33 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
     })
   }
 
-  const handleSubmit = async () => {
-    if (!title || !lessonName || !topic) {
-      toast.error('Başlık, ders adı ve konu gerekli')
-      return
+  const validate = (): boolean => {
+    if (cfg.needsLesson && !lessonName.trim()) {
+      toast.error('Ders adı zorunludur')
+      return false
     }
+    if (cfg.needsTopic && !topic.trim()) {
+      toast.error('Konu zorunludur')
+      return false
+    }
+    return true
+  }
+
+  const handleSubmit = async () => {
+    if (!validate()) return
     setLoading(true)
     try {
+      const autoTitle = title.trim() ||
+        (type === 'motivation' ? 'Motivasyon Videosu' :
+         type === 'shorts' ? 'Kısa İçerik' :
+         `${lessonName} — ${topic}`)
       const job = await videoService.createJob({
-        type, title, lesson_name: lessonName, topic, format,
+        type,
+        title: autoTitle,
+        lesson_name: lessonName.trim() || undefined,
+        topic: topic.trim() || undefined,
+        description: description.trim() || undefined,
+        format,
         target_duration_minutes: targetMinutes,
         questions: type === 'quiz' ? questions : undefined,
       })
@@ -350,72 +419,89 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
         <div style={{ overflow: 'auto', flex: 1 }}>
           {step === 'config' ? (
-            /* Konfigürasyon adımı */
             <div style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 20 }}>
+
               {/* Video tipi */}
               <div>
-                <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>
-                  Video Tipi
-                </label>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>Video Tipi</label>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  {(['quiz', 'lesson', 'shorts', 'motivation'] as VideoType[]).map(t => (
-                    <button
-                      key={t}
-                      onClick={() => setType(t)}
-                      style={{
-                        padding: '10px 20px', borderRadius: 10, cursor: 'pointer',
-                        border: `2px solid ${type === t ? '#0B2A4A' : '#e2e8f0'}`,
-                        background: type === t ? '#0B2A4A' : '#fff',
-                        color: type === t ? '#fff' : '#475569',
-                        fontSize: 14, fontWeight: 600, transition: 'all 0.15s',
-                      }}
-                    >
+                  {(['quiz', 'lesson', 'motivation', 'shorts'] as VideoType[]).map(t => (
+                    <button key={t} onClick={() => handleTypeChange(t)} style={{
+                      padding: '10px 20px', borderRadius: 10, cursor: 'pointer',
+                      border: `2px solid ${type === t ? '#0B2A4A' : '#e2e8f0'}`,
+                      background: type === t ? '#0B2A4A' : '#fff',
+                      color: type === t ? '#fff' : '#475569',
+                      fontSize: 14, fontWeight: 600, transition: 'all 0.15s',
+                    }}>
                       {VIDEO_TYPE_LABELS[t]}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Başlık */}
+              {/* Başlık (eğitim tiplerinde göster, diğerlerinde opsiyonel açıklama olarak) */}
+              {(cfg.needsLesson) && (
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>
+                    Başlık <span style={{ color: '#94a3b8', fontWeight: 400 }}>(boş bırakılırsa otomatik oluşturulur)</span>
+                  </label>
+                  <input value={title} onChange={e => setTitle(e.target.value)}
+                    placeholder={`Örn: ${type === 'quiz' ? 'SGS 2024 — KDV Soru Çözümü' : 'Vergi Hukuku — KDV Konu Anlatımı'}`}
+                    style={INPUT_STYLE} />
+                </div>
+              )}
+
+              {/* Ders + konu — sadece eğitim tiplerinde */}
+              {cfg.needsLesson && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>
+                      Ders Adı <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input value={lessonName} onChange={e => setLessonName(e.target.value)}
+                      placeholder="Örn: Vergi Hukuku" style={INPUT_STYLE} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>
+                      {cfg.topicLabel} <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input value={topic} onChange={e => setTopic(e.target.value)}
+                      placeholder="Örn: Katma Değer Vergisi" style={INPUT_STYLE} />
+                  </div>
+                </div>
+              )}
+
+              {/* Konu — motivasyon/shorts için opsiyonel */}
+              {!cfg.needsLesson && (
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>
+                    {cfg.topicLabel}
+                  </label>
+                  <input value={topic} onChange={e => setTopic(e.target.value)}
+                    placeholder={
+                      type === 'motivation'
+                        ? 'Örn: Hedeflerine ulaşmak için vazgeçmemenin önemi'
+                        : 'Örn: Vergi, kariyer, yapay zeka...'
+                    }
+                    style={INPUT_STYLE} />
+                </div>
+              )}
+
+              {/* Açıklama / Not — tüm tipler için opsiyonel */}
               <div>
-                <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>Başlık</label>
-                <input
-                  value={title}
-                  onChange={e => setTitle(e.target.value)}
-                  placeholder="Örn: SGS 2024 — KDV Soru Çözümü"
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>
+                  Açıklama / Yönetmen Notu
+                  <span style={{ color: '#94a3b8', fontWeight: 400 }}> — opsiyonel</span>
+                </label>
+                <textarea
+                  value={description} onChange={e => setDescription(e.target.value)}
+                  placeholder={cfg.descriptionPlaceholder}
+                  rows={3}
                   style={{
-                    width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10,
-                    padding: '12px 14px', fontSize: 15, outline: 'none', boxSizing: 'border-box',
+                    ...INPUT_STYLE, resize: 'vertical', lineHeight: 1.6,
+                    color: '#0f172a',
                   }}
                 />
-              </div>
-
-              {/* Ders + konu */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>Ders Adı</label>
-                  <input
-                    value={lessonName}
-                    onChange={e => setLessonName(e.target.value)}
-                    placeholder="Örn: Vergi Hukuku"
-                    style={{
-                      width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10,
-                      padding: '12px 14px', fontSize: 15, outline: 'none', boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>Konu</label>
-                  <input
-                    value={topic}
-                    onChange={e => setTopic(e.target.value)}
-                    placeholder="Örn: Katma Değer Vergisi"
-                    style={{
-                      width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10,
-                      padding: '12px 14px', fontSize: 15, outline: 'none', boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
               </div>
 
               {/* Format + süre */}
@@ -424,17 +510,13 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
                   <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>Format</label>
                   <div style={{ display: 'flex', gap: 10 }}>
                     {(['16:9', '9:16'] as VideoFormat[]).map(f => (
-                      <button
-                        key={f}
-                        onClick={() => setFormat(f)}
-                        style={{
-                          flex: 1, padding: '10px', borderRadius: 10, cursor: 'pointer',
-                          border: `2px solid ${format === f ? '#0B2A4A' : '#e2e8f0'}`,
-                          background: format === f ? '#0B2A4A' : '#fff',
-                          color: format === f ? '#fff' : '#475569',
-                          fontSize: 13, fontWeight: 600,
-                        }}
-                      >
+                      <button key={f} onClick={() => setFormat(f)} style={{
+                        flex: 1, padding: '10px', borderRadius: 10, cursor: 'pointer',
+                        border: `2px solid ${format === f ? '#0B2A4A' : '#e2e8f0'}`,
+                        background: format === f ? '#0B2A4A' : '#fff',
+                        color: format === f ? '#fff' : '#475569',
+                        fontSize: 13, fontWeight: 600,
+                      }}>
                         {f === '16:9' ? '16:9 (Yatay)' : '9:16 (Dikey)'}
                       </button>
                     ))}
@@ -444,43 +526,24 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
                   <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>
                     Hedef Süre (dakika)
                   </label>
-                  <input
-                    type="number" min={1} max={60}
-                    value={targetMinutes}
-                    onChange={e => setTargetMinutes(Number(e.target.value))}
-                    style={{
-                      width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10,
-                      padding: '12px 14px', fontSize: 15, outline: 'none', boxSizing: 'border-box',
-                    }}
-                  />
+                  <input type="number" min={1} max={60}
+                    value={targetMinutes} onChange={e => setTargetMinutes(Number(e.target.value))}
+                    style={{ ...INPUT_STYLE }} />
                 </div>
               </div>
             </div>
           ) : (
-            /* Sorular adımı (quiz için) */
+            /* Sorular adımı — yalnızca quiz tipi */
             <div style={{ padding: 28 }}>
               <p style={{ margin: '0 0 20px', fontSize: 14, color: '#64748b' }}>
-                4 soru girin. Backend LLM ile storyboard oluşturacak.
-                Soruları boş bırakırsanız backend konuya göre otomatik oluşturur.
+                Soruları girin. Boş bırakırsanız backend konuya göre otomatik oluşturur.
               </p>
               {questions?.map((q, qi) => (
-                <div key={qi} style={{
-                  border: '1.5px solid #e2e8f0', borderRadius: 14, padding: 20, marginBottom: 16,
-                }}>
-                  <p style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#0B2A4A' }}>
-                    Soru {qi + 1}
-                  </p>
-                  <textarea
-                    value={q.text}
-                    onChange={e => updateQuestion(qi, 'text', e.target.value)}
-                    placeholder="Soru metni..."
-                    rows={2}
-                    style={{
-                      width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10,
-                      padding: '10px 12px', fontSize: 14, resize: 'vertical', outline: 'none',
-                      marginBottom: 10, boxSizing: 'border-box',
-                    }}
-                  />
+                <div key={qi} style={{ border: '1.5px solid #e2e8f0', borderRadius: 14, padding: 20, marginBottom: 16 }}>
+                  <p style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#0B2A4A' }}>Soru {qi + 1}</p>
+                  <textarea value={q.text} onChange={e => updateQuestion(qi, 'text', e.target.value)}
+                    placeholder="Soru metni..." rows={2}
+                    style={{ ...INPUT_STYLE, resize: 'vertical', marginBottom: 10 }} />
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
                     {q.options.map((opt, oi) => (
                       <div key={opt.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -488,63 +551,42 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
                           width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
                           background: q.correct_label === opt.label ? '#10b981' : '#0B2A4A',
                           color: '#fff', fontSize: 13, fontWeight: 700,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
                         }} onClick={() => updateQuestion(qi, 'correct_label', opt.label)}>
                           {opt.label}
                         </span>
-                        <input
-                          value={opt.text}
-                          onChange={e => updateOption(qi, oi, e.target.value)}
+                        <input value={opt.text} onChange={e => updateOption(qi, oi, e.target.value)}
                           placeholder={`${opt.label} şıkkı...`}
                           style={{
                             flex: 1, border: `1.5px solid ${q.correct_label === opt.label ? '#10b981' : '#e2e8f0'}`,
-                            borderRadius: 8, padding: '8px 12px', fontSize: 14, outline: 'none',
-                          }}
-                        />
+                            borderRadius: 8, padding: '8px 12px', fontSize: 14, outline: 'none', color: '#0f172a',
+                          }} />
                       </div>
                     ))}
                   </div>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
-                      Açıklama (isteğe bağlı)
-                    </label>
-                    <input
-                      value={q.explanation ?? ''}
-                      onChange={e => updateQuestion(qi, 'explanation', e.target.value)}
-                      placeholder="Doğru cevabın açıklaması..."
-                      style={{
-                        width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 8,
-                        padding: '8px 12px', fontSize: 14, outline: 'none', boxSizing: 'border-box',
-                      }}
-                    />
-                  </div>
+                  <input value={q.explanation ?? ''} onChange={e => updateQuestion(qi, 'explanation', e.target.value)}
+                    placeholder="Doğru cevabın açıklaması (opsiyonel)..."
+                    style={{ ...INPUT_STYLE, fontSize: 13 }} />
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        {/* Footer butonlar */}
-        <div style={{
-          padding: '16px 28px', borderTop: '1px solid #f1f5f9',
-          display: 'flex', justifyContent: 'flex-end', gap: 12,
-        }}>
+        {/* Footer */}
+        <div style={{ padding: '16px 28px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
           {step === 'questions' && (
-            <Button variant="secondary" onClick={() => setStep('config')}>
-              Geri
-            </Button>
+            <Button variant="secondary" onClick={() => setStep('config')}>Geri</Button>
           )}
           {type === 'quiz' && step === 'config' ? (
-            <Button onClick={() => {
-              if (!title || !lessonName || !topic) { toast.error('Başlık, ders adı ve konu gerekli'); return }
-              setStep('questions')
-            }}>
+            <Button onClick={() => { if (validate()) setStep('questions') }}>
               Soruları Gir <ChevronRight size={16} />
             </Button>
           ) : (
             <Button onClick={handleSubmit} disabled={loading}>
-              {loading ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Oluşturuluyor...</> : 'Video Görevi Başlat'}
+              {loading
+                ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Oluşturuluyor...</>
+                : 'Video Görevi Başlat'}
             </Button>
           )}
         </div>

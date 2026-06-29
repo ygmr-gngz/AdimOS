@@ -5,12 +5,16 @@ import apiClient from '@/lib/api-client'
 export type VideoType = 'quiz' | 'lesson' | 'shorts' | 'motivation'
 export type VideoFormat = '16:9' | '9:16'
 export type VideoStatus =
+  | 'draft'
   | 'pending'
   | 'scripting'
   | 'tts_generating'
   | 'rendering'
   | 'ready_for_review'
   | 'approved'
+  | 'queued_for_publishing'
+  | 'scheduled'
+  | 'published'
   | 'rejected'
   | 'failed'
 
@@ -45,12 +49,12 @@ export interface VideoJob {
 
 export interface CreateVideoPayload {
   type: VideoType
-  title: string
+  title?: string
   lesson_name?: string
   topic?: string
+  description?: string
   format: VideoFormat
   target_duration_minutes?: number
-  // Quiz için: soru metinleri (backend LLM ile storyboard oluşturur)
   questions?: {
     text: string
     options: { label: string; text: string }[]
@@ -62,23 +66,31 @@ export interface CreateVideoPayload {
 // ── Durum bilgisi ─────────────────────────────────────────────
 
 export const VIDEO_STATUS_LABELS: Record<VideoStatus, string> = {
+  draft: 'Taslak',
   pending: 'Bekliyor',
   scripting: 'Senaryo yazılıyor',
   tts_generating: 'Ses üretiliyor',
   rendering: 'Video oluşturuluyor',
   ready_for_review: 'İnceleme bekliyor',
   approved: 'Onaylandı',
+  queued_for_publishing: 'Yayın kuyruğunda',
+  scheduled: 'Planlandı',
+  published: 'Yayınlandı',
   rejected: 'Reddedildi',
   failed: 'Hata',
 }
 
 export const VIDEO_STATUS_COLORS: Record<VideoStatus, string> = {
+  draft: '#94a3b8',
   pending: '#94a3b8',
   scripting: '#f59e0b',
   tts_generating: '#f59e0b',
   rendering: '#3b82f6',
   ready_for_review: '#8b5cf6',
   approved: '#10b981',
+  queued_for_publishing: '#0ea5e9',
+  scheduled: '#0ea5e9',
+  published: '#059669',
   rejected: '#ef4444',
   failed: '#ef4444',
 }

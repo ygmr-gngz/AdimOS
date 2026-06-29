@@ -329,14 +329,21 @@ def update_question_subject(analysis_id: str, question_id: int, new_subject: str
     resp = supabase.table("sgs_analyses").update({"questions": questions}).eq("id", analysis_id).execute()
     return resp.data[0] if resp.data else None
 
-def parse_questions_by_ranges(analysis_id: str) -> dict:
+def parse_questions_by_ranges(
+    analysis_id: str,
+    range_ids: list[str] | None = None,
+    document_id: str | None = None,
+) -> dict:
     import logging
     from collections import Counter
     from app.config.sgs_groups import SGS_LESSON_GROUPS
     logger = logging.getLogger(__name__)
 
     supabase = get_supabase_client()
-    logger.info(f"[parse] analysis_id={analysis_id}")
+    effective_doc_id = document_id or analysis_id
+
+    print(f"[parse_repo] analysis_id={analysis_id}, document_id={effective_doc_id}, range_ids={range_ids}")
+    logger.info(f"[parse] analysis_id={analysis_id} document_id={effective_doc_id}")
 
     # 1. Analizi al
     resp = supabase.table("sgs_analyses").select("id,pdf_name,year,questions").eq("id", analysis_id).execute()
@@ -346,39 +353,56 @@ def parse_questions_by_ranges(analysis_id: str) -> dict:
     a = resp.data[0]
     questions = a.get("questions") or []
     pdf_name = a.get("pdf_name", "")
+    print(f"[parse_repo] analiz bulundu: pdf={pdf_name!r}, toplam_soru={len(questions)}")
     logger.info(f"[parse] analiz bulundu: pdf={pdf_name}, soru_sayısı={len(questions)}")
 
     if not questions:
         return {"error": f"'{pdf_name}' analizinde hiç soru yok. PDF yeniden analiz edilmeli."}
 
-    # 2. Aralıkları al — önce document_id ile, yoksa document_name ile fallback
-    ranges_resp = supabase.table("sgs_question_ranges").select("*").eq("document_id", analysis_id).execute()
-    ranges = ranges_resp.data or []
+    # 2. Aralıkları al
+    if range_ids:
+        # Belirtilen range ID'leri doğrudan getir
+        ranges_resp = supabase.table("sgs_question_ranges").select("*").in_("id", range_ids).execute()
+        ranges = ranges_resp.data or []
+        print(f"[parse_repo] range_ids ile {len(ranges)} aralık bulundu (istenen: {len(range_ids)})")
+        logger.info(f"[parse] range_ids ile {len(ranges)} aralık bulundu")
+    else:
+        # document_id ile ara
+        ranges_resp = supabase.table("sgs_question_ranges").select("*").eq("document_id", effective_doc_id).execute()
+        ranges = ranges_resp.data or []
+        print(f"[parse_repo] document_id={effective_doc_id!r} ile {len(ranges)} aralık bulundu")
 
-    if not ranges and pdf_name:
-        logger.info(f"[parse] document_id ile aralık bulunamadı, document_name ile deneniyor: {pdf_name}")
-        ranges_resp2 = supabase.table("sgs_question_ranges").select("*").eq("document_name", pdf_name).execute()
-        ranges = ranges_resp2.data or []
-        # Bulunan aralıkların document_id'sini güncelle (ileride tekrar bağlamaya gerek kalmasın)
-        if ranges:
-            ids = [r["id"] for r in ranges]
-            for rid in ids:
-                supabase.table("sgs_question_ranges").update({
-                    "document_id": analysis_id
-                }).eq("id", rid).execute()
-            logger.info(f"[parse] {len(ranges)} aralık otomatik bağlandı (document_name eşleşmesi)")
+        if not ranges and pdf_name:
+            logger.info(f"[parse] document_id ile aralık bulunamadı, document_name ile deneniyor: {pdf_name}")
+            print(f"[parse_repo] document_name={pdf_name!r} ile fallback arama...")
+            ranges_resp2 = supabase.table("sgs_question_ranges").select("*").eq("document_name", pdf_name).execute()
+            ranges = ranges_resp2.data or []
+            # Bulunan aralıkların document_id'sini güncelle
+            if ranges:
+                ids = [r["id"] for r in ranges]
+                for rid in ids:
+                    supabase.table("sgs_question_ranges").update({
+                        "document_id": analysis_id
+                    }).eq("id", rid).execute()
+                print(f"[parse_repo] {len(ranges)} aralık document_name eşleşmesiyle otomatik bağlandı")
+                logger.info(f"[parse] {len(ranges)} aralık otomatik bağlandı (document_name eşleşmesi)")
 
     if not ranges:
-        total_ranges = supabase.table("sgs_question_ranges").select("id", count="exact").execute()
-        total_count = total_ranges.count or 0
+        total_resp = supabase.table("sgs_question_ranges").select("id,document_id,document_name", count="exact").execute()
+        total_count = total_resp.count or 0
+        sample = [(r.get("document_name"), r.get("document_id")) for r in (total_resp.data or [])[:3]]
+        print(f"[parse_repo] HATA: hiç aralık bulunamadı. Toplam: {total_count}, örnek kayıtlar: {sample}")
         logger.warning(f"[parse] hiç aralık bulunamadı. Toplam aralık sayısı: {total_count}")
         return {
             "error": (
                 f"'{pdf_name}' PDF'ine bağlı aralık bulunamadı. "
-                f"Soru Aralıkları bölümünde '{pdf_name}' PDF'ini seçip 'Aralıkları PDF'e Bağla' yapın."
+                f"Veritabanında toplam {total_count} aralık var. "
+                f"'Soru Aralıkları' bölümünde '{pdf_name}' PDF'ini seçip 'Aralıkları PDF'e Bağla' yapın."
             )
         }
 
+    range_summary = [(r["lesson_name"], r["start_question_no"], r["end_question_no"], r.get("document_id")) for r in ranges]
+    print(f"[parse_repo] {len(ranges)} aralık bulundu: {range_summary}")
     logger.info(f"[parse] {len(ranges)} aralık bulundu")
 
     # 3. Soru numarasını normalize et
@@ -424,17 +448,19 @@ def parse_questions_by_ranges(analysis_id: str) -> dict:
         if not matched:
             unmatched.append(q_no)
 
+    print(f"[parse_repo] eşleşen={len(to_insert)}, eşleşmeyen={len(unmatched)}, örnek eşleşmeyenler={unmatched[:10]}")
     logger.info(f"[parse] eşleşen={len(to_insert)}, eşleşmeyen={len(unmatched)}, ilk 5 eşleşmeyen={unmatched[:5]}")
 
     if not to_insert:
         range_summary = [(r["start_question_no"], r["end_question_no"]) for r in ranges[:3]]
         sample_nos = [_get_q_no(q) for q in questions[:5] if _get_q_no(q)]
+        print(f"[parse_repo] HATA: Soru eşleşmedi. sample_nos={sample_nos}, aralıklar={range_summary}")
         return {
             "error": (
                 f"Hiç soru eşleşmedi. "
                 f"Analizdeki ilk soru numaraları: {sample_nos}. "
                 f"Tanımlı aralıklar (ilk 3): {range_summary}. "
-                f"Soru numaraları ile aralıklar örtüşmüyor — aralık başlangıç numarasını kontrol edin."
+                f"Soru numaraları aralıklarla örtüşmüyor — aralık başlangıç/bitiş numaralarını kontrol edin."
             )
         }
 
@@ -443,6 +469,7 @@ def parse_questions_by_ranges(analysis_id: str) -> dict:
     supabase.table("sgs_questions").insert(to_insert).execute()
 
     lesson_counts = Counter(q["lesson_name"] for q in to_insert)
+    print(f"[parse_repo] BAŞARI: {len(to_insert)} soru kaydedildi, failed={len(unmatched)}, dersler={dict(lesson_counts)}")
     logger.info(f"[parse] {len(to_insert)} soru kaydedildi: {dict(lesson_counts)}")
 
     return {

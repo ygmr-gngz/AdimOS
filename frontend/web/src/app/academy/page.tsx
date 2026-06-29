@@ -711,19 +711,32 @@ function AreaAnalysisPanel() {
 
   const handleParseQuestions = async (analysisId: string) => {
     if (!analysisId) { toast.error('Parse edilecek PDF seçilmedi'); return }
-    console.log('[parse] analysis_id gönderiliyor:', analysisId)
+
+    const linkedRanges = ranges.filter(r => r.document_id === analysisId)
+    const payload = {
+      analysis_id: analysisId,
+      document_id: analysisId,
+      range_ids: linkedRanges.length > 0 ? linkedRanges.map(r => r.id) : undefined,
+    }
+    console.log('PARSE PAYLOAD:', payload)
+    console.log(`[parse] ${linkedRanges.length} bağlı aralık bulundu analysis_id=${analysisId}`)
+
     setParsing(true)
     setParseResult(null)
     try {
-      const result = await sgsService.parseQuestions(analysisId)
+      const result = await sgsService.parseQuestions(payload)
       setParseResult(result)
       toast.success(`${result.questions_created} soru parse edildi ve veritabanına kaydedildi`)
       loadAreas(yearFilter || undefined)
     } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      console.error('[parse] hata:', detail ?? err)
-      toast.error(detail ?? 'Parse işlemi başarısız')
+      type AxiosErr = { response?: { data?: { detail?: string; error?: string; message?: string }; status?: number } }
+      const axiosErr = err as AxiosErr
+      const errData = axiosErr?.response?.data
+      const detail = errData?.detail ?? errData?.error ?? errData?.message
+      const status = axiosErr?.response?.status
+      const msg = detail ?? `Parse işlemi başarısız (HTTP ${status ?? '?'})`
+      console.error('[parse] hata:', msg, errData ?? err)
+      toast.error(msg, { duration: 6000 })
     } finally {
       setParsing(false)
     }
@@ -977,24 +990,26 @@ function AreaAnalysisPanel() {
                       AI tahmini gösterilmeyecek — yalnızca doğrulanmış veri kullanılır.
                     </p>
                   </div>
-                  <div className="flex items-center justify-center gap-3 flex-wrap">
-                    {pdfOptions.length > 0 && (
+                  <div className="flex items-center justify-center gap-3 flex-wrap flex-col">
+                    {ranges.length === 0 ? (
+                      <p className="text-xs text-yellow-400 flex items-center gap-1">
+                        <AlertTriangle size={11} /> Önce PDF ile soru aralıklarını bağlayın.
+                      </p>
+                    ) : pdfOptions.length > 0 ? (
                       <Button
                         onClick={() => handleParseQuestions(pdfOptions[0].id)}
                         isLoading={parsing}
+                        disabled={ranges.filter(r => r.document_id === pdfOptions[0].id).length === 0}
+                        title={ranges.filter(r => r.document_id === pdfOptions[0].id).length === 0
+                          ? 'Önce bu PDF için aralıkları bağlayın'
+                          : undefined}
                       >
                         <BookOpen size={13} /> Soruları Parse Et
                       </Button>
-                    )}
-                    {pdfOptions.length > 1 && (
-                      <span className="text-xs text-gray-600">
-                        {pdfOptions.length} PDF var — Soru Aralıkları bölümünden PDF seçip parse edin
-                      </span>
+                    ) : (
+                      <p className="text-xs text-gray-600">Önce &quot;Analizler&quot; sekmesinden PDF yükleyin</p>
                     )}
                   </div>
-                  {pdfOptions.length === 0 && (
-                    <p className="text-xs text-gray-600">Önce &quot;Analizler&quot; sekmesinden PDF yükleyin</p>
-                  )}
                 </div>
               ) : (
                 <>
@@ -1202,9 +1217,24 @@ function AreaAnalysisPanel() {
 
             <div className="flex items-center gap-3 flex-wrap">
               {pdfOptions.length === 1 ? (
-                <Button onClick={() => handleParseQuestions(pdfOptions[0].id)} isLoading={parsing} size="sm">
-                  <BookOpen size={13} /> {pdfOptions[0].pdf_name} — Soruları Parse Et
-                </Button>
+                <>
+                  <Button
+                    onClick={() => handleParseQuestions(pdfOptions[0].id)}
+                    isLoading={parsing}
+                    size="sm"
+                    disabled={ranges.filter(r => r.document_id === pdfOptions[0].id).length === 0}
+                    title={ranges.filter(r => r.document_id === pdfOptions[0].id).length === 0
+                      ? 'Önce bu PDF için aralıkları bağlayın'
+                      : undefined}
+                  >
+                    <BookOpen size={13} /> {pdfOptions[0].pdf_name} — Soruları Parse Et
+                  </Button>
+                  {ranges.filter(r => r.document_id === pdfOptions[0].id).length === 0 && (
+                    <span className="text-xs text-yellow-400 flex items-center gap-1">
+                      <AlertTriangle size={11} /> Önce PDF ile soru aralıklarını bağlayın.
+                    </span>
+                  )}
+                </>
               ) : (
                 <>
                   <select

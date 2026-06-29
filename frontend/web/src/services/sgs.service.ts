@@ -273,8 +273,13 @@ export const sgsService = {
     return data
   },
 
-  async parseQuestions(analysisId: string): Promise<SgsParseResult> {
-    const { data } = await apiClient.post('/sgs/questions/parse-by-ranges', { analysis_id: analysisId })
+  async parseQuestions(params: {
+    analysis_id: string
+    range_ids?: string[]
+    document_id?: string
+  }): Promise<SgsParseResult> {
+    console.log('PARSE PAYLOAD:', params)
+    const { data } = await apiClient.post('/sgs/questions/parse-by-ranges', params)
     return data
   },
 

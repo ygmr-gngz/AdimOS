@@ -1,5 +1,6 @@
 """SGS çıkmış soru analizi ve video serisi üretim endpoint'leri."""
 import logging
+from typing import Optional, List
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from app.modules.sgs.service import analyze_pdf_bytes, build_sgs_topic_video
@@ -214,24 +215,41 @@ def bulk_link_ranges(body: BulkLinkRequest):
 
 class ParseRequest(BaseModel):
     analysis_id: str
+    range_ids: Optional[List[str]] = None
+    document_id: Optional[str] = None
 
 
 @router.post("/questions/parse-by-ranges")
 def parse_questions(body: ParseRequest):
-    import logging
     logger = logging.getLogger(__name__)
-    logger.info(f"[parse endpoint] gelen body: analysis_id={body.analysis_id!r}")
+
+    print("=== PARSE BY RANGES START ===")
+    print("REQUEST BODY:", body.model_dump())
+    print("analysis_id:", body.analysis_id)
+    print("range_ids:", body.range_ids)
+    print("document_id:", body.document_id)
 
     if not body.analysis_id or not body.analysis_id.strip():
-        raise HTTPException(status_code=400, detail="analysis_id boş gönderilemez")
+        raise HTTPException(status_code=400, detail="analysis_id boş gönderilemez. Frontend'den analysis_id eksik gönderilmiş.")
+
+    if body.range_ids is not None and len(body.range_ids) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="range_ids boş liste geldi. Önce 'Aralıkları PDF'e Bağla' yapın veya range_ids göndermeden tekrar deneyin."
+        )
 
     from app.db.repositories.sgs_repo import parse_questions_by_ranges
-    result = parse_questions_by_ranges(body.analysis_id.strip())
+    result = parse_questions_by_ranges(
+        analysis_id=body.analysis_id.strip(),
+        range_ids=body.range_ids,
+        document_id=body.document_id or body.analysis_id.strip(),
+    )
 
     if result.get("error"):
-        logger.warning(f"[parse endpoint] hata döndü: {result['error']}")
+        logger.warning(f"[parse endpoint] hata: {result['error']}")
         raise HTTPException(status_code=400, detail=result["error"])
 
+    logger.info(f"[parse endpoint] başarı: {result.get('questions_created', 0)} soru, {result.get('failed_count', 0)} başarısız")
     return {
         "success": True,
         "parsed_count": result.get("questions_created", 0),

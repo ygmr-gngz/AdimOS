@@ -122,11 +122,11 @@ app.post('/render', async (req, res) => {
 })
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, bundle_ready: !!bundleLocation })
+  res.json({ ok: true, service: 'remotion', bundle_ready: !!bundleLocation, port: PORT })
 })
 
-app.listen(PORT, () => {
-  console.log(`[remotion] render server :${PORT} portunda çalışıyor`)
-  // Başlangıçta bundle hazırla
+// Railway ve diğer cloud ortamlarında 0.0.0.0 üzerinde dinlemeli
+app.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`[remotion] render server 0.0.0.0:${PORT} portunda çalışıyor`)
   getBundle().catch(e => console.error('[remotion] bundle hatası:', e))
 })
