@@ -212,6 +212,19 @@ def bulk_link_ranges(body: BulkLinkRequest):
         raise HTTPException(status_code=404, detail=result["error"])
     return result
 
+class ParseRequest(BaseModel):
+    analysis_id: str
+
+
+@router.post("/questions/parse-by-ranges")
+def parse_questions(body: ParseRequest):
+    from app.db.repositories.sgs_repo import parse_questions_by_ranges
+    result = parse_questions_by_ranges(body.analysis_id)
+    if result.get("error"):
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
 
 # ── 15-16: Alan / Ders Bazlı Konu Frekans Analizi ────────────
 

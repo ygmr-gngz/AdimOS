@@ -328,3 +328,61 @@ def update_question_subject(analysis_id: str, question_id: int, new_subject: str
             break
     resp = supabase.table("sgs_analyses").update({"questions": questions}).eq("id", analysis_id).execute()
     return resp.data[0] if resp.data else None
+
+def parse_questions_by_ranges(analysis_id: str) -> dict:
+    from collections import Counter
+    from app.config.sgs_groups import SGS_LESSON_GROUPS
+
+    supabase = get_supabase_client()
+
+    resp = supabase.table("sgs_analyses").select("id,pdf_name,year,questions").eq("id", analysis_id).execute()
+    if not resp.data:
+        return {"error": "Analiz bulunamadı"}
+    a = resp.data[0]
+    questions = a.get("questions") or []
+
+    ranges_resp = supabase.table("sgs_question_ranges").select("*").eq("document_id", analysis_id).execute()
+    if not ranges_resp.data:
+        return {"error": "Bu analize bağlı aralık yok — önce 'Aralıkları PDF'e Bağla' yapın"}
+
+    def get_group(lesson_name):
+        for group, lessons in SGS_LESSON_GROUPS.items():
+            if lesson_name in lessons:
+                return group
+        return "Genel"
+
+    to_insert = []
+    for q in questions:
+        q_no = q.get("id") or q.get("question_id") or q.get("no") or 0
+        try:
+            q_no = int(q_no)
+        except (ValueError, TypeError):
+            continue
+        for r in ranges_resp.data:
+            if r["start_question_no"] <= q_no <= r["end_question_no"]:
+                lesson = r["lesson_name"]
+                to_insert.append({
+                    "document_id": analysis_id,
+                    "lesson_group": get_group(lesson),
+                    "lesson_name": lesson,
+                    "question_number": q_no,
+                    "year": a.get("year"),
+                    "topic": q.get("subject") or q.get("topic"),
+                    "subtopic": q.get("subtopic"),
+                    "answer": q.get("answer"),
+                })
+                break
+
+    if not to_insert:
+        return {"error": "Hiç soru eşleşmedi — soru numaraları aralıklarla uyuşmuyor"}
+
+    supabase.table("sgs_questions").delete().eq("document_id", analysis_id).execute()
+    supabase.table("sgs_questions").insert(to_insert).execute()
+
+    lesson_counts = Counter(q["lesson_name"] for q in to_insert)
+    return {
+        "questions_created": len(to_insert),
+        "lessons": [{"lesson_name": k, "count": v} for k, v in lesson_counts.items()],
+        "analysis_id": analysis_id,
+    }
+
