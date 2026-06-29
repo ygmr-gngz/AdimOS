@@ -66,10 +66,16 @@ app.post('/render', async (req, res) => {
     const dim = DIMENSIONS[storyboard.format]
     const totalFrames = getTotalFrames(storyboard)
 
+    const browserExecutable = process.env.BROWSER_EXECUTABLE_PATH || undefined
+    if (browserExecutable) {
+      console.log(`[remotion] browser: ${browserExecutable}`)
+    }
+
     const comp = await selectComposition({
       serveUrl: bundlePath,
       id: 'QuizVideo',
       inputProps: { storyboard },
+      browserExecutable,
     })
 
     await renderMedia({
@@ -83,6 +89,7 @@ app.post('/render', async (req, res) => {
       codec: 'h264',
       outputLocation: outPath,
       inputProps: { storyboard },
+      browserExecutable,
       onProgress: ({ progress }) => {
         if (Math.round(progress * 100) % 10 === 0) {
           console.log(`[remotion] job=${job_id} ilerleme=${Math.round(progress * 100)}%`)
