@@ -17,5 +17,8 @@ COPY package.json ./
 RUN npm install
 COPY . .
 
+# TypeScript server kodunu derle (React bileşenleri hariç — onları Remotion bundler işler)
+RUN npx tsc -p tsconfig.server.json
+
 EXPOSE 3001
-CMD ["sh", "-c", "echo 'Container CMD basliyor...' && node --version && ls node_modules/.bin/tsx && node_modules/.bin/tsx src/server/index.ts 2>&1 || echo 'TSX CRASH exit:'$?"]
+CMD ["node", "dist/server/index.js"]

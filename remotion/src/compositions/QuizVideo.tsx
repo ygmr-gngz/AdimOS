@@ -1,6 +1,7 @@
 import { AbsoluteFill, Sequence, Audio } from 'remotion'
 import { StoryboardJSON, Scene, SceneComponent } from '../types'
-import { FPS } from '../brand'
+import { FPS, } from '../brand'
+import { TRANSITION_FRAMES } from '../utils'
 import { IntroScene } from '../scenes/IntroScene'
 import { QuestionScene } from '../scenes/QuestionScene'
 import { ThinkingScene } from '../scenes/ThinkingScene'
@@ -8,9 +9,6 @@ import { OptionAnalysisScene } from '../scenes/OptionAnalysisScene'
 import { CorrectAnswerScene } from '../scenes/CorrectAnswerScene'
 import { KeyPointScene } from '../scenes/KeyPointScene'
 import { OutroScene } from '../scenes/OutroScene'
-
-// Her sahne arasında 1 saniyelik siyah geçiş
-const TRANSITION_FRAMES = 15
 
 function SceneRenderer({ scene, brand }: { scene: Scene; brand: StoryboardJSON['brand'] }) {
   const props = { scene, brand }
@@ -66,10 +64,4 @@ export function QuizVideo({ storyboard }: QuizVideoProps) {
   )
 }
 
-// Storyboard'dan toplam frame sayısını hesapla
-export function getTotalFrames(storyboard: StoryboardJSON): number {
-  return storyboard.scenes.reduce(
-    (acc, s) => acc + Math.round(s.duration_seconds * FPS) + TRANSITION_FRAMES,
-    0
-  )
-}
+export { getTotalFrames } from '../utils'
