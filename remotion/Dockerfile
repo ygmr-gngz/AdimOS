@@ -18,4 +18,4 @@ RUN npm install
 COPY . .
 
 EXPOSE 3001
-CMD ["npm", "start"]
+CMD ["sh", "-c", "echo 'Container CMD basliyor...' && node --version && ls node_modules/.bin/tsx && node_modules/.bin/tsx src/server/index.ts 2>&1 || echo 'TSX CRASH exit:'$?"]
