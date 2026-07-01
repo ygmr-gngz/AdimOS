@@ -132,8 +132,19 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'remotion', bundle_ready: !!bundleLocation, port: PORT })
 })
 
+process.on('uncaughtException', (err) => {
+  console.error('[remotion] CRASH uncaughtException:', err)
+  process.exit(1)
+})
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[remotion] unhandledRejection:', reason)
+})
+
 // Railway ve diğer cloud ortamlarında 0.0.0.0 üzerinde dinlemeli
+console.log(`[remotion] sunucu başlıyor PORT=${PORT}`)
 app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`[remotion] render server 0.0.0.0:${PORT} portunda çalışıyor`)
+  console.log(`[remotion] NODE_VERSION=${process.version} BROWSER=${process.env.BROWSER_EXECUTABLE_PATH || '(yok)'}`)
   getBundle().catch(e => console.error('[remotion] bundle hatası:', e))
 })
