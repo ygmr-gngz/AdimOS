@@ -1371,84 +1371,6 @@ function AreaAnalysisPanel() {
         </div>
       )}
 
-      {/* ── Parse Pipeline — Gelişmiş modda görünür ─────────────── */}
-      {showAdvanced && ranges.length > 0 && pdfOptions.length > 0 && (
-        <div className="border-t border-surface-200 pt-6">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <BookOpen size={14} className="text-brand-400" />
-              <span className="text-sm font-semibold text-gray-300">Soru Parse Pipeline</span>
-            </div>
-          </div>
-          <div className="bg-surface-50 rounded-xl border border-surface-200 p-4 space-y-4">
-            <div className="flex items-center gap-3 text-xs flex-wrap">
-              <span className="flex items-center gap-1 text-green-400"><CheckCircle2 size={12} /> PDF Yüklendi</span>
-              <span className="text-gray-700">→</span>
-              <span className="flex items-center gap-1 text-green-400"><CheckCircle2 size={12} /> {ranges.length} Aralık Tanımlı</span>
-              <span className="text-gray-700">→</span>
-              <span className={`flex items-center gap-1 ${parseResult ? 'text-green-400' : 'text-yellow-400'}`}>
-                {parseResult ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
-                {parseResult ? `${parseResult.questions_created} Soru Parse Edildi` : 'Parse Bekleniyor'}
-              </span>
-              <span className="text-gray-700">→</span>
-              <span className={`flex items-center gap-1 ${parseResult ? 'text-green-400' : 'text-gray-600'}`}>
-                {parseResult ? <CheckCircle2 size={12} /> : <Clock size={12} />}
-                Analiz Hazır
-              </span>
-            </div>
-
-            <div className="flex items-center gap-3 flex-wrap">
-              {pdfOptions.length === 1 ? (
-                <>
-                  <Button
-                    onClick={() => handleParseQuestions(pdfOptions[0].id)}
-                    isLoading={parsing}
-                    size="sm"
-                    disabled={ranges.filter(r => r.document_id === pdfOptions[0].id).length === 0}
-                    title={ranges.filter(r => r.document_id === pdfOptions[0].id).length === 0
-                      ? 'Önce bu PDF için aralıkları bağlayın'
-                      : undefined}
-                  >
-                    <BookOpen size={13} /> {pdfOptions[0].pdf_name} — Soruları Parse Et
-                  </Button>
-                  {ranges.filter(r => r.document_id === pdfOptions[0].id).length === 0 && (
-                    <span className="text-xs text-yellow-400 flex items-center gap-1">
-                      <AlertTriangle size={11} /> Önce PDF ile soru aralıklarını bağlayın.
-                    </span>
-                  )}
-                </>
-              ) : (
-                <>
-                  <select
-                    className="bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 flex-1 min-w-[200px]"
-                    defaultValue=""
-                    onChange={e => e.target.value && handleParseQuestions(e.target.value)}
-                  >
-                    <option value="">— Parse edilecek PDF seçin —</option>
-                    {pdfOptions.map(a => (
-                      <option key={a.id} value={a.id}>
-                        {a.pdf_name}{a.year ? ` (${a.year})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  {parsing && <span className="text-xs text-brand-400 animate-pulse">Parse ediliyor...</span>}
-                </>
-              )}
-            </div>
-
-            {parseResult && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {parseResult.lessons.map(l => (
-                  <div key={l.lesson_name} className="bg-surface-100 rounded-lg px-3 py-2 text-center">
-                    <p className="text-sm font-bold text-brand-300">{l.count}</p>
-                    <p className="text-[10px] text-gray-500 truncate">{l.lesson_name}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* ── Soru Aralıkları Yönetimi ────────────────────────────── */}
       <div className="border-t border-surface-200 pt-6">
@@ -1893,6 +1815,18 @@ export default function AcademyPage() {
       setPhase('done')
       const list = await sgsService.listAnalyses()
       setSavedAnalyses(list)
+
+      // Analiz biter bitmez soruları otomatik kaydet
+      if (result.analysis_id) {
+        try {
+          const parseResult = await sgsService.parseQuestions({ analysis_id: result.analysis_id })
+          if (parseResult.questions_created > 0) {
+            toast.success(`${parseResult.questions_created} soru veritabanına kaydedildi`)
+          }
+        } catch {
+          // Aralık yoksa sessizce geç — kullanıcı daha sonra bağlayabilir
+        }
+      }
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string }
       const detail = axiosErr?.response?.data?.detail
