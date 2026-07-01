@@ -9,7 +9,6 @@ import { bundle } from '@remotion/bundler'
 import { renderMedia, selectComposition } from '@remotion/renderer'
 import { StoryboardJSON, RenderRequest, RenderResponse } from '../types'
 import { DIMENSIONS, FPS } from '../brand'
-import { getTotalFrames } from '../compositions/QuizVideo'
 
 const app = express()
 app.use(express.json({ limit: '10mb' }))
@@ -64,6 +63,7 @@ app.post('/render', async (req, res) => {
 
     const bundlePath = await getBundle()
     const dim = DIMENSIONS[storyboard.format]
+    const { getTotalFrames } = await import('../compositions/QuizVideo')
     const totalFrames = getTotalFrames(storyboard)
 
     const browserExecutable = process.env.BROWSER_EXECUTABLE_PATH || undefined
