@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import AppShell from '@/components/layout/AppShell'
 import Button from '@/components/ui/Button'
 import toast from 'react-hot-toast'
@@ -598,6 +599,7 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
 // ── Ana Sayfa ─────────────────────────────────────────────────
 
 export default function VideoPage() {
+  const router = useRouter()
   const [jobs, setJobs] = useState<VideoJob[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<VideoType | 'all'>('all')
@@ -630,9 +632,10 @@ export default function VideoPage() {
   const handleApprove = async (job: VideoJob) => {
     try {
       await videoService.approveJob(job.id)
-      toast.success('Video onaylandı')
+      toast.success('Video onaylandı — İçerik Otomasyonuna yönlendiriliyor')
       setPreviewJob(null)
       loadJobs()
+      setTimeout(() => router.push('/automation'), 1500)
     } catch { toast.error('Onaylama başarısız') }
   }
 

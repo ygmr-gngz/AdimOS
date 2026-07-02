@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import AppShell from '@/components/layout/AppShell'
 import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
@@ -559,6 +560,7 @@ function BulkRangeModal({
 // ── Alan Analizi Paneli ────────────────────────────────────────
 
 function AreaAnalysisPanel() {
+  const router = useRouter()
   const [areas, setAreas] = useState<SgsArea[]>([])
   const [areasLoading, setAreasLoading] = useState(true)
   const [yearFilter, setYearFilter] = useState('')
@@ -646,8 +648,9 @@ function AreaAnalysisPanel() {
   const handleGenerateVideo = async (lesson: string, topic: string) => {
     setGeneratingTopic(topic)
     try {
-      const res = await sgsService.generateTopicVideo({ lesson, topic, year: yearFilter || undefined, max_questions: 5 })
-      toast.success(`"${res.title}" video üretimi başladı (${res.question_count} soru)`)
+      await sgsService.generateTopicVideo({ lesson, topic, year: yearFilter || undefined, max_questions: 5 })
+      toast.success(`"${topic}" video üretimi başlatıldı`)
+      router.push('/video')
     } catch {
       toast.error('Video üretimi başlatılamadı')
     } finally {
