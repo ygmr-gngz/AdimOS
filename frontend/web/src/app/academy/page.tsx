@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
