@@ -9,7 +9,7 @@ import {
   ChevronUp, Clock, BookOpen, Video, Trash2, RefreshCw, AlertTriangle, Edit2, List, Plus, BarChart2,
   CheckCircle2, X, Layers, Loader2, Zap
 } from 'lucide-react'
-import { sgsService, SGS_LESSONS, SGS_LESSON_GROUPS, SGS_DOCUMENT_TYPES, type SgsAnalysis, type SgsAnalysisMeta, type SgsQuestion, type SgsRange, type SgsArea, type SgsTopicAnalysis, type SgsParseResult } from '@/services/sgs.service'
+import { sgsService, SGS_LESSONS, SGS_LESSON_GROUPS, SGS_DOCUMENT_TYPES, type SgsAnalysis, type SgsAnalysisMeta, type SgsQuestion, type SgsRange, type SgsArea, type SgsTopicAnalysis } from '@/services/sgs.service'
 import toast from 'react-hot-toast'
 
 type Phase = 'idle' | 'uploading' | 'done'
@@ -725,15 +725,7 @@ function AreaAnalysisPanel() {
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [generatingTopic, setGeneratingTopic] = useState<string | null>(null)
 
-  // Parse pipeline state
-  const [parsing, setParsing] = useState(false)
-  const [parseResult, setParseResult] = useState<SgsParseResult | null>(null)
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null)
-
-  // Aralık bağlama state
-  const [showLinkModal, setShowLinkModal] = useState(false)
-  const [linkingAnalysisId, setLinkingAnalysisId] = useState('')
-  const [linking, setLinking] = useState(false)
 
   // Toplu aralık modal
   const [showBulkModal, setShowBulkModal] = useState(false)
@@ -820,24 +812,6 @@ function AreaAnalysisPanel() {
     }
   }
 
-  const handleBulkLink = async () => {
-    if (!linkingAnalysisId) { toast.error('Lütfen bir PDF seçin'); return }
-    setLinking(true)
-    try {
-      const res = await sgsService.bulkLinkRanges(linkingAnalysisId)
-      toast.success(`${res.linked} aralık "${res.pdf_name}" analizine bağlandı`)
-      setShowLinkModal(false)
-      setLinkingAnalysisId('')
-      loadAreas(yearFilter || undefined)
-      const newRanges = await sgsService.listRanges()
-      setRanges(newRanges)
-    } catch {
-      toast.error('Bağlama başarısız')
-    } finally {
-      setLinking(false)
-    }
-  }
-
   const handleSaveRange = async (e: React.FormEvent) => {
     e.preventDefault()
     const start = parseInt(rangeForm.start_question_no, 10)
@@ -868,39 +842,6 @@ function AreaAnalysisPanel() {
     }
   }
 
-  const handleParseQuestions = async (analysisId: string) => {
-    if (!analysisId) { toast.error('Parse edilecek PDF seçilmedi'); return }
-
-    const linkedRanges = ranges.filter(r => r.document_id === analysisId)
-    const payload = {
-      analysis_id: analysisId,
-      document_id: analysisId,
-      range_ids: linkedRanges.length > 0 ? linkedRanges.map(r => r.id) : undefined,
-    }
-    console.log('PARSE PAYLOAD:', payload)
-    console.log(`[parse] ${linkedRanges.length} bağlı aralık bulundu analysis_id=${analysisId}`)
-
-    setParsing(true)
-    setParseResult(null)
-    try {
-      const result = await sgsService.parseQuestions(payload)
-      setParseResult(result)
-      toast.success(`${result.questions_created} soru parse edildi ve veritabanına kaydedildi`)
-      loadAreas(yearFilter || undefined)
-    } catch (err: unknown) {
-      type AxiosErr = { response?: { data?: { detail?: string; error?: string; message?: string }; status?: number } }
-      const axiosErr = err as AxiosErr
-      const errData = axiosErr?.response?.data
-      const detail = errData?.detail ?? errData?.error ?? errData?.message
-      const status = axiosErr?.response?.status
-      const msg = detail ?? `Parse işlemi başarısız (HTTP ${status ?? '?'})`
-      console.error('[parse] hata:', msg, errData ?? err)
-      toast.error(msg, { duration: 6000 })
-    } finally {
-      setParsing(false)
-    }
-  }
-
   const handleDeleteRange = async (id: string) => {
     try {
       await sgsService.deleteRange(id)
@@ -928,19 +869,9 @@ function AreaAnalysisPanel() {
   }
 
   const currentArea = areas.find(a => a.name === selectedArea)
-  const [showAdvanced, setShowAdvanced] = useState(false)
-
-  const handleAutoParseDone = () => {
-    loadAreas(yearFilter || undefined)
-    sgsService.listRanges().then(setRanges).catch(() => {})
-    sgsService.listAnalyses().then(setPdfOptions).catch(() => {})
-  }
 
   return (
     <div className="space-y-6">
-      {/* ── Otomatik Parse (Ana Akış) ──────────────────── */}
-      <AutoParseUpload onSuccess={handleAutoParseDone} />
-
       {/* Yıl Filtresi */}
       <div className="flex items-end gap-3 flex-wrap">
         <div className="max-w-[180px]">
@@ -956,59 +887,7 @@ function AreaAnalysisPanel() {
         <Button size="sm" variant="secondary" onClick={() => loadAreas(yearFilter || undefined)} isLoading={areasLoading}>
           <RefreshCw size={13} /> Yenile
         </Button>
-        <button
-          onClick={() => setShowAdvanced(v => !v)}
-          className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-400 ml-auto transition-colors"
-        >
-          <ChevronDown size={13} className={`transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
-          Gelişmiş
-        </button>
       </div>
-
-      {/* Gelişmiş — Manuel PDF Bağlama */}
-      {showAdvanced && (
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="secondary" onClick={() => setShowLinkModal(m => !m)}>
-            <List size={13} /> Aralıkları PDF&apos;e Manuel Bağla
-          </Button>
-        </div>
-      )}
-
-      {/* Toplu Bağlama Paneli */}
-      {showAdvanced && showLinkModal && (
-        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 space-y-3">
-          <p className="text-sm font-semibold text-yellow-300 flex items-center gap-2">
-            <AlertTriangle size={14} /> PDF Bağlantısı Eksik Aralıklar
-          </p>
-          <p className="text-xs text-yellow-400/80">
-            document_id bağlı olmayan tüm aralıkları aşağıdaki PDF analizine bağla.
-            Bu işlem sadece bağsız aralıkları günceller.
-          </p>
-          {pdfOptions.length === 0 ? (
-            <p className="text-xs text-gray-500">Yüklü PDF analizi bulunamadı.</p>
-          ) : (
-            <div className="flex gap-3 items-end flex-wrap">
-              <div className="flex-1 min-w-[200px]">
-                <select
-                  className="w-full bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  value={linkingAnalysisId}
-                  onChange={e => setLinkingAnalysisId(e.target.value)}
-                >
-                  <option value="">— PDF seçin —</option>
-                  {pdfOptions.map(a => (
-                    <option key={a.id} value={a.id}>
-                      {a.pdf_name}{a.year ? ` (${a.year})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <Button onClick={handleBulkLink} isLoading={linking} disabled={!linkingAnalysisId}>
-                Bağla
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Alan Kartları */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1094,42 +973,11 @@ function AreaAnalysisPanel() {
                       <p className={`text-sm font-medium truncate ${isActive ? 'text-brand-300' : 'text-gray-300'}`}>
                         {lesson.name}
                       </p>
-                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                        {lesson.status === 'no_range' ? (
-                          <span className="text-[10px] text-gray-600">Aralık tanımlanmamış</span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        {lesson.found > 0 ? (
+                          <span className="text-[10px] text-green-500">{lesson.found} soru</span>
                         ) : (
-                          <>
-                            <span className="flex items-center gap-0.5 text-[10px] text-green-500">
-                              <CheckCircle2 size={9} /> Aralık ({lesson.expected} soru)
-                            </span>
-                            <span className="text-gray-700 text-[10px]">›</span>
-                            {lesson.status === 'no_pdf' ? (
-                              <span className="flex items-center gap-0.5 text-[10px] text-orange-400">
-                                <AlertTriangle size={9} /> PDF bağlı değil
-                              </span>
-                            ) : (
-                              <>
-                                <span className="flex items-center gap-0.5 text-[10px] text-green-500">
-                                  <CheckCircle2 size={9} /> PDF bağlı
-                                </span>
-                                <span className="text-gray-700 text-[10px]">›</span>
-                                {lesson.status === 'no_questions' ? (
-                                  <span className="flex items-center gap-0.5 text-[10px] text-yellow-400">
-                                    <AlertTriangle size={9} /> Parse bekliyor
-                                  </span>
-                                ) : (
-                                  <>
-                                    <span className="flex items-center gap-0.5 text-[10px] text-green-500">
-                                      <CheckCircle2 size={9} /> {lesson.found} soru
-                                    </span>
-                                    {discrepancy > 0 && (
-                                      <span className="text-[10px] text-yellow-400">({discrepancy} eksik)</span>
-                                    )}
-                                  </>
-                                )}
-                              </>
-                            )}
-                          </>
+                          <span className="text-[10px] text-gray-600">Henüz veri yok</span>
                         )}
                       </div>
                     </div>
@@ -1161,48 +1009,15 @@ function AreaAnalysisPanel() {
             </div>
           ) : topicAnalysis && (
             <>
-              {/* AI fallback — gösterme, parse CTA göster */}
+              {/* AI fallback */}
               {topicAnalysis.data_source === 'ai' ? (
-                <div className="bg-surface-50 rounded-xl border border-yellow-500/20 p-6 text-center space-y-3">
-                  <AlertTriangle size={28} className="mx-auto text-yellow-500" />
-                  <div>
-                    <p className="text-sm font-semibold text-gray-200">Soru Parse Edilmedi</p>
-                    <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
-                      Alan analizi için soruların önce Question Database&apos;e parse edilmesi gerekiyor.
-                      AI tahmini gösterilmeyecek — yalnızca doğrulanmış veri kullanılır.
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-center gap-3 flex-wrap flex-col">
-                    {ranges.length === 0 ? (
-                      <p className="text-xs text-yellow-400 flex items-center gap-1">
-                        <AlertTriangle size={11} /> Önce PDF ile soru aralıklarını bağlayın.
-                      </p>
-                    ) : pdfOptions.length > 0 ? (
-                      <Button
-                        onClick={() => handleParseQuestions(pdfOptions[0].id)}
-                        isLoading={parsing}
-                        disabled={ranges.filter(r => r.document_id === pdfOptions[0].id).length === 0}
-                        title={ranges.filter(r => r.document_id === pdfOptions[0].id).length === 0
-                          ? 'Önce bu PDF için aralıkları bağlayın'
-                          : undefined}
-                      >
-                        <BookOpen size={13} /> Soruları Parse Et
-                      </Button>
-                    ) : (
-                      <p className="text-xs text-gray-600">Önce &quot;Analizler&quot; sekmesinden PDF yükleyin</p>
-                    )}
-                  </div>
+                <div className="bg-surface-50 rounded-xl border border-surface-200 p-6 text-center space-y-2">
+                  <BookOpen size={24} className="mx-auto text-gray-600" />
+                  <p className="text-sm text-gray-400">Bu ders için henüz soru verisi bulunamadı.</p>
+                  <p className="text-xs text-gray-600">Analizler sekmesinden PDF yükleyin.</p>
                 </div>
               ) : (
                 <>
-                  {/* Parse sonucu başarı */}
-                  {parseResult && (
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-xs">
-                      <CheckCircle2 size={12} />
-                      {parseResult.questions_created} soru başarıyla parse edildi ve Question Database&apos;e kaydedildi
-                    </div>
-                  )}
-
                   {/* Özet */}
                   <div className="grid grid-cols-3 gap-3">
                     <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
@@ -1372,8 +1187,12 @@ function AreaAnalysisPanel() {
       )}
 
 
-      {/* ── Soru Aralıkları Yönetimi ────────────────────────────── */}
-      <div className="border-t border-surface-200 pt-6">
+      {/* Soru Aralıkları — sadece gelişmiş modda */}
+      <details className="border-t border-surface-200 pt-4">
+        <summary className="text-xs text-gray-600 cursor-pointer hover:text-gray-400 select-none mb-4">
+          Gelişmiş: Soru Aralıkları Yönetimi
+        </summary>
+      <div>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <List size={14} className="text-gray-500" />
@@ -1532,6 +1351,7 @@ function AreaAnalysisPanel() {
           )}
         </div>
       </div>
+      </details>
 
       {/* Toplu Aralık Oluşturma Modalı */}
       {showBulkModal && (
@@ -1781,6 +1601,7 @@ function AnalysisResult({
 export default function AcademyPage() {
   const [pageTab, setPageTab] = useState<'analyses' | 'area-analysis'>('analyses')
   const [phase, setPhase] = useState<Phase>('idle')
+  const [areaReloadKey, setAreaReloadKey] = useState(0)
   const [analysis, setAnalysis] = useState<SgsAnalysis | null>(null)
   const [savedAnalyses, setSavedAnalyses] = useState<SgsAnalysisMeta[]>([])
   const [loadingList, setLoadingList] = useState(true)
@@ -1822,6 +1643,7 @@ export default function AcademyPage() {
           const parseResult = await sgsService.parseQuestions({ analysis_id: result.analysis_id })
           if (parseResult.questions_created > 0) {
             toast.success(`${parseResult.questions_created} soru veritabanına kaydedildi`)
+            setAreaReloadKey(k => k + 1)
           }
         } catch {
           // Aralık yoksa sessizce geç — kullanıcı daha sonra bağlayabilir
@@ -1908,7 +1730,7 @@ export default function AcademyPage() {
           </div>
         </div>
 
-        {pageTab === 'area-analysis' && <AreaAnalysisPanel />}
+        {pageTab === 'area-analysis' && <AreaAnalysisPanel key={areaReloadKey} />}
 
         {pageTab === 'analyses' && generatedTitles.length > 0 && (
           <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-xl">
