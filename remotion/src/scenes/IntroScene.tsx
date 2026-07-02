@@ -1,76 +1,108 @@
 import { interpolate, spring, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
 import { BrandConfig, Scene } from '../types'
 
+const GOLD = '#C9A96E'
+const BG_DARK = '#08121E'
+const BG_MID = '#0D2040'
+
 interface Props { scene: Scene; brand: BrandConfig }
 
 export function IntroScene({ scene, brand }: Props) {
   const frame = useCurrentFrame()
-  const { fps } = useVideoConfig()
+  const { fps, width, height } = useVideoConfig()
+  const isVertical = height > width
 
-  const titleOpacity = spring({ frame, fps, config: { damping: 20 }, from: 0, to: 1, delay: 10 })
-  const subtitleOpacity = interpolate(frame, [20, 45], [0, 1], { extrapolateRight: 'clamp' })
-  const lineScale = interpolate(frame, [30, 50], [0, 1], { extrapolateRight: 'clamp' })
-  const bgY = interpolate(frame, [0, 120], [0, -20], { extrapolateRight: 'clamp' })
+  const badgeScale = spring({ frame, fps, config: { damping: 18, stiffness: 180 }, from: 0, to: 1 })
+  const titleOpacity = interpolate(frame, [15, 40], [0, 1], { extrapolateRight: 'clamp' })
+  const titleY = interpolate(frame, [15, 40], [50, 0], { extrapolateRight: 'clamp' })
+  const lineW = interpolate(frame, [42, 68], [0, 160], { extrapolateRight: 'clamp' })
+  const subOpacity = interpolate(frame, [45, 68], [0, 1], { extrapolateRight: 'clamp' })
+
+  const titleSize = isVertical ? 80 : 104
+  const px = isVertical ? 64 : 140
 
   return (
     <div style={{
       width: '100%', height: '100%',
-      background: brand.background_color,
+      background: `linear-gradient(145deg, ${BG_DARK} 0%, ${BG_MID} 55%, ${BG_DARK} 100%)`,
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      overflow: 'hidden',
+      overflow: 'hidden', position: 'relative',
+      fontFamily: brand.font_body,
     }}>
-      {/* Dekoratif arka plan şekli */}
+      {/* Ambient glow top-right */}
       <div style={{
-        position: 'absolute', top: -200 + bgY, right: -200,
-        width: 600, height: 600,
-        borderRadius: '50%',
-        background: brand.secondary_color,
-        opacity: 0.08,
+        position: 'absolute', top: -160, right: -160,
+        width: 560, height: 560, borderRadius: '50%',
+        background: `radial-gradient(circle, ${GOLD}18 0%, transparent 60%)`,
+        pointerEvents: 'none',
       }} />
+      {/* Ambient glow bottom-left */}
       <div style={{
-        position: 'absolute', bottom: -150 + bgY * 0.5, left: -150,
-        width: 400, height: 400,
-        borderRadius: '50%',
-        background: brand.primary_color,
-        opacity: 0.06,
+        position: 'absolute', bottom: -180, left: -140,
+        width: 600, height: 600, borderRadius: '50%',
+        background: 'radial-gradient(circle, #1A4A9040 0%, transparent 60%)',
+        pointerEvents: 'none',
       }} />
 
-      {/* Logo alanı */}
-      {brand.logo_url && (
-        <img
-          src={brand.logo_url}
-          style={{ height: 60, marginBottom: 48, opacity: subtitleOpacity }}
-        />
-      )}
-
-      {/* Başlık */}
+      {/* Top accent bar */}
       <div style={{
-        opacity: titleOpacity,
-        transform: `translateY(${interpolate(frame, [0, 20], [30, 0], { extrapolateRight: 'clamp' })}px)`,
-        textAlign: 'center', padding: '0 80px',
-      }}>
-        <p style={{
-          fontSize: 22, fontFamily: brand.font_body, fontWeight: 600,
-          color: brand.secondary_color, letterSpacing: 4,
-          textTransform: 'uppercase', marginBottom: 16,
+        position: 'absolute', top: 0, left: '10%', right: '10%', height: 4,
+        background: `linear-gradient(90deg, transparent 0%, ${GOLD} 40%, ${GOLD} 60%, transparent 100%)`,
+        opacity: 0.7,
+      }} />
+
+      {/* Badge */}
+      <div style={{ transform: `scale(${badgeScale})`, marginBottom: isVertical ? 48 : 52 }}>
+        <div style={{
+          background: GOLD, color: '#08121E',
+          fontWeight: 800, fontSize: isVertical ? 20 : 18,
+          letterSpacing: 3.5, textTransform: 'uppercase' as const,
+          padding: '11px 38px', borderRadius: 50,
+          boxShadow: `0 0 36px ${GOLD}55`,
         }}>
-          {scene.subtitle ?? 'Soru Çözüm Serisi'}
-        </p>
+          {scene.subtitle ?? 'SGS Soru Çözüm Serisi'}
+        </div>
+      </div>
+
+      {/* Title */}
+      <div style={{
+        opacity: titleOpacity, transform: `translateY(${titleY}px)`,
+        textAlign: 'center', padding: `0 ${px}px`,
+      }}>
         <h1 style={{
-          fontSize: 72, fontFamily: brand.font_heading, fontWeight: 700,
-          color: brand.primary_color, lineHeight: 1.15, marginBottom: 0,
+          fontSize: titleSize,
+          fontFamily: brand.font_heading, fontWeight: 700,
+          color: '#FFFFFF', lineHeight: 1.18, margin: 0,
+          textShadow: '0 4px 40px rgba(0,0,0,0.55)',
         }}>
           {scene.title ?? 'Ders Videosu'}
         </h1>
       </div>
 
-      {/* Altın çizgi */}
+      {/* Gold divider */}
       <div style={{
-        width: 120 * lineScale, height: 4,
-        background: brand.secondary_color,
-        borderRadius: 2, marginTop: 40,
-        opacity: subtitleOpacity,
+        width: lineW, height: 3,
+        background: GOLD, borderRadius: 2,
+        margin: isVertical ? '44px 0 30px' : '48px 0 28px',
+      }} />
+
+      {/* Subtitle */}
+      <p style={{
+        opacity: subOpacity,
+        fontSize: isVertical ? 22 : 23,
+        color: 'rgba(255,255,255,0.55)',
+        letterSpacing: 0.5, margin: 0, textAlign: 'center',
+        padding: `0 ${px}px`, lineHeight: 1.6,
+      }}>
+        {scene.key_point ?? 'Sınavda çıkan sorularla birlikte öğren'}
+      </p>
+
+      {/* Bottom accent bar */}
+      <div style={{
+        position: 'absolute', bottom: 0, left: '10%', right: '10%', height: 4,
+        background: `linear-gradient(90deg, transparent 0%, ${GOLD} 40%, ${GOLD} 60%, transparent 100%)`,
+        opacity: 0.35,
       }} />
 
       {scene.tts_url && <Audio src={scene.tts_url} />}

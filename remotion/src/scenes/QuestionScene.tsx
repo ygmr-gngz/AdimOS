@@ -1,98 +1,102 @@
-import { interpolate, spring, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
+import { interpolate, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
 import { BrandConfig, Scene } from '../types'
+
+const GOLD = '#C9A96E'
+const BG = '#08121E'
 
 interface Props { scene: Scene; brand: BrandConfig }
 
 export function QuestionScene({ scene, brand }: Props) {
   const frame = useCurrentFrame()
-  const { fps } = useVideoConfig()
-
-  const headerOpacity = interpolate(frame, [0, 15], [0, 1], { extrapolateRight: 'clamp' })
-  const questionOpacity = interpolate(frame, [10, 30], [0, 1], { extrapolateRight: 'clamp' })
-  const questionY = interpolate(frame, [10, 30], [20, 0], { extrapolateRight: 'clamp' })
-
+  const { width, height } = useVideoConfig()
+  const isVertical = height > width
   const options = scene.options ?? []
+
+  const headerOpacity = interpolate(frame, [0, 18], [0, 1], { extrapolateRight: 'clamp' })
+  const cardOpacity = interpolate(frame, [12, 30], [0, 1], { extrapolateRight: 'clamp' })
+  const cardY = interpolate(frame, [12, 30], [28, 0], { extrapolateRight: 'clamp' })
+
+  const padH = isVertical ? 56 : 80
+  const padV = isVertical ? 72 : 56
 
   return (
     <div style={{
       width: '100%', height: '100%',
-      background: brand.background_color,
+      background: `linear-gradient(160deg, ${BG} 0%, #0D1E38 100%)`,
       display: 'flex', flexDirection: 'column',
-      padding: '60px 80px',
+      padding: `${padV}px ${padH}px`,
       fontFamily: brand.font_body,
+      position: 'relative', overflow: 'hidden',
     }}>
-      {/* Üst bar: ders adı + soru sayacı */}
+      {/* Subtle ambient glow */}
+      <div style={{
+        position: 'absolute', top: -60, right: -80,
+        width: 360, height: 360, borderRadius: '50%',
+        background: `radial-gradient(circle, ${GOLD}10 0%, transparent 65%)`,
+        pointerEvents: 'none',
+      }} />
+
+      {/* Header */}
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        opacity: headerOpacity, marginBottom: 40,
+        marginBottom: isVertical ? 36 : 30, opacity: headerOpacity, flexShrink: 0,
       }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 12,
-        }}>
-          <div style={{
-            width: 6, height: 32, borderRadius: 3,
-            background: brand.secondary_color,
-          }} />
-          <span style={{ fontSize: 20, fontWeight: 600, color: brand.primary_color }}>
-            {scene.title ?? 'Soru'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ width: 5, height: 30, borderRadius: 3, background: GOLD }} />
+          <span style={{ fontSize: 20, fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>
+            {scene.title ?? 'Muhasebe'}
           </span>
         </div>
         <div style={{
-          background: brand.primary_color,
-          color: '#fff', borderRadius: 24,
-          padding: '8px 24px', fontSize: 18, fontWeight: 700,
+          background: GOLD, color: '#08121E',
+          borderRadius: 30, padding: '7px 22px',
+          fontSize: 17, fontWeight: 800, letterSpacing: 0.5,
         }}>
-          {scene.question_number ?? 1} / {scene.total_questions ?? 4}
+          {scene.question_number ?? 1}&nbsp;/&nbsp;{scene.total_questions ?? 5}
         </div>
       </div>
 
-      {/* Soru metni */}
+      {/* Question card */}
       <div style={{
-        background: '#fff',
-        border: `2px solid ${brand.primary_color}18`,
-        borderRadius: 16, padding: '36px 40px',
-        marginBottom: 32, flexShrink: 0,
-        opacity: questionOpacity,
-        transform: `translateY(${questionY}px)`,
-        boxShadow: '0 4px 24px rgba(11,42,74,0.06)',
+        background: 'rgba(255,255,255,0.07)',
+        border: '1px solid rgba(255,255,255,0.14)',
+        borderRadius: 18, padding: isVertical ? '28px 32px' : '24px 36px',
+        marginBottom: isVertical ? 28 : 22,
+        opacity: cardOpacity, transform: `translateY(${cardY}px)`,
+        flexShrink: 0,
       }}>
         <p style={{
-          fontSize: 26, fontFamily: brand.font_heading, fontWeight: 600,
-          color: brand.primary_color, lineHeight: 1.6, margin: 0,
+          fontSize: isVertical ? 26 : 28,
+          fontFamily: brand.font_heading, fontWeight: 600,
+          color: '#FFFFFF', lineHeight: 1.65, margin: 0,
         }}>
           {scene.question_text}
         </p>
       </div>
 
-      {/* Şıklar */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Options */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: isVertical ? 14 : 12, flex: 1 }}>
         {options.map((opt, i) => {
-          const optFrame = 35 + i * 10
-          const optOpacity = interpolate(frame, [optFrame, optFrame + 15], [0, 1], { extrapolateRight: 'clamp' })
-          const optX = interpolate(frame, [optFrame, optFrame + 15], [-30, 0], { extrapolateRight: 'clamp' })
-
+          const f0 = 32 + i * 9
+          const optOpacity = interpolate(frame, [f0, f0 + 14], [0, 1], { extrapolateRight: 'clamp' })
+          const optX = interpolate(frame, [f0, f0 + 14], [-44, 0], { extrapolateRight: 'clamp' })
           return (
-            <div
-              key={opt.label}
-              style={{
-                display: 'flex', alignItems: 'flex-start', gap: 20,
-                background: '#fff',
-                border: `1.5px solid ${brand.primary_color}20`,
-                borderRadius: 12, padding: '18px 24px',
-                opacity: optOpacity,
-                transform: `translateX(${optX}px)`,
-                boxShadow: '0 2px 8px rgba(11,42,74,0.04)',
-              }}
-            >
+            <div key={opt.label} style={{
+              display: 'flex', alignItems: 'center', gap: 18,
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.10)',
+              borderRadius: 13, padding: isVertical ? '16px 22px' : '14px 22px',
+              opacity: optOpacity, transform: `translateX(${optX}px)`,
+            }}>
               <div style={{
-                width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-                background: brand.primary_color,
-                color: '#fff', fontWeight: 700, fontSize: 16,
+                width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
+                background: GOLD, color: '#08121E',
+                fontWeight: 800, fontSize: 17,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
                 {opt.label}
               </div>
-              <span style={{ fontSize: 22, color: brand.primary_color, lineHeight: 1.5 }}>
+              <span style={{ fontSize: 22, color: 'rgba(255,255,255,0.88)', lineHeight: 1.55 }}>
                 {opt.text}
               </span>
             </div>
