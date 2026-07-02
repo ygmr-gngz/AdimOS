@@ -295,7 +295,7 @@ def list_analyses() -> list[dict]:
     supabase = get_supabase_client()
     resp = (
         supabase.table("sgs_analyses")
-        .select("id, pdf_name, total_questions, subjects, video_plan, status, created_at")
+        .select("id, pdf_name, document_type, year, semester, total_questions, subjects, video_plan, status, created_at")
         .order("created_at", desc=True)
         .execute()
     )
@@ -342,7 +342,6 @@ def parse_questions_by_ranges(
     supabase = get_supabase_client()
     effective_doc_id = document_id or analysis_id
 
-    print(f"[parse_repo] analysis_id={analysis_id}, document_id={effective_doc_id}, range_ids={range_ids}")
     logger.info(f"[parse] analysis_id={analysis_id} document_id={effective_doc_id}")
 
     # 1. Analizi al
@@ -353,7 +352,6 @@ def parse_questions_by_ranges(
     a = resp.data[0]
     questions = a.get("questions") or []
     pdf_name = a.get("pdf_name", "")
-    print(f"[parse_repo] analiz bulundu: pdf={pdf_name!r}, toplam_soru={len(questions)}")
     logger.info(f"[parse] analiz bulundu: pdf={pdf_name}, soru_sayısı={len(questions)}")
 
     if not questions:
@@ -364,34 +362,27 @@ def parse_questions_by_ranges(
         # Belirtilen range ID'leri doğrudan getir
         ranges_resp = supabase.table("sgs_question_ranges").select("*").in_("id", range_ids).execute()
         ranges = ranges_resp.data or []
-        print(f"[parse_repo] range_ids ile {len(ranges)} aralık bulundu (istenen: {len(range_ids)})")
         logger.info(f"[parse] range_ids ile {len(ranges)} aralık bulundu")
     else:
         # document_id ile ara
         ranges_resp = supabase.table("sgs_question_ranges").select("*").eq("document_id", effective_doc_id).execute()
         ranges = ranges_resp.data or []
-        print(f"[parse_repo] document_id={effective_doc_id!r} ile {len(ranges)} aralık bulundu")
 
         if not ranges and pdf_name:
             logger.info(f"[parse] document_id ile aralık bulunamadı, document_name ile deneniyor: {pdf_name}")
-            print(f"[parse_repo] document_name={pdf_name!r} ile fallback arama...")
             ranges_resp2 = supabase.table("sgs_question_ranges").select("*").eq("document_name", pdf_name).execute()
             ranges = ranges_resp2.data or []
-            # Bulunan aralıkların document_id'sini güncelle
             if ranges:
                 ids = [r["id"] for r in ranges]
                 for rid in ids:
                     supabase.table("sgs_question_ranges").update({
                         "document_id": analysis_id
                     }).eq("id", rid).execute()
-                print(f"[parse_repo] {len(ranges)} aralık document_name eşleşmesiyle otomatik bağlandı")
                 logger.info(f"[parse] {len(ranges)} aralık otomatik bağlandı (document_name eşleşmesi)")
 
     if not ranges:
-        total_resp = supabase.table("sgs_question_ranges").select("id,document_id,document_name", count="exact").execute()
+        total_resp = supabase.table("sgs_question_ranges").select("id", count="exact").execute()
         total_count = total_resp.count or 0
-        sample = [(r.get("document_name"), r.get("document_id")) for r in (total_resp.data or [])[:3]]
-        print(f"[parse_repo] HATA: hiç aralık bulunamadı. Toplam: {total_count}, örnek kayıtlar: {sample}")
         logger.warning(f"[parse] hiç aralık bulunamadı. Toplam aralık sayısı: {total_count}")
         return {
             "error": (
@@ -401,8 +392,6 @@ def parse_questions_by_ranges(
             )
         }
 
-    range_summary = [(r["lesson_name"], r["start_question_no"], r["end_question_no"], r.get("document_id")) for r in ranges]
-    print(f"[parse_repo] {len(ranges)} aralık bulundu: {range_summary}")
     logger.info(f"[parse] {len(ranges)} aralık bulundu")
 
     # 3. Soru numarasını normalize et
@@ -439,7 +428,7 @@ def parse_questions_by_ranges(
                     "lesson_name": lesson,
                     "question_number": q_no,
                     "year": a.get("year"),
-                    "topic": q.get("subject") or q.get("topic"),
+                    "topic": q.get("topic"),  # AI konu adı (subject=ders adı, topic=konu)
                     "subtopic": q.get("subtopic"),
                     "answer": q.get("answer"),
                 })
@@ -448,13 +437,12 @@ def parse_questions_by_ranges(
         if not matched:
             unmatched.append(q_no)
 
-    print(f"[parse_repo] eşleşen={len(to_insert)}, eşleşmeyen={len(unmatched)}, örnek eşleşmeyenler={unmatched[:10]}")
-    logger.info(f"[parse] eşleşen={len(to_insert)}, eşleşmeyen={len(unmatched)}, ilk 5 eşleşmeyen={unmatched[:5]}")
+    logger.info(f"[parse] eşleşen={len(to_insert)}, eşleşmeyen={len(unmatched)}")
 
     if not to_insert:
         range_summary = [(r["start_question_no"], r["end_question_no"]) for r in ranges[:3]]
         sample_nos = [_get_q_no(q) for q in questions[:5] if _get_q_no(q)]
-        print(f"[parse_repo] HATA: Soru eşleşmedi. sample_nos={sample_nos}, aralıklar={range_summary}")
+        logger.warning(f"[parse] soru eşleşmedi. örnek_no={sample_nos}, aralıklar={range_summary}")
         return {
             "error": (
                 f"Hiç soru eşleşmedi. "
@@ -469,7 +457,6 @@ def parse_questions_by_ranges(
     supabase.table("sgs_questions").insert(to_insert).execute()
 
     lesson_counts = Counter(q["lesson_name"] for q in to_insert)
-    print(f"[parse_repo] BAŞARI: {len(to_insert)} soru kaydedildi, failed={len(unmatched)}, dersler={dict(lesson_counts)}")
     logger.info(f"[parse] {len(to_insert)} soru kaydedildi: {dict(lesson_counts)}")
 
     return {
@@ -477,5 +464,119 @@ def parse_questions_by_ranges(
         "failed_count": len(unmatched),
         "lessons": [{"lesson_name": k, "count": v} for k, v in lesson_counts.items()],
         "analysis_id": analysis_id,
+    }
+
+
+def get_questions_for_topic(topic: str, lesson_name: str | None = None, limit: int = 30) -> list[dict]:
+    """sgs_questions tablosundan konu/ders bazlı sorular — tam soru detayı ile."""
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    supabase = get_supabase_client()
+
+    # sgs_questions tablosundan eşleşen satırları al
+    query = supabase.table("sgs_questions").select("*")
+    if topic:
+        query = query.eq("topic", topic)
+    if lesson_name:
+        query = query.eq("lesson_name", lesson_name)
+    resp = query.limit(limit).execute()
+    rows = resp.data or []
+
+    if not rows:
+        # sgs_questions boşsa sgs_analyses.questions JSONB'den dene (AI tabanlı)
+        all_q = get_all_questions(lesson_name=lesson_name)
+        return [q for q in all_q if q.get("topic", "") == topic][:limit]
+
+    # Benzersiz analysis ID'leri topla ve analizleri çek
+    analysis_ids = list({r["document_id"] for r in rows if r.get("document_id")})
+    if not analysis_ids:
+        return []
+
+    analyses_resp = supabase.table("sgs_analyses").select("id,pdf_name,year,questions").in_("id", analysis_ids).execute()
+
+    # analysis_id → {question_number: full_question_dict}
+    lookup: dict[str, tuple[dict, str, str]] = {}
+    for a in (analyses_resp.data or []):
+        q_map: dict[int, dict] = {}
+        for q in (a.get("questions") or []):
+            q_no = q.get("id") or q.get("question_id") or q.get("no")
+            if q_no is not None:
+                q_map[int(q_no)] = q
+        lookup[a["id"]] = (q_map, a.get("pdf_name", ""), a.get("year", ""))
+
+    result = []
+    for row in rows:
+        doc_id = row.get("document_id")
+        q_no = row.get("question_number")
+        if not doc_id or q_no is None:
+            continue
+        q_map, pdf_name, year = lookup.get(doc_id, ({}, "", ""))
+        q_data = q_map.get(int(q_no), {})
+
+        result.append({
+            **q_data,
+            "id": q_no,
+            "subject": row["lesson_name"],       # aralıktan gelen doğru ders
+            "topic": row["topic"] or q_data.get("topic", ""),
+            "year": row.get("year") or year or q_data.get("year", ""),
+            "document_name": pdf_name,
+        })
+
+    return result
+
+
+def update_question_in_sgs_questions(question_number: int, lesson_name: str | None = None, topic: str | None = None) -> bool:
+    """sgs_questions tablosunda question_number bazlı ders/konu düzeltmesi."""
+    from app.config.sgs_groups import get_group_for_lesson
+    supabase = get_supabase_client()
+
+    updates: dict = {}
+    if lesson_name:
+        updates["lesson_name"] = lesson_name
+        group = get_group_for_lesson(lesson_name)
+        if group:
+            updates["lesson_group"] = group
+    if topic:
+        updates["topic"] = topic
+
+    if not updates:
+        return False
+
+    resp = supabase.table("sgs_questions").update(updates).eq("question_number", question_number).execute()
+    return bool(resp.data)
+
+
+def get_topic_detail(topic: str, lesson_name: str | None = None) -> dict:
+    """Bir konu için toplam soru, yıl dağılımı, ders dağılımı ve çıkma oranı."""
+    from collections import Counter as _Counter
+
+    # Konuya ait sorular (aralık öncelikli, yoksa AI)
+    q_ranges = get_questions_by_ranges(lesson_name=lesson_name)
+    topic_questions = [q for q in q_ranges if q.get("topic", "") == topic]
+
+    if not topic_questions:
+        q_all = get_all_questions(lesson_name=lesson_name)
+        topic_questions = [q for q in q_all if q.get("topic", "") == topic]
+
+    total = len(topic_questions)
+
+    year_counter = _Counter(q.get("source_year") or q.get("year", "?") for q in topic_questions)
+    lesson_counter = _Counter(q.get("subject", "Belirsiz") for q in topic_questions)
+
+    # Frekans = bu konunun toplam ders sorularına oranı
+    if lesson_name:
+        all_lesson_q = get_questions_by_ranges(lesson_name=lesson_name) or get_all_questions(lesson_name=lesson_name)
+        lesson_total = len(all_lesson_q)
+    else:
+        lesson_total = total
+
+    frequency_pct = round((total / lesson_total * 100), 1) if lesson_total > 0 else 0.0
+
+    return {
+        "topic": topic,
+        "total_questions": total,
+        "lessons": [{"lesson_name": l, "count": c} for l, c in lesson_counter.most_common()],
+        "years": [{"year": y, "count": c} for y, c in sorted(year_counter.items())],
+        "frequency_pct": frequency_pct,
     }
 

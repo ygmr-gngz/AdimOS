@@ -9,8 +9,8 @@ import {
   BarChart2, BookOpen, ChevronDown, Clock,
 } from 'lucide-react'
 import {
-  sgsService, SGS_DOCUMENT_TYPES,
-  type SgsArea, type SgsTopicAnalysis, type SgsAnalysisMeta, type SgsTopicDetail,
+  sgsService, SGS_DOCUMENT_TYPES, SGS_LESSONS, TOPIC_LESSON_MAP,
+  type SgsArea, type SgsTopicAnalysis, type SgsAnalysisMeta, type SgsTopicDetail, type SgsQuestion,
 } from '@/services/sgs.service'
 import toast from 'react-hot-toast'
 
@@ -35,6 +35,143 @@ function Spinner({ size = 5 }: { size?: number }) {
   )
 }
 
+// ── Question Card ─────────────────────────────────────────────
+const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E']
+
+function QuestionCard({ question, onMoved }: {
+  question: SgsQuestion
+  onMoved?: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [editLesson, setEditLesson] = useState(false)
+  const [selectedLesson, setSelectedLesson] = useState(
+    () => TOPIC_LESSON_MAP[question.topic] ?? question.subject
+  )
+  const [saving, setSaving] = useState(false)
+
+  const suggestedLesson = TOPIC_LESSON_MAP[question.topic]
+  const isWrongLesson = suggestedLesson && suggestedLesson !== question.subject
+
+  const handleLessonSave = async () => {
+    if (selectedLesson === question.subject) { setEditLesson(false); return }
+    setSaving(true)
+    try {
+      await sgsService.updateQuestionById(question.id, { lesson_name: selectedLesson })
+      toast.success(`Ders "${selectedLesson}" olarak güncellendi`)
+      onMoved?.()
+    } catch {
+      toast.error('Ders güncellenemedi')
+    } finally {
+      setSaving(false)
+      setEditLesson(false)
+    }
+  }
+
+  return (
+    <div className="border border-surface-200 rounded-xl bg-surface-50/30 overflow-hidden">
+      <div
+        className="flex items-center gap-2 px-3 py-2.5 cursor-pointer hover:bg-surface-100/30 transition-colors"
+        onClick={() => setOpen(!open)}
+      >
+        <span className="text-[10px] font-mono text-gray-600 shrink-0">#{question.id}</span>
+        {question.year && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-200 text-gray-500 shrink-0">{question.year}</span>
+        )}
+        {isWrongLesson && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 border border-orange-500/20 text-orange-400 shrink-0">
+            {question.subject}
+          </span>
+        )}
+        <p className="text-xs text-gray-400 truncate flex-1">
+          {question.question_text?.slice(0, 90)}{(question.question_text?.length ?? 0) > 90 ? '…' : ''}
+        </p>
+        <ChevronDown size={11} className={`text-gray-600 transition-transform shrink-0 ${open ? 'rotate-180' : ''}`} />
+      </div>
+
+      {open && (
+        <div className="border-t border-surface-200/40 px-3 pb-3 pt-2.5 space-y-3">
+          <p className="text-sm text-gray-200 leading-relaxed">{question.question_text}</p>
+
+          {question.options.length > 0 && (
+            <div className="space-y-1.5">
+              {question.options.map((opt, i) => {
+                const label = OPTION_LABELS[i]
+                const isCorrect = label === question.correct_option
+                return (
+                  <div
+                    key={i}
+                    className={`flex items-start gap-2 rounded-lg px-2.5 py-2 text-xs ${
+                      isCorrect
+                        ? 'bg-emerald-500/10 border border-emerald-500/25 text-emerald-300'
+                        : 'bg-surface-100/40 text-gray-400'
+                    }`}
+                  >
+                    <span className={`font-bold shrink-0 w-4 ${isCorrect ? 'text-emerald-400' : 'text-gray-600'}`}>{label}</span>
+                    <span className="leading-relaxed flex-1">{opt}</span>
+                    {isCorrect && <span className="shrink-0 text-emerald-400 text-[10px] font-bold ml-auto">DOĞRU</span>}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {question.explanation && (
+            <div className="bg-brand-500/06 border-l-2 border-brand-500/40 pl-3 py-1.5 rounded-r-lg">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-400 mb-0.5">Açıklama</p>
+              <p className="text-xs text-gray-400 leading-relaxed">{question.explanation}</p>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between flex-wrap gap-2 pt-0.5">
+            <div className="flex flex-wrap gap-1.5">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-200 text-gray-500">{question.subject}</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-200 text-gray-500">{question.topic}</span>
+              {question.document_name && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-200 text-gray-500 truncate max-w-[180px]">
+                  {question.document_name}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); setEditLesson(!editLesson) }}
+              className="text-[10px] px-2.5 py-1 rounded-lg border border-surface-200 text-gray-500 hover:text-gray-300 hover:border-surface-300 transition-colors"
+            >
+              Dersi Değiştir
+            </button>
+          </div>
+
+          {editLesson && (
+            <div className="flex items-center gap-2 pt-0.5" onClick={e => e.stopPropagation()}>
+              <select
+                className="flex-1 bg-surface-100 border border-surface-200 rounded-lg px-2 py-1.5 text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                value={selectedLesson}
+                onChange={e => setSelectedLesson(e.target.value)}
+              >
+                {SGS_LESSONS.map(l => (
+                  <option key={l} value={l}>{l}</option>
+                ))}
+              </select>
+              <button
+                onClick={handleLessonSave}
+                disabled={saving || selectedLesson === question.subject}
+                className="text-xs px-2.5 py-1.5 rounded-lg bg-brand-600/20 border border-brand-500/30 text-brand-400 hover:bg-brand-600/30 disabled:opacity-40 transition-colors shrink-0"
+              >
+                {saving ? '…' : 'Kaydet'}
+              </button>
+              <button
+                onClick={() => setEditLesson(false)}
+                className="text-xs text-gray-600 hover:text-gray-300 shrink-0 transition-colors"
+              >
+                İptal
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Topic Row ─────────────────────────────────────────────────
 function TopicRow({ topic, count, maxCount, lessonName, rank, generatingTopic, onGenerate }: {
   topic: string
@@ -48,17 +185,33 @@ function TopicRow({ topic, count, maxCount, lessonName, rank, generatingTopic, o
   const [open, setOpen] = useState(false)
   const [detail, setDetail] = useState<SgsTopicDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [questions, setQuestions] = useState<SgsQuestion[]>([])
+  const [loadingQuestions, setLoadingQuestions] = useState(false)
+  const [questionsLoaded, setQuestionsLoaded] = useState(false)
   const barPct = Math.round((count / (maxCount || 1)) * 100)
   const isGen = generatingTopic === topic
 
-  const handleExpand = async () => {
+  const handleExpand = () => {
     const next = !open
     setOpen(next)
     if (next && !detail && !loadingDetail) {
       setLoadingDetail(true)
-      try { setDetail(await sgsService.getTopicDetail(topic, lessonName)) } catch { /* no detail */ }
-      finally { setLoadingDetail(false) }
+      sgsService.getTopicDetail(topic, lessonName)
+        .then(d => setDetail(d))
+        .catch(() => {})
+        .finally(() => setLoadingDetail(false))
     }
+    if (next && !questionsLoaded && !loadingQuestions) {
+      setLoadingQuestions(true)
+      sgsService.getTopicQuestions(topic, lessonName)
+        .then(qs => { setQuestions(qs); setQuestionsLoaded(true) })
+        .catch(() => { setQuestionsLoaded(true) })
+        .finally(() => setLoadingQuestions(false))
+    }
+  }
+
+  const handleQuestionMoved = (id: number) => {
+    setQuestions(prev => prev.filter(q => q.id !== id))
   }
 
   return (
@@ -91,7 +244,8 @@ function TopicRow({ topic, count, maxCount, lessonName, rank, generatingTopic, o
       </div>
 
       {open && (
-        <div className="px-5 pb-3 pt-2 bg-surface-100/20 border-t border-surface-200/50">
+        <div className="px-5 pb-4 pt-2 bg-surface-100/20 border-t border-surface-200/50 space-y-3">
+          {/* Topic meta */}
           {loadingDetail ? (
             <div className="flex items-center gap-2 py-1"><Spinner size={4} /><span className="text-xs text-gray-500">Yükleniyor...</span></div>
           ) : (
@@ -122,6 +276,31 @@ function TopicRow({ topic, count, maxCount, lessonName, rank, generatingTopic, o
               )}
             </div>
           )}
+
+          {/* Questions */}
+          <div className="pt-3 border-t border-surface-200/40">
+            <p className="text-[10px] uppercase tracking-wide text-gray-600 font-semibold mb-2">
+              Sorular {questions.length > 0 && <span className="text-gray-700">({questions.length})</span>}
+            </p>
+            {loadingQuestions ? (
+              <div className="flex items-center gap-2">
+                <Spinner size={3} />
+                <span className="text-xs text-gray-500">Sorular yükleniyor...</span>
+              </div>
+            ) : questionsLoaded && questions.length === 0 ? (
+              <p className="text-xs text-gray-600">Bu konuya ait soru bulunamadı.</p>
+            ) : (
+              <div className="space-y-2">
+                {questions.map(q => (
+                  <QuestionCard
+                    key={q.id}
+                    question={q}
+                    onMoved={() => handleQuestionMoved(q.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

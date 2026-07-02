@@ -22,6 +22,7 @@ SGS_LESSONS = [
     "Matematik",
     "Tarih - Genel Kültür",
     "İngilizce",
+    "Almanca",
     "Finansal Muhasebe",
     "Muhasebe Standartları",
     "Muhasebe Bilgi Sistemi",
@@ -41,14 +42,15 @@ _LESSON_KEYWORDS = """
 DERS SINIFLANDIRMA REHBERI (örnekler):
 
 Türkçe: paragraf, cümle, sözcük, yazım, noktalama, anlam, anlatım bozukluğu, dil bilgisi, fiil, isim, sıfat, dil yanlışı, metinde anlam
-Matematik: sayı, toplam, çarpım, bölme, oran, yüzde, olasılık, geometri, alan, çevre, denklem, küme, mantık, fonksiyon
-Tarih - Genel Kültür: tarih, coğrafya, Türkiye, Osmanlı, Cumhuriyet, siyaset, kültür, sanat, Atatürk, uygarlık
-İngilizce: english, grammar, vocabulary, tense, sentence, meaning, reading, translation, word
-Finansal Muhasebe: bilanço, yevmiye, mizan, aktif, pasif, borç, alacak, hesap, dönem sonu, stok, kasa, banka, amortisman, gelir tablosu, hesap planı, tek düzen
+Matematik: sayı, toplam, çarpım, bölme, oran, yüzde, olasılık, geometri, alan, çevre, denklem, küme, mantık, fonksiyon, permütasyon, kombinasyon, logaritma, istatistik
+Tarih - Genel Kültür: tarih, coğrafya, Türkiye, Osmanlı, Cumhuriyet, siyaset, kültür, sanat, Atatürk, uygarlık, kurtuluş savaşı, inkılap
+İngilizce: english, grammar, vocabulary, tense, sentence, meaning, reading, translation, word, in english
+Almanca: deutsch, grammatik, vokabeln, satz, bedeutung, leseverstehen, übersetzung, wort, auf deutsch, almanca
+Finansal Muhasebe: yevmiye, mizan, aktif, pasif, hesap, dönem sonu, stok, kasa, banka, amortisman, hesap planı, tek düzen, defter-i kebir
 Muhasebe Standartları: TMS, TFRS, standart, muhasebe politikası, dipnot, konsolidasyon, ölçüm, gerçeğe uygun değer, finansal tablo
 Muhasebe Bilgi Sistemi: bilgi sistemi, yazılım, muhasebe programı, veri, kayıt sistemi, otomasyon, elektronik defter
 Maliyet Muhasebesi: maliyet, üretim maliyeti, direkt ilk madde, işçilik, genel üretim gideri, sipariş, safha, standart maliyet, fark analizi
-Mali Tablolar Analizi: rasyo, oran analizi, likidite, karlılık, finansman, cari oran, devir hızı, dikey analiz, yatay analiz, trend
+Mali Tablolar Analizi: bilanço, gelir tablosu, rasyo, oran analizi, likidite, karlılık, finansman, cari oran, devir hızı, dikey analiz, yatay analiz, nakit akım
 Muhasebe Denetimi: denetim, iç kontrol, iç denetim, bağımsız denetim, denetçi, denetim kanıtı, risk, örnekleme, rapor, hile
 İktisat: arz, talep, piyasa, fiyat, enflasyon, deflasyon, faiz, para, bankacılık, büyüme, GSYH, denge, elastikiyet, monopol, oligopol
 Maliye: bütçe, kamu geliri, kamu gideri, vergi teorisi, Türk vergi sistemi, maliye politikası, vergi yükü, borçlanma, kamu açığı
@@ -57,7 +59,24 @@ Meslek Hukuku: SMMM, YMM, staj, meslek odası, etik, disiplin, ruhsat, sorumlulu
 Vergi Hukuku: vergi, gelir vergisi, kurumlar vergisi, KDV, stopaj, beyanname, tarh, tahakkuk, tahsil, vergi usul, KDVK, GVK, KVK
 Ticaret Hukuku: tacir, ticaret sicili, işletme, şirket, anonim, limited, komandit, ticaret unvanı, ticari defter, kambiyo, çek, senet, poliçe
 Borçlar Hukuku: borç, alacak, sözleşme, teklif, kabul, haksız fiil, sebepsiz zenginleşme, zamanaşımı, cayma, ibra, takas
+
+KRİTİK EŞLEŞTİRME KURALLARI (yanlış sınıflandırmayı önler, MUTLAKA uy):
+- "Denklemler", "Fonksiyonlar", "Geometri", "Kümeler", "Logaritma" → HER ZAMAN Matematik
+- "Bilanço", "Gelir Tablosu", "Nakit Akım" → HER ZAMAN Mali Tablolar Analizi (Finansal Muhasebe DEĞİL)
+- "Yevmiye", "Mizan", "Amortisman" → HER ZAMAN Finansal Muhasebe
+- "Cumhuriyet Tarihi", "Atatürk İlkeleri", "İnkılap" → HER ZAMAN Tarih - Genel Kültür
+- Matematik terimleri (denklem, küme, olasılık) → Türkçe DEĞİL, Matematik
 """
+
+
+def _detect_language_from_filename(pdf_name: str) -> str | None:
+    """Dosya adından dil tespiti: ingilizce/almanca PDF'leri yakalar."""
+    n = pdf_name.lower().replace("İ", "i").replace("ı", "i")
+    if any(k in n for k in ("ingilizce", "inglizce", "english", "_ing", "-ing", "ing_", "ing-")):
+        return "İngilizce"
+    if any(k in n for k in ("almanca", "german", "deutsch", "_alm", "-alm", "alm_", "alm-")):
+        return "Almanca"
+    return None
 
 
 def analyze_sgs_pdf(pdf_text: str, pdf_name: str = "") -> dict:
@@ -199,12 +218,23 @@ Türkçe olarak yanıtla. SADECE JSON döndür:
             logger.error(f"[sgs-analyzer] JSON parse hatası: {je} — içerik: {raw_content[:200]}")
             raise ValueError("LLM yanıtı geçerli JSON değil. Lütfen tekrar deneyin.") from je
 
-        # Güven skoru düşük sorularda subject'i "Belirsiz" yap
-        for q in result.get("questions", []):
-            conf = float(q.get("lesson_confidence", 1.0))
-            if conf < 0.6 and q.get("subject") != "Belirsiz":
-                q["original_subject"] = q["subject"]
-                q["subject"] = "Belirsiz"
+        # Dosya adından dil tespiti — AI'dan önce güvenilir
+        forced_lang = _detect_language_from_filename(pdf_name)
+        if forced_lang:
+            logger.info(f"[sgs-analyzer] dosya adı dil tespiti: {pdf_name!r} → {forced_lang}")
+            for q in result.get("questions", []):
+                if q.get("subject") != forced_lang:
+                    q["original_subject"] = q.get("subject", "")
+                    q["subject"] = forced_lang
+                    q["lesson_confidence"] = 1.0
+                    q["lesson_reason"] = f"Dosya adı tespiti: {pdf_name}"
+        else:
+            # Güven skoru düşük sorularda subject'i "Belirsiz" yap
+            for q in result.get("questions", []):
+                conf = float(q.get("lesson_confidence", 1.0))
+                if conf < 0.6 and q.get("subject") != "Belirsiz":
+                    q["original_subject"] = q["subject"]
+                    q["subject"] = "Belirsiz"
 
         logger.info(
             f"[sgs-analyzer] tamamlandı: {result.get('total_questions', '?')} soru, "

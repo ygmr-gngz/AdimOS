@@ -1,7 +1,7 @@
 import apiClient from '@/lib/api-client'
 
 export const SGS_LESSON_GROUPS = {
-  'Genel Dersler': ['Türkçe', 'Matematik', 'Tarih - Genel Kültür', 'İngilizce'],
+  'Genel Dersler': ['Türkçe', 'Matematik', 'Tarih - Genel Kültür', 'İngilizce', 'Almanca'],
   'Hukuk': ['Ticaret Hukuku', 'Borçlar Hukuku', 'Vergi Hukuku', 'Meslek Hukuku', 'İş ve Sosyal Güvenlik Hukuku'],
   'Muhasebe': ['Finansal Muhasebe', 'Muhasebe Standartları', 'Muhasebe Bilgi Sistemi', 'Maliyet Muhasebesi', 'Mali Tablolar Analizi', 'Muhasebe Denetimi'],
   'Finans': ['Maliye', 'İktisat'],
@@ -10,6 +10,50 @@ export const SGS_LESSON_GROUPS = {
 export type SgsLessonGroup = keyof typeof SGS_LESSON_GROUPS
 
 export const SGS_LESSONS = Object.values(SGS_LESSON_GROUPS).flat() as string[]
+
+// Konu → doğru ders eşleştirmesi (AI hataları için referans ve manuel düzeltme rehberi)
+export const TOPIC_LESSON_MAP: Readonly<Record<string, string>> = {
+  // Türkçe
+  'Anlam Bilgisi': 'Türkçe', 'Sözcükte Anlam': 'Türkçe', 'Cümlede Anlam': 'Türkçe',
+  'Paragraf': 'Türkçe', 'Yazım Kuralları': 'Türkçe', 'Noktalama': 'Türkçe',
+  'Anlatım Bozukluğu': 'Türkçe', 'Ses Bilgisi': 'Türkçe', 'Dil Bilgisi': 'Türkçe',
+  // Matematik
+  'Denklemler': 'Matematik', 'Fonksiyonlar': 'Matematik', 'Problemler': 'Matematik',
+  'Sayılar': 'Matematik', 'Kümeler': 'Matematik', 'Oran Orantı': 'Matematik',
+  'Olasılık': 'Matematik', 'Geometri': 'Matematik', 'Logaritma': 'Matematik',
+  'Permütasyon': 'Matematik', 'Kombinasyon': 'Matematik', 'İstatistik': 'Matematik',
+  // Tarih - Genel Kültür
+  'Cumhuriyet Tarihi': 'Tarih - Genel Kültür', 'Atatürk İlkeleri': 'Tarih - Genel Kültür',
+  'İnkılap Tarihi': 'Tarih - Genel Kültür', 'Osmanlı Tarihi': 'Tarih - Genel Kültür',
+  'Genel Kültür': 'Tarih - Genel Kültür', 'Kurtuluş Savaşı': 'Tarih - Genel Kültür',
+  // Finansal Muhasebe
+  'Yevmiye': 'Finansal Muhasebe', 'Defter-i Kebir': 'Finansal Muhasebe',
+  'Mizan': 'Finansal Muhasebe', 'Amortisman': 'Finansal Muhasebe',
+  'Aktif / Pasif Hesaplar': 'Finansal Muhasebe', 'Dönem Sonu': 'Finansal Muhasebe',
+  // Mali Tablolar Analizi
+  'Bilanço': 'Mali Tablolar Analizi', 'Gelir Tablosu': 'Mali Tablolar Analizi',
+  'Fon Akım Tablosu': 'Mali Tablolar Analizi', 'Nakit Akım Tablosu': 'Mali Tablolar Analizi',
+  // Muhasebe Bilgi Sistemi
+  'Tekdüzen Hesap Planı': 'Muhasebe Bilgi Sistemi',
+  // Ticaret Hukuku
+  'Tacir': 'Ticaret Hukuku', 'Ticari İşletme': 'Ticaret Hukuku',
+  'Ticaret Unvanı': 'Ticaret Hukuku', 'İşletme Adı': 'Ticaret Hukuku',
+  'Ticaret Sicili': 'Ticaret Hukuku', 'Haksız Rekabet': 'Ticaret Hukuku',
+  // Borçlar Hukuku
+  'Sözleşme': 'Borçlar Hukuku', 'Borç İlişkisi': 'Borçlar Hukuku',
+  'Temerrüt': 'Borçlar Hukuku',
+  // İş ve Sosyal Güvenlik Hukuku
+  'İşçi': 'İş ve Sosyal Güvenlik Hukuku', 'SGK': 'İş ve Sosyal Güvenlik Hukuku',
+  'İş Sözleşmesi': 'İş ve Sosyal Güvenlik Hukuku',
+  // Vergi Hukuku
+  'Gelir Vergisi': 'Vergi Hukuku', 'KDV': 'Vergi Hukuku',
+  'Kurumlar Vergisi': 'Vergi Hukuku', 'Vergi Usul': 'Vergi Hukuku',
+  // Maliye
+  'Bütçe': 'Maliye', 'Kamu Maliyesi': 'Maliye',
+  // İktisat
+  'Para': 'İktisat', 'Talep': 'İktisat', 'Arz': 'İktisat',
+  'Fiyat': 'İktisat', 'Piyasa': 'İktisat', 'Enflasyon': 'İktisat',
+}
 
 export function getLessonGroup(lesson: string): SgsLessonGroup | null {
   for (const [group, lessons] of Object.entries(SGS_LESSON_GROUPS)) {
@@ -30,6 +74,7 @@ export interface SgsQuestion {
   options: string[]
   correct_option: string
   explanation?: string
+  document_name?: string
   lesson_confidence?: number
   lesson_reason?: string
   original_subject?: string
@@ -278,7 +323,6 @@ export const sgsService = {
     range_ids?: string[]
     document_id?: string
   }): Promise<SgsParseResult> {
-    console.log('PARSE PAYLOAD:', params)
     const { data } = await apiClient.post('/sgs/questions/parse-by-ranges', params)
     return data
   },
@@ -312,5 +356,18 @@ export const sgsService = {
       params: { topic, ...(lesson ? { lesson } : {}) },
     })
     return data
+  },
+
+  // GET /sgs/questions?topic=X&lesson=Y — backend bu endpoint'i implemente etmeli
+  async getTopicQuestions(topic: string, lesson?: string): Promise<SgsQuestion[]> {
+    const { data } = await apiClient.get('/sgs/questions', {
+      params: { topic, ...(lesson ? { lesson } : {}) },
+    })
+    return data?.questions ?? []
+  },
+
+  // PATCH /sgs/questions/{id} — ders veya konu düzeltmesi
+  async updateQuestionById(id: number, updates: { lesson_name?: string; topic?: string }): Promise<void> {
+    await apiClient.patch(`/sgs/questions/${id}`, updates)
   },
 }

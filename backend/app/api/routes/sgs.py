@@ -8,6 +8,7 @@ from app.db.repositories.sgs_repo import (
     create_analysis, list_analyses, get_analysis, delete_analysis, update_question_subject,
     save_range, get_ranges, delete_range, get_all_questions,
     get_questions_by_ranges, get_areas_summary, bulk_link_ranges_to_analysis,
+    get_questions_for_topic, update_question_in_sgs_questions, get_topic_detail,
 )
 from app.config.sgs_groups import SGS_LESSON_GROUPS, get_lessons_for_group
 from app.db.repositories.generated_contents_repo import (
@@ -221,14 +222,6 @@ class ParseRequest(BaseModel):
 
 @router.post("/questions/parse-by-ranges")
 def parse_questions(body: ParseRequest):
-    logger = logging.getLogger(__name__)
-
-    print("=== PARSE BY RANGES START ===")
-    print("REQUEST BODY:", body.model_dump())
-    print("analysis_id:", body.analysis_id)
-    print("range_ids:", body.range_ids)
-    print("document_id:", body.document_id)
-
     if not body.analysis_id or not body.analysis_id.strip():
         raise HTTPException(status_code=400, detail="analysis_id boş gönderilemez. Frontend'den analysis_id eksik gönderilmiş.")
 
@@ -445,3 +438,50 @@ def lesson_topic_analysis(lesson_name: str, year: str | None = Q(None)):
         "year_breakdown": [{"year": y, "count": c} for y, c in sorted(year_counts.items())],
         "data_source": data_source,
     }
+
+
+# ── Konu Detay ────────────────────────────────────────────────
+
+@router.get("/topic-detail")
+def topic_detail(
+    topic: str = Q(..., description="Konu adı"),
+    lesson: str | None = Q(None, description="Ders adı (opsiyonel)"),
+):
+    """Belirli bir konu için toplam soru, yıl dağılımı ve çıkma oranı."""
+    return get_topic_detail(topic=topic, lesson_name=lesson)
+
+
+# ── Soru Listesi (konu/ders bazlı, tam detay) ─────────────────
+
+@router.get("/questions")
+def list_questions_by_topic(
+    topic: str | None = Q(None, description="Konu adı"),
+    lesson: str | None = Q(None, description="Ders adı"),
+):
+    """Konu ve ders bazlı soru listesi — tam soru metni, şıklar, cevap."""
+    if not topic and not lesson:
+        return {"questions": [], "total": 0}
+    questions = get_questions_for_topic(topic=topic or "", lesson_name=lesson)
+    return {"questions": questions, "total": len(questions)}
+
+
+# ── Soru Düzeltme (ders / konu) ───────────────────────────────
+
+class QuestionUpdateRequest(BaseModel):
+    lesson_name: Optional[str] = None
+    topic: Optional[str] = None
+
+
+@router.patch("/questions/{question_id}")
+def update_question(question_id: int, body: QuestionUpdateRequest):
+    """Bir sorunun dersini veya konusunu manuel düzelt (sgs_questions tablosu)."""
+    if not body.lesson_name and not body.topic:
+        raise HTTPException(status_code=400, detail="lesson_name veya topic gerekli")
+    success = update_question_in_sgs_questions(
+        question_number=question_id,
+        lesson_name=body.lesson_name,
+        topic=body.topic,
+    )
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Soru bulunamadı (question_number={question_id})")
+    return {"message": "Soru güncellendi", "question_id": question_id}

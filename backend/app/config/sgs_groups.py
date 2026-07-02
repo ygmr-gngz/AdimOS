@@ -1,7 +1,7 @@
 """SGS ders grupları — tek kaynak, hem backend hem frontend kullanır."""
 
 SGS_LESSON_GROUPS: dict[str, list[str]] = {
-    "Genel Dersler": ["Türkçe", "Matematik", "Tarih - Genel Kültür", "İngilizce"],
+    "Genel Dersler": ["Türkçe", "Matematik", "Tarih - Genel Kültür", "İngilizce", "Almanca"],
     "Hukuk": ["Ticaret Hukuku", "Borçlar Hukuku", "Vergi Hukuku", "Meslek Hukuku", "İş ve Sosyal Güvenlik Hukuku"],
     "Muhasebe": ["Finansal Muhasebe", "Muhasebe Standartları", "Muhasebe Bilgi Sistemi", "Maliyet Muhasebesi", "Mali Tablolar Analizi", "Muhasebe Denetimi"],
     "Finans": ["Maliye", "İktisat"],
