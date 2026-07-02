@@ -7,7 +7,7 @@ import Badge from '@/components/ui/Badge'
 import {
   GraduationCap, Upload, FileText, Play, ChevronDown,
   ChevronUp, Clock, BookOpen, Video, Trash2, RefreshCw, AlertTriangle, Edit2, List, Plus, BarChart2,
-  CheckCircle2, X, Layers, Loader2, Zap
+  CheckCircle2, X, Layers
 } from 'lucide-react'
 import { sgsService, SGS_LESSONS, SGS_LESSON_GROUPS, SGS_DOCUMENT_TYPES, type SgsAnalysis, type SgsAnalysisMeta, type SgsQuestion, type SgsRange, type SgsArea, type SgsTopicAnalysis } from '@/services/sgs.service'
 import toast from 'react-hot-toast'
@@ -556,163 +556,6 @@ function BulkRangeModal({
 
 // ── Otomatik Parse Upload ─────────────────────────────────────
 
-type AutoParseResult = {
-  success: boolean
-  document_id: string
-  filename: string
-  detected: { year?: string; period?: string; group?: string; language?: string }
-  parsed: { total_questions: number; matched_ranges: number; unmatched_questions: number }
-  lessons: { lesson_name: string; count: number }[]
-  message: string
-  error?: string
-}
-
-type AutoParseStatus = 'idle' | 'uploading' | 'done' | 'error'
-
-const STATUS_STEPS = ['PDF yükleniyor', 'Sorular çıkarılıyor', 'Ders aralıklarıyla eşleştiriliyor', 'Veritabanına yazılıyor']
-
-function AutoParseUpload({ onSuccess }: { onSuccess: () => void }) {
-  const [status, setStatus] = useState<AutoParseStatus>('idle')
-  const [result, setResult] = useState<AutoParseResult | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
-
-  const handleFile = async (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      toast.error('Sadece PDF dosyası kabul edilir')
-      return
-    }
-    setStatus('uploading')
-    setResult(null)
-    setError(null)
-    try {
-      const res = await sgsService.uploadAndAutoParse(file)
-      setResult(res)
-      setStatus('done')
-      toast.success(`${res.parsed.total_questions} soru otomatik parse edildi!`)
-      onSuccess()
-    } catch (err: unknown) {
-      type AxiosErr = { response?: { data?: { detail?: string; error?: string } } }
-      const msg = (err as AxiosErr)?.response?.data?.detail
-        ?? (err as AxiosErr)?.response?.data?.error
-        ?? 'PDF parse işlemi başarısız'
-      setError(msg)
-      setStatus('error')
-      toast.error(msg, { duration: 6000 })
-    }
-  }
-
-  const reset = () => { setStatus('idle'); setResult(null); setError(null) }
-
-  if (status === 'uploading') {
-    return (
-      <div className="border border-surface-200 rounded-xl p-5 text-center space-y-3">
-        <Loader2 size={22} className="mx-auto text-brand-400 animate-spin" />
-        <p className="text-sm font-medium text-gray-300">PDF analiz ediliyor...</p>
-        <div className="flex items-center justify-center gap-3 flex-wrap">
-          {STATUS_STEPS.map((s, i) => (
-            <span key={i} className="flex items-center gap-1 text-[11px] text-gray-500">
-              <span className="w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse" style={{ animationDelay: `${i * 0.2}s` }} />
-              {s}
-            </span>
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  if (status === 'done' && result) {
-    return (
-      <div className="border border-green-500/30 bg-green-500/5 rounded-xl p-4 space-y-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 size={16} className="text-green-400 shrink-0" />
-            <div>
-              <p className="text-sm font-semibold text-green-300">{result.filename}</p>
-              <p className="text-xs text-gray-400 mt-0.5">{result.message}</p>
-            </div>
-          </div>
-          <button onClick={reset} className="text-gray-600 hover:text-gray-400 ml-2 shrink-0"><X size={14} /></button>
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          <div className="bg-surface-100 rounded-lg p-2 text-center">
-            <p className="text-lg font-bold text-white">{result.parsed.total_questions}</p>
-            <p className="text-[10px] text-gray-500">Soru Parse Edildi</p>
-          </div>
-          <div className="bg-surface-100 rounded-lg p-2 text-center">
-            <p className="text-lg font-bold text-brand-300">{result.parsed.matched_ranges}</p>
-            <p className="text-[10px] text-gray-500">Aralık Eşleşti</p>
-          </div>
-          <div className="bg-surface-100 rounded-lg p-2 text-center">
-            <p className={`text-lg font-bold ${result.parsed.unmatched_questions > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
-              {result.parsed.unmatched_questions}
-            </p>
-            <p className="text-[10px] text-gray-500">Eşleşmeyen</p>
-          </div>
-        </div>
-        {Object.values(result.detected).some(Boolean) && (
-          <div className="flex flex-wrap gap-1.5">
-            {result.detected.year && <span className="text-[11px] px-2 py-0.5 rounded bg-surface-100 text-gray-400">Yıl: {result.detected.year}</span>}
-            {result.detected.period && <span className="text-[11px] px-2 py-0.5 rounded bg-surface-100 text-gray-400">Dönem: {result.detected.period}</span>}
-            {result.detected.language && <span className="text-[11px] px-2 py-0.5 rounded bg-surface-100 text-gray-400">Dil: {result.detected.language}</span>}
-            {result.detected.group && <span className="text-[11px] px-2 py-0.5 rounded bg-surface-100 text-gray-400">Grup: {result.detected.group}</span>}
-          </div>
-        )}
-        {result.lessons.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-36 overflow-auto">
-            {result.lessons.map(l => (
-              <div key={l.lesson_name} className="flex items-center justify-between px-2 py-1 bg-surface-100 rounded text-[11px]">
-                <span className="text-gray-400 truncate">{l.lesson_name}</span>
-                <span className="text-brand-300 font-bold ml-2 shrink-0">{l.count}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <button onClick={reset}
-          className="w-full text-xs text-gray-600 hover:text-gray-400 py-1.5 border border-dashed border-surface-300 rounded-lg transition-colors">
-          + Başka PDF Yükle
-        </button>
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".pdf"
-        className="hidden"
-        onChange={e => {
-          const f = e.target.files?.[0]
-          if (f) handleFile(f)
-          e.target.value = ''
-        }}
-      />
-      <button
-        onClick={() => fileRef.current?.click()}
-        className="w-full border-2 border-dashed border-surface-200 hover:border-brand-500/60 rounded-xl p-5 text-center transition-all group"
-      >
-        <div className="flex items-center justify-center gap-2 mb-1">
-          <Zap size={16} className="text-brand-400 group-hover:text-brand-300" />
-          <p className="text-sm font-semibold text-gray-200 group-hover:text-white">PDF Yükle ve Otomatik Parse Et</p>
-        </div>
-        <p className="text-xs text-gray-600 group-hover:text-gray-500">
-          PDF yüklendiğinde sistem soruları otomatik çıkarır ve ders aralıklarıyla eşleştirir
-        </p>
-      </button>
-      {status === 'error' && error && (
-        <div className="mt-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-          <p className="text-xs text-red-400 flex items-start gap-1.5">
-            <AlertTriangle size={12} className="shrink-0 mt-0.5" /> {error}
-          </p>
-          <button onClick={reset} className="text-xs text-gray-600 hover:text-gray-400 mt-1 underline">Tekrar dene</button>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Alan Analizi Paneli ────────────────────────────────────────
 
 function AreaAnalysisPanel() {
@@ -954,7 +797,6 @@ function AreaAnalysisPanel() {
           <div className="divide-y divide-surface-200">
             {currentArea.lessons.map(lesson => {
               const isActive = selectedLesson === lesson.name
-              const discrepancy = lesson.expected - lesson.found
               return (
                 <div
                   key={lesson.name}
