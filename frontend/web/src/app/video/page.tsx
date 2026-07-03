@@ -159,6 +159,20 @@ function PreviewModal({ job, onClose, onApprove, onReject }: {
                   <>
                     <Film size={48} style={{ marginBottom: 12, opacity: 0.4 }} />
                     <p style={{ fontSize: 15, margin: 0, opacity: 0.6 }}>Video henüz hazır değil</p>
+                    {job.error_message && (
+                      <div style={{
+                        marginTop: 12, padding: '10px 14px',
+                        background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)',
+                        borderRadius: 10, maxWidth: 320, textAlign: 'left',
+                      }}>
+                        <p style={{ margin: '0 0 4px', fontSize: 11, fontWeight: 700, color: '#ef4444', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                          Render Hatası
+                        </p>
+                        <p style={{ margin: 0, fontSize: 12, color: '#fca5a5', lineHeight: 1.5 }}>
+                          {job.error_message}
+                        </p>
+                      </div>
+                    )}
                   </>
                 )}
               </div>

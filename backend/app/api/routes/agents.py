@@ -175,4 +175,23 @@ def agent_status():
 
 @router.get("/runs")
 def list_runs(limit: int = 10):
-    return {"runs": []}
+    try:
+        from app.modules.automation.scheduler import get_jobs
+        jobs = get_jobs()
+        return {
+            "runs": [
+                {
+                    "id": j["id"],
+                    "next_run": j["next_run"],
+                    "status": "scheduled",
+                    "label": {
+                        "daily_brief": "CEO Agent — Günlük Özet",
+                        "followup_check": "Follow-up Agent — Lead Takip",
+                    }.get(j["id"], j["id"]),
+                }
+                for j in jobs
+            ]
+        }
+    except Exception as e:
+        logger.warning(f"[agents] scheduler bilgisi alınamadı: {e}")
+        return {"runs": []}

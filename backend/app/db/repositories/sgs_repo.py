@@ -377,6 +377,20 @@ def get_all_questions(
     return result
 
 
+def find_analysis_by_pdf_name(pdf_name: str) -> dict | None:
+    """Aynı pdf_name ile daha önce yüklenmiş analiz var mı? Varsa döndür."""
+    supabase = get_supabase_client()
+    resp = (
+        supabase.table("sgs_analyses")
+        .select("id, pdf_name, document_type, year, semester, total_questions, subjects, questions, video_plan, status, created_at")
+        .eq("pdf_name", pdf_name)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return resp.data[0] if resp.data else None
+
+
 def create_analysis(
     pdf_name: str,
     total_questions: int,
@@ -516,10 +530,17 @@ def parse_questions_by_ranges(
             if q_no is None:
                 continue
             ai_subject = (q.get("subject") or "").strip()
-            if not ai_subject or ai_subject == "Belirsiz":
-                continue
             topic = q.get("topic") or ""
-            lesson = _resolve_lesson_for_topic(topic, ai_subject)
+            if not ai_subject or ai_subject == "Belirsiz":
+                # Konu üzerinden ders tespiti: Belirsiz sorularda topic map'e başvur
+                resolved = _resolve_lesson_for_topic(topic, "")
+                if not resolved:
+                    logger.debug(f"[parse] q#{q_no} Belirsiz+konu çözülmedi, atlanıyor (topic={topic!r})")
+                    continue
+                lesson = resolved
+                logger.debug(f"[parse] q#{q_no} Belirsiz → topic={topic!r} → {lesson}")
+            else:
+                lesson = _resolve_lesson_for_topic(topic, ai_subject)
             to_insert.append({
                 "document_id": analysis_id,
                 "lesson_group": get_group(lesson),

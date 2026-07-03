@@ -764,6 +764,14 @@ function UploadTab({ onUploaded }: { onUploaded: () => void }) {
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    // Aynı dosya adı zaten yüklüyse kullanıcıyı bilgilendir
+    if (savedAnalyses.some(a => a.pdf_name === file.name)) {
+      toast('Bu PDF zaten yüklü. Yeniden yüklemenize gerek yok.', { icon: 'ℹ️' })
+      e.target.value = ''
+      return
+    }
+
     setPhase('uploading')
     try {
       const result = await sgsService.analyzePdf(file, uploadMeta)

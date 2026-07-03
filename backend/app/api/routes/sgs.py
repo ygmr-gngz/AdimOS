@@ -5,7 +5,8 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File,
 from pydantic import BaseModel
 from app.modules.sgs.service import analyze_pdf_bytes, build_sgs_topic_video
 from app.db.repositories.sgs_repo import (
-    create_analysis, list_analyses, get_analysis, delete_analysis, update_question_subject,
+    create_analysis, find_analysis_by_pdf_name,
+    list_analyses, get_analysis, delete_analysis, update_question_subject,
     save_range, get_ranges, delete_range, get_all_questions,
     get_questions_by_ranges, bulk_link_ranges_to_analysis,
     get_questions_for_topic, update_question_in_sgs_questions, get_topic_detail,
@@ -38,6 +39,16 @@ async def analyze_pdf(
     pdf_bytes = await file.read()
     if len(pdf_bytes) < 500:
         raise HTTPException(status_code=400, detail="PDF dosyası çok küçük veya boş")
+
+    # Aynı dosya adıyla daha önce yüklenmiş analiz varsa yeniden analiz etme
+    existing = find_analysis_by_pdf_name(file.filename)
+    if existing:
+        logger.info(f"[sgs] PDF zaten mevcut, tekrar analiz edilmiyor: {file.filename}")
+        return {
+            **existing,
+            "analysis_id": existing["id"],
+            "already_exists": True,
+        }
 
     try:
         result = analyze_pdf_bytes(pdf_bytes, file.filename)
