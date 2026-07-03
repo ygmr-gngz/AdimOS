@@ -504,9 +504,10 @@ def get_db_stats():
 
     supabase = _get_sb()
 
-    # sgs_analyses tablosu
-    analyses_resp = supabase.table("sgs_analyses").select("id, pdf_name, year, total_questions").order("created_at", desc=True).execute()
-    analyses = analyses_resp.data or []
+    # sgs_analyses tablosu — questions dahil tek sorguda (N+1 önleme)
+    analyses_resp = supabase.table("sgs_analyses").select("id, pdf_name, year, total_questions, questions").order("created_at", desc=True).execute()
+    all_analyses = analyses_resp.data or []
+    analyses = [{"id": a["id"], "pdf_name": a["pdf_name"], "year": a.get("year"), "total_questions": a["total_questions"]} for a in all_analyses]
 
     # sgs_question_ranges tablosu
     ranges_resp = supabase.table("sgs_question_ranges").select("lesson_name, start_question_no, end_question_no, document_name").execute()
@@ -524,12 +525,11 @@ def get_db_stats():
             sq_by_lesson[lesson] = Counter()
         sq_by_lesson[lesson][topic] += 1
 
-    # sgs_analyses.questions JSONB — AI sınıflandırma dağılımı
+    # sgs_analyses.questions JSONB — AI sınıflandırma dağılımı (tek sorguda)
     ai_by_lesson: dict = {}
     total_ai_q = 0
-    for a in analyses:
-        full = supabase.table("sgs_analyses").select("questions").eq("id", a["id"]).execute()
-        questions = (full.data[0].get("questions") or []) if full.data else []
+    for a in all_analyses:
+        questions = a.get("questions") or []
         total_ai_q += len(questions)
         for q in questions:
             subj = q.get("subject", "Belirsiz")

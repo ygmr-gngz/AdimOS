@@ -465,10 +465,9 @@ def parse_questions_by_ranges(
             ranges = ranges_resp2.data or []
             if ranges:
                 ids = [r["id"] for r in ranges]
-                for rid in ids:
-                    supabase.table("sgs_question_ranges").update({
-                        "document_id": analysis_id
-                    }).eq("id", rid).execute()
+                supabase.table("sgs_question_ranges").update({
+                    "document_id": analysis_id
+                }).in_("id", ids).execute()
                 logger.info(f"[parse] {len(ranges)} aralık otomatik bağlandı (document_name eşleşmesi)")
 
     # 3. Soru numarasını normalize et
@@ -585,22 +584,24 @@ def parse_questions_by_ranges(
 
 
 def get_areas_from_sgs_questions(year: str | None = None) -> list[dict]:
-    """Alan bazlı soru özeti — sgs_questions tablosu tek kaynak.
-    Tablo boşsa eski get_areas_summary'ye dön (backward compat).
+    """Alan bazlı soru özeti — sgs_questions tablosu birincil kaynak.
+    sgs_questions tamamen boşsa eski get_areas_summary'ye döner.
+    Kısmen dolu tabloda parse edilmemiş dersler 0 gösterir (doğru davranış).
     """
     from app.config.sgs_groups import SGS_LESSON_GROUPS
     from collections import Counter
     supabase = get_supabase_client()
 
-    query = supabase.table("sgs_questions").select("lesson_name")
+    query = supabase.table("sgs_questions").select("lesson_name", count="exact")
     if year:
         query = query.eq("year", year)
     resp = query.execute()
-    rows = resp.data or []
+    total_count = resp.count or 0
 
-    if not rows:
+    if total_count == 0:
         return get_areas_summary(year=year)
 
+    rows = resp.data or []
     lesson_counts = Counter(r["lesson_name"] for r in rows)
     areas = []
     for area, lessons in SGS_LESSON_GROUPS.items():
@@ -684,8 +685,9 @@ def reclassify_all_questions() -> dict:
     for row in rows:
         topic = (row.get("topic") or "").strip()
         current_lesson = row.get("lesson_name", "")
-        correct_lesson = _TOPIC_LESSON_MAP.get(topic.lower())
-        if correct_lesson and correct_lesson != current_lesson:
+        # _resolve_lesson_for_topic: exact match + substring match (tutarlı parse ile)
+        correct_lesson = _resolve_lesson_for_topic(topic, current_lesson)
+        if correct_lesson != current_lesson:
             key = (topic.lower(), current_lesson)
             if key not in moves:
                 moves[key] = {"topic": topic, "from": current_lesson, "to": correct_lesson, "ids": []}

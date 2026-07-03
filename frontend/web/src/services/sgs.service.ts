@@ -180,7 +180,7 @@ export interface SgsTopicAnalysis {
   top_topics: { topic: string; count: number }[]
   lesson_breakdown?: { lesson: string; count: number }[]
   year_breakdown: { year: string; count: number }[]
-  data_source: 'ranges' | 'ai'
+  data_source: 'ranges' | 'ai' | 'questions_table'
 }
 
 export interface SgsRange {

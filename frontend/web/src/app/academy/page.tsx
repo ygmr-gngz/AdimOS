@@ -773,11 +773,13 @@ function UploadTab({ onUploaded }: { onUploaded: () => void }) {
         try {
           const pr = await sgsService.parseQuestions({ analysis_id: result.analysis_id })
           if (pr.questions_created > 0) {
-            toast.success(`${pr.questions_created} soru kaydedildi`)
+            toast.success(`${pr.questions_created} soru parse edildi — dashboard güncellendi`)
           } else {
-            toast.success('PDF analiz edildi')
+            toast('PDF analiz edildi ancak soru parse edilemedi', { icon: '⚠️' })
           }
-        } catch { toast.success('PDF analiz edildi') }
+        } catch {
+          toast('PDF analiz edildi, soru parse aşamasında hata oluştu', { icon: '⚠️' })
+        }
       }
       onUploaded()
     } catch (err: unknown) {
