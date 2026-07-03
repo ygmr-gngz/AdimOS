@@ -416,6 +416,7 @@ DİL KURALI — KESİNLİKLE UYMAK ZORUNLU:
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         temperature=0.35,
+        max_tokens=4000,
     )
     return json.loads(r.choices[0].message.content)
 
@@ -470,6 +471,7 @@ Sadece scenes dizisini döndür, başka açıklama ekleme:
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             temperature=0.25,
+            max_tokens=4000,
         )
         result = json.loads(r.choices[0].message.content)
         if "scenes" in result and isinstance(result["scenes"], list) and result["scenes"]:
@@ -501,5 +503,7 @@ JSON:
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
+        temperature=0.4,
+        max_tokens=800,
     )
     return json.loads(r.choices[0].message.content)

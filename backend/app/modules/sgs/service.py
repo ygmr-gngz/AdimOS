@@ -1,5 +1,6 @@
 """SGS servis katmanı — PDF analiz + video üretim."""
 import logging
+import os
 from moviepy.editor import AudioFileClip
 
 from app.modules.knowledge.pdf_loader import load_pdf
@@ -55,6 +56,7 @@ def build_sgs_topic_video(
 
     clips = []
     audio_clips = []
+    audio_paths = []
     preview_narration = ""
 
     for i, scene in enumerate(scenes):
@@ -63,6 +65,7 @@ def build_sgs_topic_video(
             narration = scene.get("title", "devam")
 
         audio_path, audio_dur = generate_audio_segment(narration)
+        audio_paths.append(audio_path)
         logger.info(f"[sgs] sahne {i+1}/{len(scenes)} ({scene.get('type')}) audio={audio_dur:.1f}s")
 
         clip = render_scene(scene, i + 1, len(scenes))
@@ -86,6 +89,12 @@ def build_sgs_topic_video(
         try:
             ac.close()
         except Exception:
+            pass
+
+    for ap in audio_paths:
+        try:
+            os.remove(ap)
+        except OSError:
             pass
 
     script_parts = [
