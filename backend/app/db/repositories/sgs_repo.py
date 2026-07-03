@@ -553,6 +553,7 @@ def parse_questions_by_ranges(
     if not ranges:
         logger.info(f"[parse] aralık bulunamadı → AI subject kullanılıyor (otomatik parse): {pdf_name}")
         to_insert = []
+        belirsiz_skipped = 0
         for q in questions:
             q_no = _get_q_no(q)
             if q_no is None:
@@ -563,6 +564,7 @@ def parse_questions_by_ranges(
                 # Konu üzerinden ders tespiti: Belirsiz sorularda topic map'e başvur
                 resolved = _resolve_lesson_for_topic(topic, "")
                 if not resolved:
+                    belirsiz_skipped += 1
                     logger.debug(f"[parse] q#{q_no} Belirsiz+konu çözülmedi, atlanıyor (topic={topic!r})")
                     continue
                 lesson = resolved
@@ -579,15 +581,21 @@ def parse_questions_by_ranges(
                 "subtopic": q.get("subtopic"),
                 "answer": q.get("answer"),
             })
+        if belirsiz_skipped:
+            logger.warning(f"[parse] {belirsiz_skipped} Belirsiz soru atlandı (topic map eşleşmesi yok): {pdf_name}")
         if not to_insert:
-            return {"error": f"'{pdf_name}' analizinde sınıflandırılabilir soru yok."}
+            return {"error": f"'{pdf_name}' analizinde sınıflandırılabilir soru yok. ({belirsiz_skipped} Belirsiz atlandı)"}
         supabase.table("sgs_questions").delete().eq("document_id", analysis_id).execute()
-        supabase.table("sgs_questions").insert(to_insert).execute()
+        insert_resp = supabase.table("sgs_questions").insert(to_insert).execute()
+        inserted = len(insert_resp.data or [])
+        if inserted < len(to_insert):
+            logger.warning(f"[parse] INSERT eksik: beklenen={len(to_insert)}, yazılan={inserted}, pdf={pdf_name}")
         lesson_counts = Counter(q["lesson_name"] for q in to_insert)
-        logger.info(f"[parse] otomatik parse: {len(to_insert)} soru, {dict(lesson_counts)}")
+        logger.info(f"[parse] otomatik parse: {inserted}/{len(questions)} soru yazıldı, belirsiz_atlandı={belirsiz_skipped}, pdf={pdf_name}")
         return {
-            "questions_created": len(to_insert),
-            "failed_count": 0,
+            "questions_created": inserted,
+            "failed_count": belirsiz_skipped,
+            "belirsiz_skipped": belirsiz_skipped,
             "lessons": [{"lesson_name": k, "count": v} for k, v in lesson_counts.items()],
             "analysis_id": analysis_id,
         }
@@ -639,14 +647,21 @@ def parse_questions_by_ranges(
 
     # 5. Kaydet
     supabase.table("sgs_questions").delete().eq("document_id", analysis_id).execute()
-    supabase.table("sgs_questions").insert(to_insert).execute()
+    insert_resp = supabase.table("sgs_questions").insert(to_insert).execute()
+    inserted = len(insert_resp.data or [])
+    if inserted < len(to_insert):
+        logger.warning(f"[parse] INSERT eksik: beklenen={len(to_insert)}, yazılan={inserted}, pdf={pdf_name}")
 
     lesson_counts = Counter(q["lesson_name"] for q in to_insert)
-    logger.info(f"[parse] {len(to_insert)} soru kaydedildi: {dict(lesson_counts)}")
+    logger.info(
+        f"[parse] {inserted}/{len(questions)} soru kaydedildi, "
+        f"eşleşmeyen={len(unmatched)}, pdf={pdf_name}, dersler={dict(lesson_counts)}"
+    )
 
     return {
-        "questions_created": len(to_insert),
+        "questions_created": inserted,
         "failed_count": len(unmatched),
+        "unmatched_question_nos": unmatched[:20],  # ilk 20 — debug için
         "lessons": [{"lesson_name": k, "count": v} for k, v in lesson_counts.items()],
         "analysis_id": analysis_id,
     }
@@ -914,7 +929,12 @@ def get_topic_detail(topic: str, lesson_name: str | None = None) -> dict:
 
 
 def parse_all_unparsed_analyses() -> dict:
-    """sgs_questions'ta satırı olmayan tüm analizleri AI subject ile otomatik parse eder."""
+    """Tüm analizleri kontrol eder; hiç parse edilmemiş veya kısmen parse edilmiş
+    olanları AI subject ile otomatik parse eder.
+
+    Eski davranış (herhangi 1 satır varsa atla) yerine count-based kontrol:
+    sgs_questions'taki satır sayısı < sgs_analyses.questions sayısı ise yeniden parse et.
+    """
     import logging as _logging
     _log = _logging.getLogger(__name__)
     supabase = get_supabase_client()
@@ -922,20 +942,53 @@ def parse_all_unparsed_analyses() -> dict:
     analyses_resp = supabase.table("sgs_analyses").select("id, pdf_name, year, questions").execute()
     analyses = analyses_resp.data or []
 
-    parsed_ids_resp = supabase.table("sgs_questions").select("document_id").execute()
-    already_parsed = {r["document_id"] for r in (parsed_ids_resp.data or [])}
+    # Satır limiti: Supabase default 1000 satır — büyük tablolarda kesilebilir.
+    # .limit(50000) ile güvenli bölgeye çık.
+    sq_resp = supabase.table("sgs_questions").select("document_id").limit(50000).execute()
+    parsed_counts: dict[str, int] = {}
+    for r in (sq_resp.data or []):
+        did = r.get("document_id")
+        if did:
+            parsed_counts[did] = parsed_counts.get(did, 0) + 1
 
     total_created = 0
+    skipped = 0
     results = []
+    errors = []
+
     for a in analyses:
         aid = a["id"]
-        if aid in already_parsed:
+        expected = len(a.get("questions") or [])
+        already = parsed_counts.get(aid, 0)
+
+        if expected > 0 and already >= expected:
+            # Tüm sorular parse edilmiş — atla
+            skipped += 1
+            _log.debug(f"[parse-all] atlandı (tam parse): {a.get('pdf_name')} ({already}/{expected})")
             continue
+
         result = parse_questions_by_ranges(analysis_id=aid)
         created = result.get("questions_created", 0)
         total_created += created
-        results.append({"pdf": a.get("pdf_name", aid), "created": created})
-        _log.info(f"[parse-all] {a.get('pdf_name')}: {created} soru")
 
-    return {"total_created": total_created, "analyses": results}
+        entry = {
+            "pdf": a.get("pdf_name", aid),
+            "created": created,
+            "expected": expected,
+            "was_partial": already > 0,
+        }
+        if result.get("error"):
+            entry["error"] = result["error"]
+            errors.append(entry)
+        results.append(entry)
+        _log.info(f"[parse-all] {a.get('pdf_name')}: {created}/{expected} soru yazıldı (önceden={already})")
+
+    return {
+        "total_created": total_created,
+        "total_analyses": len(analyses),
+        "processed": len(results),
+        "skipped": skipped,
+        "errors": errors,
+        "analyses": results,
+    }
 

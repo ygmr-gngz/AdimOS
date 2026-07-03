@@ -5,6 +5,7 @@ import uuid
 from typing import Optional, List
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
+from openai import RateLimitError as OpenAIRateLimitError
 from app.db.supabase import get_supabase_client
 
 logger = logging.getLogger(__name__)
@@ -318,8 +319,20 @@ def _run_pipeline(job_id: str, payload: CreateVideoPayload):
                         break
 
                 logger.info(f"[video] {job_id} sahne {scene_row['scene_index']} TTS ok ({duration:.1f}s)")
+            except OpenAIRateLimitError as quota_err:
+                # 429 insufficient_quota — kota tükendi, pipeline'ı hemen durdur
+                logger.error(f"[video] {job_id} TTS kota hatası (429): {quota_err}")
+                _set_status(job_id, "failed", {
+                    "error_message": (
+                        "OpenAI TTS kotası tükendi (429 insufficient_quota). "
+                        "API kota limitinizi kontrol edin. "
+                        "Ses üretimi durduruldu."
+                    )
+                })
+                return
             except Exception as e:
                 logger.error(f"[video] {job_id} sahne {scene_row['scene_index']} TTS hatası: {e}")
+                sb.table("video_scenes").update({"status": "tts_failed"}).eq("id", scene_row["id"]).execute()
 
         # TTS URL'leriyle güncel storyboard'u kaydet
         sb.table("video_jobs").update({"storyboard": storyboard}).eq("id", job_id).execute()
@@ -367,9 +380,13 @@ def _run_pipeline(job_id: str, payload: CreateVideoPayload):
                     raise Exception(f"Render başarısız (HTTP {resp.status_code}): {resp.text[:200]}")
                 logger.info(f"[video] {job_id} Remotion render başlatıldı: {resp.json()}")
             except Exception as e:
-                logger.warning(f"[video] {job_id} Remotion render hatası: {e}")
-                _set_status(job_id, "ready_for_review", {
-                    "error_message": f"Ses hazır · Render hatası: {str(e)[:300]}"
+                logger.error(f"[video] {job_id} Remotion render hatası: {e}")
+                _set_status(job_id, "failed", {
+                    "error_message": (
+                        f"Render sunucusu başarısız: {str(e)[:300]} — "
+                        "Ses sahneleri hazır, ancak video oluşturulamadı. "
+                        "Railway servisini kontrol edip yeniden deneyin."
+                    )
                 })
 
     except Exception as e:
