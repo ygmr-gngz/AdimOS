@@ -1,12 +1,12 @@
-from openai import OpenAI
-from app.core.config import settings
+from app.core.llm_client import chat as llm_chat
 
 
 class BaseAgent:
     model = "gpt-4o-mini"
+    temperature = 0.4
+    max_tokens = 1500
 
     def __init__(self, system_prompt: str):
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.system_prompt = system_prompt
 
     def chat(self, message: str, history: list[dict] | None = None) -> str:
@@ -15,8 +15,10 @@ class BaseAgent:
             messages.extend(history)
         messages.append({"role": "user", "content": message})
 
-        response = self.client.chat.completions.create(
+        return llm_chat(
+            messages,
             model=self.model,
-            messages=messages,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            caller=type(self).__name__,
         )
-        return response.choices[0].message.content

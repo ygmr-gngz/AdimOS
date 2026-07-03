@@ -23,5 +23,7 @@ Haftalık, madde madde Türkçe çalışma planı oluştur."""
     response = _client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
+        temperature=0.4,
+        max_tokens=1200,
     )
     return response.choices[0].message.content

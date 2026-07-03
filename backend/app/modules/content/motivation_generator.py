@@ -1,7 +1,6 @@
-"""SGS motivasyon içeriği storyboard üreticisi (GPT-4o-mini)."""
-import json
+"""SGS motivasyon içeriği storyboard üreticisi."""
 import logging
-import openai
+from app.core.llm_client import chat_json as llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +52,7 @@ def generate_motivation_storyboard(
     tone: str = "sıcak ve samimi",
 ) -> dict:
     platform_style = _PLATFORM_STYLE.get(platform, _PLATFORM_STYLE["reels"])
-
-    client = openai.OpenAI()
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",
+    result = llm_json(
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": _USER_TEMPLATE.format(
@@ -66,12 +62,9 @@ def generate_motivation_storyboard(
                 tone=tone,
             )},
         ],
-        response_format={"type": "json_object"},
-        max_tokens=1800,
         temperature=0.88,
+        max_tokens=1800,
+        caller="motivation_generator",
     )
-
-    raw = resp.choices[0].message.content or "{}"
-    result = json.loads(raw)
     logger.info(f"[motivation] storyboard üretildi: {result.get('title')} | {len(result.get('scenes', []))} sahne")
     return result

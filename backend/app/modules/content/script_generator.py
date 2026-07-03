@@ -46,6 +46,8 @@ Kurallar:
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
+        max_tokens=3000,
+        temperature=0.4,
     )
     return json.loads(r.choices[0].message.content)
 
@@ -76,6 +78,8 @@ JSON:
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
+        max_tokens=1500,
+        temperature=0.35,
     )
     return json.loads(r.choices[0].message.content)
 
@@ -117,6 +121,8 @@ JSON:
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
+        max_tokens=2000,
+        temperature=0.35,
     )
     return json.loads(r.choices[0].message.content)
 
@@ -157,6 +163,8 @@ JSON:
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
+        max_tokens=2500,
+        temperature=0.35,
     )
     return json.loads(r.choices[0].message.content)
 
