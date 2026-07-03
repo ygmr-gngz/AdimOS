@@ -324,31 +324,53 @@ def _run_pipeline(job_id: str, payload: CreateVideoPayload):
         # TTS URL'leriyle güncel storyboard'u kaydet
         sb.table("video_jobs").update({"storyboard": storyboard}).eq("id", job_id).execute()
 
-        # 3. Remotion render
-        _set_status(job_id, "rendering")
-        logger.info(f"[video] {job_id} Remotion render tetikleniyor — URL: {REMOTION_URL}")
+        # 3. Remotion render — sunucu yapılandırılmamışsa veya yanıt vermiyorsa atla
+        is_remotion_configured = (
+            REMOTION_URL
+            and "localhost" not in REMOTION_URL
+            and "127.0.0.1" not in REMOTION_URL
+        )
 
-        try:
-            # Health check — opsiyonel, sadece loglama
-            try:
-                health = httpx.get(f"{REMOTION_URL}/health", timeout=15)
-                logger.info(f"[video] {job_id} Remotion health: {health.status_code} {health.text[:100]}")
-            except Exception as he:
-                logger.warning(f"[video] {job_id} Health check başarısız (devam ediliyor): {he}")
-
-            resp = httpx.post(
-                f"{REMOTION_URL}/render",
-                json={"job_id": job_id, "storyboard": storyboard},
-                timeout=60,
-            )
-            if resp.status_code != 200:
-                raise Exception(f"Render isteği başarısız (HTTP {resp.status_code}): {resp.text[:200]}")
-            logger.info(f"[video] {job_id} Remotion render başlatıldı: {resp.json()}")
-        except Exception as e:
-            logger.warning(f"[video] {job_id} Remotion render hatası ({REMOTION_URL}): {e}")
+        if not is_remotion_configured:
+            logger.info(f"[video] {job_id} Remotion yapılandırılmamış, ses-hazır olarak işaretleniyor")
             _set_status(job_id, "ready_for_review", {
-                "error_message": f"TTS hazır, render hatası: {str(e)[:300]}"
+                "error_message": (
+                    "Render sunucusu bağlı değil — ses sahneleri hazır. "
+                    "Videoyu izlemek için REMOTION_URL ortam değişkenini yapılandırın."
+                )
             })
+        else:
+            _set_status(job_id, "rendering")
+            logger.info(f"[video] {job_id} Remotion render tetikleniyor — URL: {REMOTION_URL}")
+            try:
+                # Hızlı health check (5s) — cevap vermiyorsa render denemesi
+                remotion_alive = False
+                try:
+                    health = httpx.get(f"{REMOTION_URL}/health", timeout=5)
+                    remotion_alive = health.status_code == 200
+                    logger.info(f"[video] {job_id} Remotion health: {health.status_code}")
+                except Exception as he:
+                    logger.warning(f"[video] {job_id} Health check başarısız: {he}")
+
+                if not remotion_alive:
+                    raise Exception(
+                        f"Remotion sunucusuna ulaşılamıyor ({REMOTION_URL}). "
+                        "Railway servis durumunu kontrol edin."
+                    )
+
+                resp = httpx.post(
+                    f"{REMOTION_URL}/render",
+                    json={"job_id": job_id, "storyboard": storyboard},
+                    timeout=60,
+                )
+                if resp.status_code != 200:
+                    raise Exception(f"Render başarısız (HTTP {resp.status_code}): {resp.text[:200]}")
+                logger.info(f"[video] {job_id} Remotion render başlatıldı: {resp.json()}")
+            except Exception as e:
+                logger.warning(f"[video] {job_id} Remotion render hatası: {e}")
+                _set_status(job_id, "ready_for_review", {
+                    "error_message": f"Ses hazır · Render hatası: {str(e)[:300]}"
+                })
 
     except Exception as e:
         logger.exception(f"[video] {job_id} pipeline hatası")

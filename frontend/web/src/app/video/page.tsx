@@ -192,7 +192,7 @@ function PreviewModal({ job, onClose, onApprove, onReject }: {
                 marginBottom: 8, background: '#fafafa',
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#0B2A4A' }}>
                       {i + 1}. {scene.component}
                     </p>
@@ -208,6 +208,13 @@ function PreviewModal({ job, onClose, onApprove, onReject }: {
                       }}>
                         {scene.voice_text}
                       </p>
+                    )}
+                    {scene.tts_url && (
+                      <audio
+                        controls
+                        src={scene.tts_url}
+                        style={{ marginTop: 8, width: '100%', height: 28 }}
+                      />
                     )}
                   </div>
                   {job.status === 'ready_for_review' && (

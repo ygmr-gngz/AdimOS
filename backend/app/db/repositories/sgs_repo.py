@@ -97,6 +97,34 @@ _TOPIC_LESSON_MAP: dict[str, str] = {
     # Meslek Hukuku
     "smmm": "Meslek Hukuku", "ymm": "Meslek Hukuku",
     "meslek etiği": "Meslek Hukuku", "mesleki sorumluluk": "Meslek Hukuku",
+    # ── Ders adlarının kendisi konu olarak gelirse (AI fallback davranışı) ──
+    # AI bazen konu adı yerine ders adını yazar — bunları da yakala
+    "matematik": "Matematik",
+    "türkçe": "Türkçe",
+    "tarih - genel kültür": "Tarih - Genel Kültür", "genel kültür dersi": "Tarih - Genel Kültür",
+    "i̇ngilizce": "İngilizce", "ingilizce": "İngilizce",
+    "almanca": "Almanca",
+    "finansal muhasebe": "Finansal Muhasebe",
+    "muhasebe standartları": "Muhasebe Standartları",
+    "muhasebe bilgi sistemi": "Muhasebe Bilgi Sistemi",
+    "maliyet muhasebesi": "Maliyet Muhasebesi",
+    "mali tablolar analizi": "Mali Tablolar Analizi",
+    "muhasebe denetimi": "Muhasebe Denetimi",
+    "i̇ktisat": "İktisat", "iktisat": "İktisat",
+    "maliye": "Maliye",
+    "meslek hukuku": "Meslek Hukuku",
+    "i̇ş ve sosyal güvenlik hukuku": "İş ve Sosyal Güvenlik Hukuku",
+    "iş ve sosyal güvenlik hukuku": "İş ve Sosyal Güvenlik Hukuku",
+    "vergi hukuku": "Vergi Hukuku",
+    "ticaret hukuku": "Ticaret Hukuku",
+    "borçlar hukuku": "Borçlar Hukuku",
+    # Kısaltmalar ve yaygın AI varyantları
+    "muhasebe": "Finansal Muhasebe",
+    "hukuk": "Meslek Hukuku",
+    "vergi": "Vergi Hukuku",
+    "denetim ve standartlar": "Muhasebe Denetimi",
+    "standartlar": "Muhasebe Standartları",
+    "maliyet": "Maliyet Muhasebesi",
 }
 
 
