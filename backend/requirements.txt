@@ -43,8 +43,6 @@ google-auth-oauthlib==1.2.1
 requests==2.32.3
 
 # ── Görev Kuyruğu / Zamanlama ─────────────────────────────────
-celery==5.4.0
-redis==5.2.1
 apscheduler==3.10.4
 
 # ── Logging & Monitoring ─────────────────────────────────────

@@ -39,6 +39,8 @@ async def analyze_pdf(
     pdf_bytes = await file.read()
     if len(pdf_bytes) < 500:
         raise HTTPException(status_code=400, detail="PDF dosyası çok küçük veya boş")
+    if len(pdf_bytes) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"PDF boyutu 50 MB sınırını aşıyor ({len(pdf_bytes) // (1024 * 1024)} MB).")
 
     # Aynı dosya adıyla daha önce yüklenmiş analiz varsa yeniden analiz etme
     existing = find_analysis_by_pdf_name(file.filename)

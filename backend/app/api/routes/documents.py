@@ -8,10 +8,17 @@ from app.db.supabase import get_supabase_client
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+
 
 @router.post("")
 async def upload_document(file: UploadFile = File(...)):
     content = await file.read()
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Dosya boyutu 50 MB sınırını aşıyor ({len(content) // (1024 * 1024)} MB).",
+        )
     mime_type = file.content_type or "application/pdf"
     return process_document(file.filename or "upload", content, mime_type)
 
