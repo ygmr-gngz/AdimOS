@@ -758,28 +758,45 @@ def update_question_in_sgs_questions(question_number: int, lesson_name: str | No
 
 
 def get_topic_detail(topic: str, lesson_name: str | None = None) -> dict:
-    """Bir konu için toplam soru, yıl dağılımı, ders dağılımı ve çıkma oranı."""
+    """Bir konu için toplam soru, yıl dağılımı, ders dağılımı ve çıkma oranı.
+    sgs_questions tablosu tek kaynak; tablo boşsa eski yola dön.
+    """
     from collections import Counter as _Counter
+    supabase = get_supabase_client()
 
-    # Konuya ait sorular (aralık öncelikli, yoksa AI)
-    q_ranges = get_questions_by_ranges(lesson_name=lesson_name)
-    topic_questions = [q for q in q_ranges if q.get("topic", "") == topic]
-
-    if not topic_questions:
-        q_all = get_all_questions(lesson_name=lesson_name)
-        topic_questions = [q for q in q_all if q.get("topic", "") == topic]
-
-    total = len(topic_questions)
-
-    year_counter = _Counter(q.get("source_year") or q.get("year", "?") for q in topic_questions)
-    lesson_counter = _Counter(q.get("subject", "Belirsiz") for q in topic_questions)
-
-    # Frekans = bu konunun toplam ders sorularına oranı
+    # 1. sgs_questions tablosundan konu sorularını al
+    q_query = supabase.table("sgs_questions").select("lesson_name, year, topic").eq("topic", topic)
     if lesson_name:
-        all_lesson_q = get_questions_by_ranges(lesson_name=lesson_name) or get_all_questions(lesson_name=lesson_name)
-        lesson_total = len(all_lesson_q)
+        q_query = q_query.eq("lesson_name", lesson_name)
+    q_resp = q_query.execute()
+    topic_rows = q_resp.data or []
+
+    if not topic_rows:
+        # Fallback: eski yol (sgs_analyses JSONB)
+        q_ranges = get_questions_by_ranges(lesson_name=lesson_name)
+        topic_questions = [q for q in q_ranges if q.get("topic", "") == topic]
+        if not topic_questions:
+            q_all = get_all_questions(lesson_name=lesson_name)
+            topic_questions = [q for q in q_all if q.get("topic", "") == topic]
+        total = len(topic_questions)
+        year_counter = _Counter(q.get("source_year") or q.get("year", "?") for q in topic_questions)
+        lesson_counter = _Counter(q.get("subject", "Belirsiz") for q in topic_questions)
+        if lesson_name:
+            all_lesson_q = get_questions_by_ranges(lesson_name=lesson_name) or get_all_questions(lesson_name=lesson_name)
+            lesson_total = len(all_lesson_q)
+        else:
+            lesson_total = total
     else:
-        lesson_total = total
+        total = len(topic_rows)
+        year_counter = _Counter(r.get("year") or "?" for r in topic_rows)
+        lesson_counter = _Counter(r.get("lesson_name") or "Belirsiz" for r in topic_rows)
+
+        # Frekans payda: bu dersin toplam soru sayısı
+        if lesson_name:
+            denom_resp = supabase.table("sgs_questions").select("id", count="exact").eq("lesson_name", lesson_name).execute()
+            lesson_total = denom_resp.count or 0
+        else:
+            lesson_total = total
 
     frequency_pct = round((total / lesson_total * 100), 1) if lesson_total > 0 else 0.0
 
