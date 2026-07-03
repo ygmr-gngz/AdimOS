@@ -370,4 +370,15 @@ export const sgsService = {
   async updateQuestionById(id: number, updates: { lesson_name?: string; topic?: string }): Promise<void> {
     await apiClient.patch(`/sgs/questions/${id}`, updates)
   },
+
+  // POST /sgs/questions/reclassify — TOPIC_LESSON_MAP ile yanlış dersleri toplu düzelt
+  async reclassifyQuestions(): Promise<{
+    success: boolean
+    total_rows: number
+    updated: number
+    moved: { topic: string; from: string; to: string; count: number }[]
+  }> {
+    const { data } = await apiClient.post('/sgs/questions/reclassify')
+    return data
+  },
 }

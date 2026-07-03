@@ -567,6 +567,7 @@ function DashboardTab({ reloadKey }: { reloadKey: number }) {
   const [areaAnalysis, setAreaAnalysis] = useState<SgsTopicAnalysis | null>(null)
   const [areaAnalysisLoading, setAreaAnalysisLoading] = useState(false)
   const [showAreaAnalysis, setShowAreaAnalysis] = useState(false)
+  const [reclassifying, setReclassifying] = useState(false)
 
   const loadAreas = useCallback(async (year?: string) => {
     setLoading(true)
@@ -596,6 +597,23 @@ function DashboardTab({ reloadKey }: { reloadKey: number }) {
     finally { setAreaAnalysisLoading(false) }
   }
 
+  const handleReclassify = async () => {
+    setReclassifying(true)
+    try {
+      const result = await sgsService.reclassifyQuestions()
+      if (result.updated === 0) {
+        toast.success('Tüm sorular zaten doğru sınıflandırılmış')
+      } else {
+        toast.success(`${result.updated} soru yeniden sınıflandırıldı`)
+        loadAreas(yearFilter || undefined)
+      }
+    } catch {
+      toast.error('Yeniden sınıflandırma başarısız')
+    } finally {
+      setReclassifying(false)
+    }
+  }
+
   const handleGenerate = async (lesson: string, topic: string) => {
     setGeneratingTopic(topic)
     try {
@@ -621,6 +639,9 @@ function DashboardTab({ reloadKey }: { reloadKey: number }) {
         />
         <Button size="sm" variant="ghost" onClick={() => loadAreas(yearFilter || undefined)} isLoading={loading}>
           <RefreshCw size={13} /> Yenile
+        </Button>
+        <Button size="sm" variant="ghost" onClick={handleReclassify} isLoading={reclassifying}>
+          <RefreshCw size={13} /> Yeniden Sınıflandır
         </Button>
       </div>
 

@@ -4,6 +4,87 @@ import unicodedata
 from difflib import SequenceMatcher
 from app.db.supabase import get_supabase_client
 
+# Konu adı (lowercase) → doğru ders eşleştirmesi.
+# Parse sırasında ve reclassify endpoint'inde kullanılır.
+_TOPIC_LESSON_MAP: dict[str, str] = {
+    # Türkçe
+    "anlam bilgisi": "Türkçe", "sözcükte anlam": "Türkçe", "cümlede anlam": "Türkçe",
+    "paragraf": "Türkçe", "yazım kuralları": "Türkçe", "noktalama": "Türkçe",
+    "anlatım bozukluğu": "Türkçe", "ses bilgisi": "Türkçe", "dil bilgisi": "Türkçe",
+    # Matematik
+    "denklemler": "Matematik", "fonksiyonlar": "Matematik", "problemler": "Matematik",
+    "sayılar": "Matematik", "kümeler": "Matematik", "oran orantı": "Matematik",
+    "olasılık": "Matematik", "geometri": "Matematik", "logaritma": "Matematik",
+    "permütasyon": "Matematik", "kombinasyon": "Matematik", "istatistik": "Matematik",
+    "eşitsizlik": "Matematik", "diziler": "Matematik",
+    # Tarih - Genel Kültür
+    "cumhuriyet tarihi": "Tarih - Genel Kültür", "atatürk ilkeleri": "Tarih - Genel Kültür",
+    "inkılap tarihi": "Tarih - Genel Kültür", "osmanlı tarihi": "Tarih - Genel Kültür",
+    "genel kültür": "Tarih - Genel Kültür", "kurtuluş savaşı": "Tarih - Genel Kültür",
+    "türk tarihi": "Tarih - Genel Kültür",
+    # İngilizce
+    "grammar": "İngilizce", "vocabulary": "İngilizce", "tense": "İngilizce",
+    "reading comprehension": "İngilizce", "sentence completion": "İngilizce",
+    "word formation": "İngilizce", "cloze test": "İngilizce", "reading": "İngilizce",
+    # Almanca
+    "grammatik": "Almanca", "leseverstehen": "Almanca", "vokabeln": "Almanca",
+    "textverständnis": "Almanca",
+    # Finansal Muhasebe
+    "yevmiye": "Finansal Muhasebe", "defter-i kebir": "Finansal Muhasebe",
+    "mizan": "Finansal Muhasebe", "amortisman": "Finansal Muhasebe",
+    "aktif / pasif hesaplar": "Finansal Muhasebe", "dönem sonu": "Finansal Muhasebe",
+    "stoklar": "Finansal Muhasebe", "kasa ve banka": "Finansal Muhasebe",
+    "aktif hesaplar": "Finansal Muhasebe", "pasif hesaplar": "Finansal Muhasebe",
+    # Mali Tablolar Analizi
+    "bilanço": "Mali Tablolar Analizi", "gelir tablosu": "Mali Tablolar Analizi",
+    "nakit akım tablosu": "Mali Tablolar Analizi", "fon akım tablosu": "Mali Tablolar Analizi",
+    "oran analizi": "Mali Tablolar Analizi", "likidite": "Mali Tablolar Analizi",
+    # Muhasebe Bilgi Sistemi
+    "tekdüzen hesap planı": "Muhasebe Bilgi Sistemi",
+    "muhasebe bilgi sistemi": "Muhasebe Bilgi Sistemi",
+    # Maliyet Muhasebesi
+    "maliyet": "Maliyet Muhasebesi", "üretim maliyeti": "Maliyet Muhasebesi",
+    "sipariş maliyeti": "Maliyet Muhasebesi", "safha maliyeti": "Maliyet Muhasebesi",
+    "standart maliyet": "Maliyet Muhasebesi",
+    # Muhasebe Standartları
+    "tms": "Muhasebe Standartları", "tfrs": "Muhasebe Standartları",
+    "muhasebe standartları": "Muhasebe Standartları",
+    # Muhasebe Denetimi
+    "denetim": "Muhasebe Denetimi", "iç kontrol": "Muhasebe Denetimi",
+    "bağımsız denetim": "Muhasebe Denetimi", "iç denetim": "Muhasebe Denetimi",
+    # Ticaret Hukuku
+    "tacir": "Ticaret Hukuku", "ticari işletme": "Ticaret Hukuku",
+    "ticaret unvanı": "Ticaret Hukuku", "ticaret sicili": "Ticaret Hukuku",
+    "haksız rekabet": "Ticaret Hukuku", "ticaret şirketleri": "Ticaret Hukuku",
+    "çek": "Ticaret Hukuku", "senet": "Ticaret Hukuku", "poliçe": "Ticaret Hukuku",
+    # Borçlar Hukuku
+    "sözleşme": "Borçlar Hukuku", "borç ilişkisi": "Borçlar Hukuku",
+    "temerrüt": "Borçlar Hukuku", "haksız fiil": "Borçlar Hukuku",
+    "zamanaşımı": "Borçlar Hukuku",
+    # İş ve Sosyal Güvenlik Hukuku
+    "iş sözleşmesi": "İş ve Sosyal Güvenlik Hukuku", "sgk": "İş ve Sosyal Güvenlik Hukuku",
+    "kıdem tazminatı": "İş ve Sosyal Güvenlik Hukuku",
+    "ihbar tazminatı": "İş ve Sosyal Güvenlik Hukuku", "emeklilik": "İş ve Sosyal Güvenlik Hukuku",
+    # Vergi Hukuku
+    "gelir vergisi": "Vergi Hukuku", "kdv": "Vergi Hukuku",
+    "kurumlar vergisi": "Vergi Hukuku", "vergi usul": "Vergi Hukuku",
+    "beyanname": "Vergi Hukuku", "stopaj": "Vergi Hukuku",
+    # Maliye
+    "bütçe": "Maliye", "kamu maliyesi": "Maliye", "maliye politikası": "Maliye",
+    # İktisat
+    "arz": "İktisat", "talep": "İktisat", "enflasyon": "İktisat",
+    "para politikası": "İktisat", "büyüme": "İktisat", "piyasa": "İktisat", "gsyh": "İktisat",
+    # Meslek Hukuku
+    "smmm": "Meslek Hukuku", "ymm": "Meslek Hukuku",
+    "meslek etiği": "Meslek Hukuku", "mesleki sorumluluk": "Meslek Hukuku",
+}
+
+
+def _resolve_lesson_for_topic(topic: str, range_lesson: str) -> str:
+    """Topic adına bakarak doğru dersi döndür. Kural yoksa range_lesson döner."""
+    mapped = _TOPIC_LESSON_MAP.get((topic or "").lower().strip())
+    return mapped if mapped else range_lesson
+
 
 def save_range(document_name, start_no, end_no, lesson_name, notes="", document_id=None):
     supabase = get_supabase_client()
@@ -421,14 +502,17 @@ def parse_questions_by_ranges(
         matched = False
         for r in ranges:
             if r["start_question_no"] <= q_no <= r["end_question_no"]:
-                lesson = r["lesson_name"]
+                range_lesson = r["lesson_name"]
+                topic = q.get("topic") or ""
+                # TOPIC_LESSON_MAP: konu bilinen bir derse işaret ediyorsa onu kullan
+                lesson = _resolve_lesson_for_topic(topic, range_lesson)
                 to_insert.append({
                     "document_id": analysis_id,
                     "lesson_group": get_group(lesson),
                     "lesson_name": lesson,
                     "question_number": q_no,
                     "year": a.get("year"),
-                    "topic": q.get("topic"),  # AI konu adı (subject=ders adı, topic=konu)
+                    "topic": topic,
                     "subtopic": q.get("subtopic"),
                     "answer": q.get("answer"),
                 })
@@ -467,10 +551,137 @@ def parse_questions_by_ranges(
     }
 
 
+def get_areas_from_sgs_questions(year: str | None = None) -> list[dict]:
+    """Alan bazlı soru özeti — sgs_questions tablosu tek kaynak.
+    Tablo boşsa eski get_areas_summary'ye dön (backward compat).
+    """
+    from app.config.sgs_groups import SGS_LESSON_GROUPS
+    from collections import Counter
+    supabase = get_supabase_client()
+
+    query = supabase.table("sgs_questions").select("lesson_name")
+    if year:
+        query = query.eq("year", year)
+    resp = query.execute()
+    rows = resp.data or []
+
+    if not rows:
+        return get_areas_summary(year=year)
+
+    lesson_counts = Counter(r["lesson_name"] for r in rows)
+    areas = []
+    for area, lessons in SGS_LESSON_GROUPS.items():
+        area_total = 0
+        lessons_data = []
+        for lesson in lessons:
+            found = lesson_counts.get(lesson, 0)
+            area_total += found
+            lessons_data.append({
+                "name": lesson,
+                "expected": found,
+                "found": found,
+                "range_count": 0,
+                "status": "ready" if found > 0 else "no_questions",
+            })
+        areas.append({
+            "name": area,
+            "expected_total": area_total,
+            "found_total": area_total,
+            "discrepancy": 0,
+            "status": "ok" if area_total > 0 else "missing",
+            "lessons": lessons_data,
+        })
+    return areas
+
+
+def get_lesson_topics_from_sgs_questions(lesson_name: str, year: str | None = None) -> dict:
+    """Ders bazlı konu analizi — sgs_questions tablosu tek kaynak.
+    Tablo boşsa eski range/AI fallback'e dön (backward compat).
+    """
+    from collections import Counter
+    supabase = get_supabase_client()
+
+    query = supabase.table("sgs_questions").select("topic, year").eq("lesson_name", lesson_name)
+    if year:
+        query = query.eq("year", year)
+    resp = query.execute()
+    rows = resp.data or []
+
+    if not rows:
+        questions = get_questions_by_ranges(lesson_name=lesson_name, year=year)
+        data_source = "ranges"
+        if not questions:
+            questions = get_all_questions(lesson_name=lesson_name, year=year)
+            data_source = "ai"
+        topic_counts = Counter(q.get("topic", "Belirsiz") for q in questions)
+        year_counts = Counter(q.get("source_year") or q.get("year", "?") for q in questions)
+        return {
+            "lesson": lesson_name,
+            "total": len(questions),
+            "top_topics": [{"topic": t, "count": c} for t, c in topic_counts.most_common(20)],
+            "year_breakdown": [{"year": y, "count": c} for y, c in sorted(year_counts.items())],
+            "data_source": data_source,
+        }
+
+    topic_counts = Counter(r.get("topic") or "Belirsiz" for r in rows)
+    year_counts = Counter(r.get("year") or "?" for r in rows)
+    return {
+        "lesson": lesson_name,
+        "total": len(rows),
+        "top_topics": [{"topic": t, "count": c} for t, c in topic_counts.most_common(20)],
+        "year_breakdown": [{"year": y, "count": c} for y, c in sorted(year_counts.items())],
+        "data_source": "questions_table",
+    }
+
+
+def reclassify_all_questions() -> dict:
+    """sgs_questions tablosundaki tüm sorulara _TOPIC_LESSON_MAP uygula.
+    Yanlış ders atamalı satırları bulk update eder ve rapor döner.
+    """
+    import logging as _logging
+    from app.config.sgs_groups import get_group_for_lesson
+    _log = _logging.getLogger(__name__)
+    supabase = get_supabase_client()
+
+    resp = supabase.table("sgs_questions").select("id, lesson_name, topic").execute()
+    rows = resp.data or []
+
+    # (topic_lower, current_lesson) → {topic, from, to, ids}
+    moves: dict[tuple, dict] = {}
+    for row in rows:
+        topic = (row.get("topic") or "").strip()
+        current_lesson = row.get("lesson_name", "")
+        correct_lesson = _TOPIC_LESSON_MAP.get(topic.lower())
+        if correct_lesson and correct_lesson != current_lesson:
+            key = (topic.lower(), current_lesson)
+            if key not in moves:
+                moves[key] = {"topic": topic, "from": current_lesson, "to": correct_lesson, "ids": []}
+            moves[key]["ids"].append(row["id"])
+
+    updated_total = 0
+    moved_summary = []
+    for move in moves.values():
+        correct_lesson = move["to"]
+        group = get_group_for_lesson(correct_lesson) or "Genel Dersler"
+        ids = move["ids"]
+        supabase.table("sgs_questions").update({
+            "lesson_name": correct_lesson,
+            "lesson_group": group,
+        }).in_("id", ids).execute()
+        updated_total += len(ids)
+        moved_summary.append({"topic": move["topic"], "from": move["from"], "to": correct_lesson, "count": len(ids)})
+        _log.info(f"[reclassify] {move['topic']!r}: {move['from']} → {correct_lesson} ({len(ids)} soru)")
+
+    return {
+        "success": True,
+        "total_rows": len(rows),
+        "updated": updated_total,
+        "moved": sorted(moved_summary, key=lambda x: x["count"], reverse=True),
+    }
+
+
 def get_questions_for_topic(topic: str, lesson_name: str | None = None, limit: int = 30) -> list[dict]:
     """sgs_questions tablosundan konu/ders bazlı sorular — tam soru detayı ile."""
-    import logging as _logging
-    _log = _logging.getLogger(__name__)
     supabase = get_supabase_client()
 
     # sgs_questions tablosundan eşleşen satırları al

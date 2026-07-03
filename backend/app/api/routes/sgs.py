@@ -7,8 +7,9 @@ from app.modules.sgs.service import analyze_pdf_bytes, build_sgs_topic_video
 from app.db.repositories.sgs_repo import (
     create_analysis, list_analyses, get_analysis, delete_analysis, update_question_subject,
     save_range, get_ranges, delete_range, get_all_questions,
-    get_questions_by_ranges, get_areas_summary, bulk_link_ranges_to_analysis,
+    get_questions_by_ranges, bulk_link_ranges_to_analysis,
     get_questions_for_topic, update_question_in_sgs_questions, get_topic_detail,
+    get_areas_from_sgs_questions, get_lesson_topics_from_sgs_questions, reclassify_all_questions,
 )
 from app.config.sgs_groups import SGS_LESSON_GROUPS, get_lessons_for_group
 from app.db.repositories.generated_contents_repo import (
@@ -388,8 +389,8 @@ def generate_topic_video(req: TopicVideoRequest, bg: BackgroundTasks):
 
 @router.get("/areas")
 def list_areas(year: str | None = Q(None)):
-    """Alan bazlı soru özeti — manuel aralıklar birincil kaynak."""
-    return {"areas": get_areas_summary(year=year)}
+    """Alan bazlı soru özeti — sgs_questions tablosu tek kaynak."""
+    return {"areas": get_areas_from_sgs_questions(year=year)}
 
 
 @router.get("/areas/{area_name}/topic-analysis")
@@ -421,23 +422,8 @@ def area_topic_analysis(area_name: str, year: str | None = Q(None)):
 
 @router.get("/lessons/{lesson_name}/topic-analysis")
 def lesson_topic_analysis(lesson_name: str, year: str | None = Q(None)):
-    """Ders bazlı konu analizi — aralık öncelikli, yoksa AI'ya dön."""
-    questions = get_questions_by_ranges(lesson_name=lesson_name, year=year)
-    data_source = "ranges"
-    if not questions:
-        questions = get_all_questions(lesson_name=lesson_name, year=year)
-        data_source = "ai"
-
-    topic_counts = Counter(q.get("topic", "Belirsiz") for q in questions)
-    year_counts = Counter(q.get("source_year") or q.get("year", "?") for q in questions)
-
-    return {
-        "lesson": lesson_name,
-        "total": len(questions),
-        "top_topics": [{"topic": t, "count": c} for t, c in topic_counts.most_common(20)],
-        "year_breakdown": [{"year": y, "count": c} for y, c in sorted(year_counts.items())],
-        "data_source": data_source,
-    }
+    """Ders bazlı konu analizi — sgs_questions tablosu tek kaynak."""
+    return get_lesson_topics_from_sgs_questions(lesson_name=lesson_name, year=year)
 
 
 # ── Konu Detay ────────────────────────────────────────────────
@@ -485,6 +471,17 @@ def update_question(question_id: int, body: QuestionUpdateRequest):
     if not success:
         raise HTTPException(status_code=404, detail=f"Soru bulunamadı (question_number={question_id})")
     return {"message": "Soru güncellendi", "question_id": question_id}
+
+
+# ── Yeniden Sınıflandırma ─────────────────────────────────────
+
+@router.post("/questions/reclassify")
+def reclassify_questions():
+    """sgs_questions tablosundaki tüm sorulara TOPIC_LESSON_MAP uygula.
+    Yanlış ders atamalı satırları düzeltir ve rapor döner.
+    """
+    result = reclassify_all_questions()
+    return result
 
 
 # ── Veritabanı Durum Analizi ──────────────────────────────────
