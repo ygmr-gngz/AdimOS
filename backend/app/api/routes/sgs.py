@@ -10,6 +10,7 @@ from app.db.repositories.sgs_repo import (
     get_questions_by_ranges, bulk_link_ranges_to_analysis,
     get_questions_for_topic, update_question_in_sgs_questions, get_topic_detail,
     get_areas_from_sgs_questions, get_lesson_topics_from_sgs_questions, reclassify_all_questions,
+    parse_all_unparsed_analyses,
 )
 from app.config.sgs_groups import SGS_LESSON_GROUPS, get_lessons_for_group
 from app.db.repositories.generated_contents_repo import (
@@ -481,6 +482,15 @@ def reclassify_questions():
     Yanlış ders atamalı satırları düzeltir ve rapor döner.
     """
     result = reclassify_all_questions()
+    return result
+
+
+@router.post("/questions/parse-all")
+def parse_all_analyses():
+    """sgs_questions'ta satırı olmayan tüm analizleri AI subject ile otomatik parse eder.
+    Önceden yüklenmiş ama parse edilmemiş PDF'ler için çalıştırılır.
+    """
+    result = parse_all_unparsed_analyses()
     return result
 
 

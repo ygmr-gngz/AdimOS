@@ -371,6 +371,15 @@ export const sgsService = {
     await apiClient.patch(`/sgs/questions/${id}`, updates)
   },
 
+  // POST /sgs/questions/parse-all — parse edilmemiş tüm analizleri AI subject ile parse et
+  async parseAllAnalyses(): Promise<{
+    total_created: number
+    analyses: { pdf: string; created: number }[]
+  }> {
+    const { data } = await apiClient.post('/sgs/questions/parse-all')
+    return data
+  },
+
   // POST /sgs/questions/reclassify — TOPIC_LESSON_MAP ile yanlış dersleri toplu düzelt
   async reclassifyQuestions(): Promise<{
     success: boolean

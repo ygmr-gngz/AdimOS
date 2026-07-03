@@ -568,6 +568,7 @@ function DashboardTab({ reloadKey }: { reloadKey: number }) {
   const [areaAnalysisLoading, setAreaAnalysisLoading] = useState(false)
   const [showAreaAnalysis, setShowAreaAnalysis] = useState(false)
   const [reclassifying, setReclassifying] = useState(false)
+  const [parsingAll, setParsingAll] = useState(false)
 
   const loadAreas = useCallback(async (year?: string) => {
     setLoading(true)
@@ -595,6 +596,23 @@ function DashboardTab({ reloadKey }: { reloadKey: number }) {
       setAreaAnalysis(await sgsService.getAreaTopicAnalysis(selectedArea, yearFilter || undefined))
     } catch { toast.error('Alan analizi yapılamadı') }
     finally { setAreaAnalysisLoading(false) }
+  }
+
+  const handleParseAll = async () => {
+    setParsingAll(true)
+    try {
+      const result = await sgsService.parseAllAnalyses()
+      if (result.total_created === 0) {
+        toast.success('Tüm analizler zaten parse edilmiş')
+      } else {
+        toast.success(`${result.total_created} soru parse edildi`)
+        loadAreas(yearFilter || undefined)
+      }
+    } catch {
+      toast.error('Parse işlemi başarısız')
+    } finally {
+      setParsingAll(false)
+    }
   }
 
   const handleReclassify = async () => {
@@ -639,6 +657,9 @@ function DashboardTab({ reloadKey }: { reloadKey: number }) {
         />
         <Button size="sm" variant="ghost" onClick={() => loadAreas(yearFilter || undefined)} isLoading={loading}>
           <RefreshCw size={13} /> Yenile
+        </Button>
+        <Button size="sm" variant="ghost" onClick={handleParseAll} isLoading={parsingAll}>
+          <RefreshCw size={13} /> Tümünü Parse Et
         </Button>
         <Button size="sm" variant="ghost" onClick={handleReclassify} isLoading={reclassifying}>
           <RefreshCw size={13} /> Yeniden Sınıflandır

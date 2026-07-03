@@ -81,9 +81,19 @@ _TOPIC_LESSON_MAP: dict[str, str] = {
 
 
 def _resolve_lesson_for_topic(topic: str, range_lesson: str) -> str:
-    """Topic adına bakarak doğru dersi döndür. Kural yoksa range_lesson döner."""
-    mapped = _TOPIC_LESSON_MAP.get((topic or "").lower().strip())
-    return mapped if mapped else range_lesson
+    """Topic adına bakarak doğru dersi döndür. Kural yoksa range_lesson döner.
+    Önce exact match, sonra substring match (min 5 karakter — kısa token false positive'i önler).
+    """
+    t_lower = (topic or "").lower().strip()
+    if not t_lower:
+        return range_lesson
+    if t_lower in _TOPIC_LESSON_MAP:
+        return _TOPIC_LESSON_MAP[t_lower]
+    # Substring: uzun anahtar → kısa anahtar sırasıyla dene (en spesifik önce)
+    for key in sorted(_TOPIC_LESSON_MAP.keys(), key=len, reverse=True):
+        if len(key) >= 5 and key in t_lower:
+            return _TOPIC_LESSON_MAP[key]
+    return range_lesson
 
 
 def save_range(document_name, start_no, end_no, lesson_name, notes="", document_id=None):
@@ -461,20 +471,6 @@ def parse_questions_by_ranges(
                     }).eq("id", rid).execute()
                 logger.info(f"[parse] {len(ranges)} aralık otomatik bağlandı (document_name eşleşmesi)")
 
-    if not ranges:
-        total_resp = supabase.table("sgs_question_ranges").select("id", count="exact").execute()
-        total_count = total_resp.count or 0
-        logger.warning(f"[parse] hiç aralık bulunamadı. Toplam aralık sayısı: {total_count}")
-        return {
-            "error": (
-                f"'{pdf_name}' PDF'ine bağlı aralık bulunamadı. "
-                f"Veritabanında toplam {total_count} aralık var. "
-                f"'Soru Aralıkları' bölümünde '{pdf_name}' PDF'ini seçip 'Aralıkları PDF'e Bağla' yapın."
-            )
-        }
-
-    logger.info(f"[parse] {len(ranges)} aralık bulundu")
-
     # 3. Soru numarasını normalize et
     def _get_q_no(q: dict) -> int | None:
         for key in ("id", "question_id", "no", "number", "soru_no"):
@@ -492,7 +488,45 @@ def parse_questions_by_ranges(
                 return group
         return "Genel"
 
-    # 4. Eşleştir
+    # 4. Aralık yoksa AI subject ile otomatik parse (upload anında data yazılsın)
+    if not ranges:
+        logger.info(f"[parse] aralık bulunamadı → AI subject kullanılıyor (otomatik parse): {pdf_name}")
+        to_insert = []
+        for q in questions:
+            q_no = _get_q_no(q)
+            if q_no is None:
+                continue
+            ai_subject = (q.get("subject") or "").strip()
+            if not ai_subject or ai_subject == "Belirsiz":
+                continue
+            topic = q.get("topic") or ""
+            lesson = _resolve_lesson_for_topic(topic, ai_subject)
+            to_insert.append({
+                "document_id": analysis_id,
+                "lesson_group": get_group(lesson),
+                "lesson_name": lesson,
+                "question_number": q_no,
+                "year": a.get("year"),
+                "topic": topic,
+                "subtopic": q.get("subtopic"),
+                "answer": q.get("answer"),
+            })
+        if not to_insert:
+            return {"error": f"'{pdf_name}' analizinde sınıflandırılabilir soru yok."}
+        supabase.table("sgs_questions").delete().eq("document_id", analysis_id).execute()
+        supabase.table("sgs_questions").insert(to_insert).execute()
+        lesson_counts = Counter(q["lesson_name"] for q in to_insert)
+        logger.info(f"[parse] otomatik parse: {len(to_insert)} soru, {dict(lesson_counts)}")
+        return {
+            "questions_created": len(to_insert),
+            "failed_count": 0,
+            "lessons": [{"lesson_name": k, "count": v} for k, v in lesson_counts.items()],
+            "analysis_id": analysis_id,
+        }
+
+    logger.info(f"[parse] {len(ranges)} aralık bulundu")
+
+    # 5. Aralıklarla eşleştir
     to_insert = []
     unmatched = []
     for q in questions:
@@ -504,7 +538,6 @@ def parse_questions_by_ranges(
             if r["start_question_no"] <= q_no <= r["end_question_no"]:
                 range_lesson = r["lesson_name"]
                 topic = q.get("topic") or ""
-                # TOPIC_LESSON_MAP: konu bilinen bir derse işaret ediyorsa onu kullan
                 lesson = _resolve_lesson_for_topic(topic, range_lesson)
                 to_insert.append({
                     "document_id": analysis_id,
@@ -807,4 +840,31 @@ def get_topic_detail(topic: str, lesson_name: str | None = None) -> dict:
         "years": [{"year": y, "count": c} for y, c in sorted(year_counter.items())],
         "frequency_pct": frequency_pct,
     }
+
+
+def parse_all_unparsed_analyses() -> dict:
+    """sgs_questions'ta satırı olmayan tüm analizleri AI subject ile otomatik parse eder."""
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    supabase = get_supabase_client()
+
+    analyses_resp = supabase.table("sgs_analyses").select("id, pdf_name, year, questions").execute()
+    analyses = analyses_resp.data or []
+
+    parsed_ids_resp = supabase.table("sgs_questions").select("document_id").execute()
+    already_parsed = {r["document_id"] for r in (parsed_ids_resp.data or [])}
+
+    total_created = 0
+    results = []
+    for a in analyses:
+        aid = a["id"]
+        if aid in already_parsed:
+            continue
+        result = parse_questions_by_ranges(analysis_id=aid)
+        created = result.get("questions_created", 0)
+        total_created += created
+        results.append({"pdf": a.get("pdf_name", aid), "created": created})
+        _log.info(f"[parse-all] {a.get('pdf_name')}: {created} soru")
+
+    return {"total_created": total_created, "analyses": results}
 
