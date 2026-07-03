@@ -466,6 +466,15 @@ def delete_analysis(analysis_id: str) -> None:
     supabase.table("sgs_analyses").delete().eq("id", analysis_id).execute()
 
 
+def update_analysis(analysis_id: str, **fields) -> dict | None:
+    """sgs_analyses satırındaki belirtilen alanları günceller."""
+    if not fields:
+        return None
+    supabase = get_supabase_client()
+    resp = supabase.table("sgs_analyses").update(fields).eq("id", analysis_id).execute()
+    return resp.data[0] if resp.data else None
+
+
 def update_question_subject(analysis_id: str, question_id: int, new_subject: str) -> dict | None:
     """Bir analizdeki belirli sorunun dersini günceller."""
     supabase = get_supabase_client()

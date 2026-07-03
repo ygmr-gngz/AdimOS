@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File,
 from pydantic import BaseModel
 from app.modules.sgs.service import analyze_pdf_bytes, build_sgs_topic_video
 from app.db.repositories.sgs_repo import (
-    create_analysis, find_analysis_by_pdf_name,
+    create_analysis, find_analysis_by_pdf_name, update_analysis,
     list_analyses, get_analysis, delete_analysis, update_question_subject,
     save_range, get_ranges, delete_range, get_all_questions,
     get_questions_by_ranges, bulk_link_ranges_to_analysis,
@@ -31,8 +31,12 @@ async def analyze_pdf(
     document_type: str = Form("Çıkmış Sorular"),
     year: str = Form(""),
     semester: str = Form(""),
+    force: bool = Form(False),
 ):
-    """SGS çıkmış soru PDF'ini analiz et → soru listesi + video serisi planı döndür."""
+    """SGS çıkmış soru PDF'ini analiz et → soru listesi + video serisi planı döndür.
+
+    force=True: aynı isimde analiz zaten varsa üzerine yaz (re-analiz için).
+    """
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Sadece PDF dosyası yüklenebilir")
 
@@ -42,9 +46,9 @@ async def analyze_pdf(
     if len(pdf_bytes) > 50 * 1024 * 1024:
         raise HTTPException(status_code=413, detail=f"PDF boyutu 50 MB sınırını aşıyor ({len(pdf_bytes) // (1024 * 1024)} MB).")
 
-    # Aynı dosya adıyla daha önce yüklenmiş analiz varsa yeniden analiz etme
+    # Aynı dosya adıyla daha önce yüklenmiş analiz varsa — force=False ise döndür
     existing = find_analysis_by_pdf_name(file.filename)
-    if existing:
+    if existing and not force:
         logger.info(f"[sgs] PDF zaten mevcut, tekrar analiz edilmiyor: {file.filename}")
         return {
             **existing,
@@ -60,37 +64,56 @@ async def analyze_pdf(
         logger.error(f"[sgs] analiz hatası: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Analiz başarısız: {e}")
 
-    # Veritabanına kaydet
+    # Veritabanına kaydet (force=True → mevcut analizi güncelle)
     try:
-        saved = create_analysis(
-            pdf_name=result.get("pdf_name", file.filename),
-            total_questions=result.get("total_questions", 0),
-            subjects=result.get("subjects", []),
-            questions=result.get("questions", []),
-            video_plan=result.get("video_plan", []),
-            document_type=document_type or "Çıkmış Sorular",
-            year=year or "",
-            semester=semester or "",
-        )
-        if saved:
-            analysis_id = saved.get("id")
-            result["analysis_id"] = analysis_id
-            result["document_type"] = saved.get("document_type")
-            result["year"] = saved.get("year")
-            result["semester"] = saved.get("semester")
-            try:
-                create_document(
-                    file_name=result.get("pdf_name", file.filename),
-                    storage_path=f"sgs/{result.get('pdf_name', file.filename)}",
-                    file_size=len(pdf_bytes),
-                    mime_type="application/pdf",
-                    source_module="sgs_academy",
-                    sgs_analysis_id=analysis_id,
-                )
-            except Exception as doc_err:
-                logger.warning(f"[sgs] documents tablosuna kayıt açılamadı: {doc_err}")
+        if existing and force:
+            saved = update_analysis(
+                existing["id"],
+                total_questions=result.get("total_questions", 0),
+                subjects=result.get("subjects", []),
+                questions=result.get("questions", []),
+                video_plan=result.get("video_plan", []),
+                document_type=document_type or existing.get("document_type") or "Çıkmış Sorular",
+                year=year or existing.get("year") or "",
+                semester=semester or existing.get("semester") or "",
+            )
+            if saved:
+                result["analysis_id"] = saved["id"]
+                result["document_type"] = saved.get("document_type")
+                result["year"] = saved.get("year")
+                result["semester"] = saved.get("semester")
+                result["force_updated"] = True
+                logger.info(f"[sgs] force re-analiz güncellendi: {file.filename}, {result.get('total_questions', 0)} soru")
+        else:
+            saved = create_analysis(
+                pdf_name=result.get("pdf_name", file.filename),
+                total_questions=result.get("total_questions", 0),
+                subjects=result.get("subjects", []),
+                questions=result.get("questions", []),
+                video_plan=result.get("video_plan", []),
+                document_type=document_type or "Çıkmış Sorular",
+                year=year or "",
+                semester=semester or "",
+            )
+            if saved:
+                analysis_id = saved.get("id")
+                result["analysis_id"] = analysis_id
+                result["document_type"] = saved.get("document_type")
+                result["year"] = saved.get("year")
+                result["semester"] = saved.get("semester")
+                try:
+                    create_document(
+                        file_name=result.get("pdf_name", file.filename),
+                        storage_path=f"sgs/{result.get('pdf_name', file.filename)}",
+                        file_size=len(pdf_bytes),
+                        mime_type="application/pdf",
+                        source_module="sgs_academy",
+                        sgs_analysis_id=analysis_id,
+                    )
+                except Exception as doc_err:
+                    logger.warning(f"[sgs] documents tablosuna kayıt açılamadı: {doc_err}")
     except Exception as db_err:
-        logger.warning(f"[sgs] analiz kaydedilemedi (tablo yok olabilir): {db_err}")
+        logger.warning(f"[sgs] analiz kaydedilemedi: {db_err}")
         result["analysis_id"] = None
 
     return result
