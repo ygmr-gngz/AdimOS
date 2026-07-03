@@ -485,3 +485,79 @@ def update_question(question_id: int, body: QuestionUpdateRequest):
     if not success:
         raise HTTPException(status_code=404, detail=f"Soru bulunamadı (question_number={question_id})")
     return {"message": "Soru güncellendi", "question_id": question_id}
+
+
+# ── Veritabanı Durum Analizi ──────────────────────────────────
+
+@router.get("/admin/db-stats")
+def get_db_stats():
+    """Veritabanı durum analizi: ders/konu dağılımı, yanlış sınıflandırma tespiti."""
+    from collections import Counter
+    from app.db.supabase import get_supabase_client as _get_sb
+
+    supabase = _get_sb()
+
+    # sgs_analyses tablosu
+    analyses_resp = supabase.table("sgs_analyses").select("id, pdf_name, year, total_questions").order("created_at", desc=True).execute()
+    analyses = analyses_resp.data or []
+
+    # sgs_question_ranges tablosu
+    ranges_resp = supabase.table("sgs_question_ranges").select("lesson_name, start_question_no, end_question_no, document_name").execute()
+    ranges = ranges_resp.data or []
+    range_lesson_counts = Counter(r["lesson_name"] for r in ranges)
+
+    # sgs_questions tablosu — ders/konu dağılımı
+    sq_resp = supabase.table("sgs_questions").select("lesson_name, lesson_group, topic").execute()
+    sq_rows = sq_resp.data or []
+    sq_by_lesson: dict = {}
+    for row in sq_rows:
+        lesson = row.get("lesson_name", "?")
+        topic = row.get("topic") or "?"
+        if lesson not in sq_by_lesson:
+            sq_by_lesson[lesson] = Counter()
+        sq_by_lesson[lesson][topic] += 1
+
+    # sgs_analyses.questions JSONB — AI sınıflandırma dağılımı
+    ai_by_lesson: dict = {}
+    total_ai_q = 0
+    for a in analyses:
+        full = supabase.table("sgs_analyses").select("questions").eq("id", a["id"]).execute()
+        questions = (full.data[0].get("questions") or []) if full.data else []
+        total_ai_q += len(questions)
+        for q in questions:
+            subj = q.get("subject", "Belirsiz")
+            topic = q.get("topic", "?")
+            if subj not in ai_by_lesson:
+                ai_by_lesson[subj] = Counter()
+            ai_by_lesson[subj][topic] += 1
+
+    # TOPIC_LESSON_MAP ile yanlış sınıflandırma tespiti
+    from app.config.sgs_groups import SGS_LESSON_GROUPS as _GROUPS
+    all_lessons_set = set(l for lessons in _GROUPS.values() for l in lessons)
+
+    suspicious: list = []
+    for lesson, topic_counter in ai_by_lesson.items():
+        for topic, cnt in topic_counter.most_common(5):
+            # Basit kural: eğer topic başka bir ders adıyla aynıysa şüpheli
+            if topic in all_lessons_set and topic != lesson:
+                suspicious.append({"lesson": lesson, "topic_equals_lesson": topic, "count": cnt})
+
+    return {
+        "summary": {
+            "analyses_count": len(analyses),
+            "ranges_count": len(ranges),
+            "sgs_questions_table_rows": len(sq_rows),
+            "ai_classified_questions": total_ai_q,
+        },
+        "analyses": [{"pdf": a["pdf_name"], "year": a.get("year"), "total": a["total_questions"]} for a in analyses],
+        "ranges_per_lesson": dict(range_lesson_counts.most_common()),
+        "sgs_questions_table_topics_per_lesson": {
+            lesson: dict(topics.most_common(15))
+            for lesson, topics in sorted(sq_by_lesson.items())
+        },
+        "ai_topics_per_lesson": {
+            lesson: dict(topics.most_common(15))
+            for lesson, topics in sorted(ai_by_lesson.items())
+        },
+        "suspicious_topic_lesson_mismatches": suspicious,
+    }
