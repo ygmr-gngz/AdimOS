@@ -658,20 +658,32 @@ def create_video_job(payload: CreateVideoPayload, background_tasks: BackgroundTa
     sb = get_supabase_client()
     job_id = str(uuid.uuid4())
 
-    # payload_json: tüm yük DB'de saklanır (Railway restart recovery için)
-    payload_json = payload.model_dump(mode="json")
+    try:
+        payload_json = payload.model_dump(mode="json")
+    except Exception as e:
+        logger.error(f"[video] payload serialize hatası: {e}", exc_info=True)
+        raise HTTPException(status_code=422, detail=f"Payload hatası: {e}")
 
-    r = sb.table("video_jobs").insert({
-        "id": job_id,
-        "type": payload.type,
-        "title": payload.title,
-        "lesson_name": payload.lesson_name,
-        "topic": payload.topic,
-        "format": payload.format,
-        "target_duration_minutes": payload.target_duration_minutes,
-        "status": "pending",
-        "payload_json": payload_json,
-    }).execute()
+    try:
+        r = sb.table("video_jobs").insert({
+            "id": job_id,
+            "type": payload.type,
+            "title": payload.title,
+            "lesson_name": payload.lesson_name,
+            "topic": payload.topic,
+            "format": payload.format,
+            "target_duration_minutes": payload.target_duration_minutes,
+            "status": "pending",
+            "payload_json": payload_json,
+        }).execute()
+    except Exception as e:
+        logger.error(f"[video] DB insert hatası: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Veritabanı hatası: {str(e)[:200]}")
+
+    if not r.data:
+        logger.error(f"[video] DB insert boş döndü job_id={job_id}")
+        raise HTTPException(status_code=500, detail="Video görevi oluşturulamadı — DB boş yanıt")
+
     job = r.data[0]
     background_tasks.add_task(_run_pipeline, job_id, payload)
     logger.info(f"[video] görev oluşturuldu: {job_id} tip={payload.type}")
