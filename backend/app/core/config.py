@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     YOUTUBE_REFRESH_TOKEN: str = ""
     YOUTUBE_REDIRECT_URI: str = "https://adimos-production.up.railway.app/api/v1/oauth/youtube/callback"
 
+    # Remotion render servisi
+    REMOTION_URL: str = ""
+
     # Instagram / Meta
     META_APP_ID: str = ""
     META_APP_SECRET: str = ""

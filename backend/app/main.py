@@ -17,6 +17,14 @@ async def lifespan(app: FastAPI):
     _startup_logger.info(f"META_ACCESS_TOKEN loaded: {bool(settings.META_ACCESS_TOKEN)}")
     _startup_logger.info(f"INSTAGRAM_BUSINESS_ACCOUNT_ID loaded: {bool(settings.INSTAGRAM_BUSINESS_ACCOUNT_ID)}")
     start_scheduler()
+
+    # Railway yeniden başlatma sonrası pending işleri kurtar
+    try:
+        from app.api.routes.video import recover_pending_jobs
+        recover_pending_jobs()
+    except Exception as e:
+        _startup_logger.error(f"[startup] Video job recovery hatası: {e}")
+
     yield
     stop_scheduler()
     _startup_logger.info("AdimOS API kapatılıyor")

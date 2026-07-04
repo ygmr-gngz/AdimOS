@@ -194,13 +194,13 @@ AdimOS  →  /website sayfası  →  konuşma raporu
 
 ```html
 <!-- Script ile (önerilen) — </body> öncesine ekleyin -->
-<script src="https://adimos.vercel.app/embed.js"
-  data-site-id="musavirlik"
-  data-title="Adım Asistanı">
+<script src="https://your-adimos-url.vercel.app/embed.js"
+  data-site-id="your-site-id"
+  data-title="Asistanınız">
 </script>
 
 <!-- iframe ile — istediğiniz yere yerleştirin -->
-<iframe src="https://adimos.vercel.app/widget?siteId=musavirlik"
+<iframe src="https://your-adimos-url.vercel.app/widget?siteId=your-site-id"
   style="width:380px;height:600px;border:none;border-radius:16px;">
 </iframe>
 ```
@@ -364,9 +364,9 @@ Arayüz: http://localhost:3000
 |-----|--------|:-----:|
 | 1 | Bilgi tabanı, Asistan (Chat + Ses), Dashboard | ✅ Aktif |
 | 2 | CRM, Follow-up Agent | 🔧 Hazırlanıyor |
-| 3 | SGS Akademi | 🔧 Hazırlanıyor |
-| 4 | İçerik Otomasyonu (YouTube / Instagram) | ✅ Aktif |
-| 4b | Web Sitesi Chatbotu (embed widget + konuşma raporu) | ✅ Aktif |
+| 3 | SGS Akademi | ✅ Aktif |
+| 4 | İçerik Otomasyonu + Video Prodüksiyon | ✅ Aktif |
+| 4b | Web Sitesi Chatbotu — frontend ✅, backend endpoint'leri bekliyor | ⏳ Kısmi |
 | 5 | Raporlar ve analitik | 🔧 Hazırlanıyor |
 | 6 | Çoklu kullanıcı, white-label | 📋 Planlandı |
 

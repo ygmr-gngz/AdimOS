@@ -1,20 +1,26 @@
 """Video Prodüksiyon Motoru — Quiz / Ders / Shorts / Motivasyon."""
 import logging
-import os
+import time
 import uuid
 from typing import Optional, List
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
-from openai import RateLimitError as OpenAIRateLimitError
+from openai import RateLimitError as OpenAIRateLimitError, APITimeoutError
 from app.db.supabase import get_supabase_client
+from app.core.config import settings
+from app.modules.content.pronunciation_dict import apply_pronunciation_dict
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-REMOTION_URL = os.environ.get("REMOTION_URL", "http://localhost:3001")
-logger.info(f"[video] REMOTION_URL={REMOTION_URL}")
-TTS_BUCKET = "video-tts"
-VIDEO_BUCKET = "video-outputs"
+VIDEO_BUCKET = "video-tts"
+_TTS_BACKOFF = (2, 8, 20)       # saniye — 3 deneme
+_MAX_CONCURRENT = 2             # eşzamanlı pipeline sınırı
+_WATCHDOG_MINUTES = 30
+
+import threading
+_pipeline_semaphore = threading.Semaphore(_MAX_CONCURRENT)
+
 
 # ── Pydantic modeller ─────────────────────────────────────────
 
@@ -33,6 +39,7 @@ class CreateVideoPayload(BaseModel):
     title: str
     lesson_name: Optional[str] = None
     topic: Optional[str] = None
+    description: Optional[str] = None     # yönetmen notu / ek bağlam
     format: str = "16:9"
     target_duration_minutes: Optional[int] = 12
     questions: Optional[List[QuizQuestion]] = None
@@ -69,11 +76,11 @@ def _get_brand() -> dict:
         r = sb.table("brand_settings").select("*").eq("id", "default").execute()
         s = r.data[0] if r.data else {}
         return {
-            "primary_color":    "#0B2A4A",
-            "secondary_color":  "#C9A96E",
-            "background_color": "#FAF7F0",
-            "font_heading":     "Playfair Display",
-            "font_body":        "Lato",
+            "primary_color":    s.get("primary_color", "#0B2A4A"),
+            "secondary_color":  s.get("secondary_color", "#C9A96E"),
+            "background_color": s.get("background_color", "#FAF7F0"),
+            "font_heading":     s.get("font_heading", "Playfair Display"),
+            "font_body":        s.get("font_body", "Lato"),
             "logo_url":         s.get("logo_url"),
         }
     except Exception:
@@ -84,15 +91,52 @@ def _get_brand() -> dict:
         }
 
 
-# ── TTS yardımcıları ──────────────────────────────────────────
+# ── TTS — retry + pronunciation + cost tracking ───────────────
 
-def _tts_bytes(text: str) -> bytes:
-    """OpenAI TTS — onyx sesi (Türkçe için doğal)."""
+def _tts_bytes(text: str) -> tuple[bytes, int]:
+    """
+    OpenAI TTS — 3 deneme, exponential backoff.
+    Pronunciation sözlüğü uygulanır.
+    Returns: (ses_baytları, karakter_sayısı)
+    Raises: RuntimeError — tüm denemeler başarısız olursa
+    """
     from openai import OpenAI
-    from app.core.config import settings
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
-    resp = client.audio.speech.create(model="tts-1", voice="onyx", input=text)
-    return resp.content
+    text = apply_pronunciation_dict(text)
+    char_count = len(text)
+    client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=60.0)
+
+    last_err = None
+    for attempt, wait in enumerate(_TTS_BACKOFF, 1):
+        try:
+            resp = client.audio.speech.create(
+                model="tts-1-hd",
+                voice="onyx",
+                input=text,
+                speed=0.93,
+            )
+            logger.info(f"[tts] deneme {attempt} başarılı — {char_count} karakter")
+            return resp.content, char_count
+        except OpenAIRateLimitError as e:
+            last_err = e
+            err_str = str(e)
+            if "insufficient_quota" in err_str:
+                # Kota tükendi — yeniden denemek anlamsız
+                raise RuntimeError(
+                    "OpenAI TTS kotası tükendi (insufficient_quota). "
+                    "API limitinizi kontrol edin."
+                ) from e
+            logger.warning(f"[tts] 429 rate limit · deneme {attempt} · {wait}s bekleniyor")
+            time.sleep(wait)
+        except APITimeoutError as e:
+            last_err = e
+            logger.warning(f"[tts] timeout · deneme {attempt} · {wait}s bekleniyor")
+            time.sleep(wait)
+        except Exception as e:
+            raise RuntimeError(f"[tts] OpenAI hatası: {e}") from e
+
+    raise RuntimeError(
+        f"[tts] {len(_TTS_BACKOFF)} denemeden sonra başarısız: {last_err}"
+    )
 
 def _estimate_duration(text: str) -> float:
     """Karakter sayısına göre saniye tahmini (~13 karakter/saniye Türkçe)."""
@@ -103,30 +147,38 @@ def _upload_tts(audio_bytes: bytes, filename: str) -> str:
     sb = get_supabase_client()
     try:
         buckets = [b.name if hasattr(b, "name") else b.get("name", "") for b in sb.storage.list_buckets()]
-        if TTS_BUCKET not in buckets:
-            sb.storage.create_bucket(TTS_BUCKET, options={"public": True})
+        if VIDEO_BUCKET not in buckets:
+            sb.storage.create_bucket(VIDEO_BUCKET, options={"public": True})
     except Exception as e:
         logger.warning(f"[video] TTS bucket kontrol: {e}")
     path = f"scenes/{filename}"
-    sb.storage.from_(TTS_BUCKET).upload(path, audio_bytes, {"content-type": "audio/mpeg", "upsert": "true"})
-    return sb.storage.from_(TTS_BUCKET).get_public_url(path)
+    sb.storage.from_(VIDEO_BUCKET).upload(path, audio_bytes, {"content-type": "audio/mpeg", "upsert": "true"})
+    return sb.storage.from_(VIDEO_BUCKET).get_public_url(path)
 
 
 # ── Quiz storyboard üretimi ───────────────────────────────────
 
 def _build_quiz_storyboard(
     job_id: str, title: str, lesson_name: str, topic: str,
-    questions: List[QuizQuestion], format: str, brand: dict
+    questions: List[QuizQuestion], format: str, brand: dict,
+    description: str = "",
 ) -> dict:
     total = len(questions)
     scenes = []
     sid = 1
 
+    intro_voice = (
+        f"Merhaba. Bu videoda {lesson_name} dersinden {topic} konusuna ait "
+        f"{total} soruyu birlikte çözeceğiz."
+    )
+    if description:
+        intro_voice += f" {description}"
+
     scenes.append({
         "id": sid, "component": "IntroScene", "duration_seconds": 8,
         "title": title,
         "subtitle": f"{lesson_name} — Soru Çözüm Serisi",
-        "voice_text": f"Merhaba. Bu videoda {lesson_name} dersinden {topic} konusuna ait {total} soruyu birlikte çözeceğiz.",
+        "voice_text": intro_voice,
     })
     sid += 1
 
@@ -135,7 +187,6 @@ def _build_quiz_storyboard(
         wrong_labels = [o.label for o in q.options if o.label != q.correct_label]
         correct_opt = next((o for o in q.options if o.label == q.correct_label), None)
 
-        # Soru ekranı
         scenes.append({
             "id": sid, "component": "QuestionScene", "duration_seconds": 20,
             "question_number": qno, "total_questions": total,
@@ -149,7 +200,6 @@ def _build_quiz_storyboard(
         })
         sid += 1
 
-        # Düşünme süresi
         scenes.append({
             "id": sid, "component": "ThinkingScene", "duration_seconds": 5,
             "question_text": q.text[:80],
@@ -157,7 +207,6 @@ def _build_quiz_storyboard(
         })
         sid += 1
 
-        # Yanlış şıklar
         for wl in wrong_labels:
             wrong_opt = next((o for o in q.options if o.label == wl), None)
             if not wrong_opt:
@@ -174,7 +223,6 @@ def _build_quiz_storyboard(
             })
             sid += 1
 
-        # Doğru cevap
         explanation = q.explanation or (f"{correct_opt.text}" if correct_opt else "")
         scenes.append({
             "id": sid, "component": "CorrectAnswerScene", "duration_seconds": 20,
@@ -186,7 +234,6 @@ def _build_quiz_storyboard(
         })
         sid += 1
 
-        # Dikkat noktası
         key = q.explanation or f"Doğru cevap {q.correct_label} şıkkıdır."
         scenes.append({
             "id": sid, "component": "KeyPointScene", "duration_seconds": 12,
@@ -196,7 +243,6 @@ def _build_quiz_storyboard(
         })
         sid += 1
 
-        # Sorular arası geçiş (son soru hariç)
         if i < total - 1:
             scenes.append({
                 "id": sid, "component": "IntroScene", "duration_seconds": 4,
@@ -206,12 +252,14 @@ def _build_quiz_storyboard(
             })
             sid += 1
 
-    # Kapanış
     scenes.append({
         "id": sid, "component": "OutroScene", "duration_seconds": 8,
         "title": "Soru Çözümü Tamamlandı",
         "subtitle": f"{lesson_name} dersinden {total} soru çözüldü. Başarılar!",
-        "voice_text": f"Bu videoda {lesson_name} dersinden {total} soruyu birlikte çözdük. Umarım faydalı olmuştur. Başarılar!",
+        "voice_text": (
+            f"Bu videoda {lesson_name} dersinden {total} soruyu birlikte çözdük. "
+            "Umarım faydalı olmuştur. Başarılar!"
+        ),
     })
 
     return {
@@ -229,13 +277,33 @@ def _build_quiz_storyboard(
 # ── Arkaplan pipeline ─────────────────────────────────────────
 
 def _run_pipeline(job_id: str, payload: CreateVideoPayload):
-    """Storyboard → TTS → Remotion render pipeline'ı arka planda çalıştırır."""
-    try:
-        import httpx
-        sb = get_supabase_client()
-        brand = _get_brand()
+    """
+    Storyboard → TTS → Remotion render pipeline'ı.
+    Eşzamanlı çalışma _pipeline_semaphore ile sınırlandırılır.
+    """
+    acquired = _pipeline_semaphore.acquire(timeout=600)
+    if not acquired:
+        logger.error(f"[video] {job_id} semaphore alınamadı — başka pipeline dolup taştı")
+        _set_status(job_id, "failed", {
+            "error_message": "Sistem meşgul. Lütfen birkaç dakika sonra yeniden deneyin."
+        })
+        return
 
-        # 1. Senaryo
+    try:
+        _run_pipeline_inner(job_id, payload)
+    finally:
+        _pipeline_semaphore.release()
+
+
+def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
+    """Gerçek pipeline mantığı — semaphore altında çalışır."""
+    import httpx
+    sb = get_supabase_client()
+    brand = _get_brand()
+    total_tts_chars = 0
+
+    try:
+        # ── 1. Senaryo ──────────────────────────────────────────
         _set_status(job_id, "scripting")
         logger.info(f"[video] {job_id} senaryo oluşturuluyor tip={payload.type}")
 
@@ -248,8 +316,15 @@ def _run_pipeline(job_id: str, payload: CreateVideoPayload):
                 questions=payload.questions,
                 format=payload.format,
                 brand=brand,
+                description=payload.description or "",
             )
         else:
+            topic_text = payload.topic or payload.title
+            desc_text = payload.description or ""
+            intro_voice = f"Bu videoda {topic_text} konusunu ele alacağız."
+            if desc_text:
+                intro_voice += f" {desc_text}"
+
             storyboard = {
                 "video_type": payload.type,
                 "title": payload.title,
@@ -263,7 +338,7 @@ def _run_pipeline(job_id: str, payload: CreateVideoPayload):
                         "id": 1, "component": "IntroScene", "duration_seconds": 8,
                         "title": payload.title,
                         "subtitle": payload.topic or "",
-                        "voice_text": f"Bu videoda {payload.topic or payload.title} konusunu ele alacağız.",
+                        "voice_text": intro_voice,
                     },
                     {
                         "id": 2, "component": "OutroScene", "duration_seconds": 8,
@@ -290,18 +365,23 @@ def _run_pipeline(job_id: str, payload: CreateVideoPayload):
         ]
         sb.table("video_scenes").insert(scene_records).execute()
 
-        # 2. TTS
+        # ── 2. TTS ─────────────────────────────────────────────
         _set_status(job_id, "tts_generating")
         logger.info(f"[video] {job_id} TTS başlıyor ({len(storyboard['scenes'])} sahne)")
 
-        scenes_in_db = sb.table("video_scenes").select("*").eq("job_id", job_id).order("scene_index").execute().data or []
+        scenes_in_db = (
+            sb.table("video_scenes")
+            .select("*").eq("job_id", job_id).order("scene_index")
+            .execute().data or []
+        )
 
         for scene_row in scenes_in_db:
             voice_text = (scene_row.get("voice_text") or "").strip()
             if not voice_text:
                 continue
             try:
-                audio_bytes = _tts_bytes(voice_text)
+                audio_bytes, char_count = _tts_bytes(voice_text)
+                total_tts_chars += char_count
                 filename = f"{job_id}_{scene_row['scene_index']}.mp3"
                 tts_url = _upload_tts(audio_bytes, filename)
                 duration = _estimate_duration(voice_text)
@@ -319,79 +399,163 @@ def _run_pipeline(job_id: str, payload: CreateVideoPayload):
                         break
 
                 logger.info(f"[video] {job_id} sahne {scene_row['scene_index']} TTS ok ({duration:.1f}s)")
-            except OpenAIRateLimitError as quota_err:
-                # 429 insufficient_quota — kota tükendi, pipeline'ı hemen durdur
-                logger.error(f"[video] {job_id} TTS kota hatası (429): {quota_err}")
-                _set_status(job_id, "failed", {
-                    "error_message": (
-                        "OpenAI TTS kotası tükendi (429 insufficient_quota). "
-                        "API kota limitinizi kontrol edin. "
-                        "Ses üretimi durduruldu."
-                    )
-                })
-                return
-            except Exception as e:
+
+            except RuntimeError as e:
+                err_str = str(e)
+                if "insufficient_quota" in err_str or "kotası tükendi" in err_str:
+                    logger.error(f"[video] {job_id} kota hatası — pipeline durduruluyor")
+                    _set_status(job_id, "failed", {
+                        "error_message": (
+                            "OpenAI TTS kotası tükendi. "
+                            "API kota limitinizi kontrol ettikten sonra yeniden deneyin."
+                        ),
+                        "cost_tts_chars": total_tts_chars,
+                    })
+                    return
+                # Diğer hatalarda sahneyi atla, devam et
                 logger.error(f"[video] {job_id} sahne {scene_row['scene_index']} TTS hatası: {e}")
                 sb.table("video_scenes").update({"status": "tts_failed"}).eq("id", scene_row["id"]).execute()
 
-        # TTS URL'leriyle güncel storyboard'u kaydet
-        sb.table("video_jobs").update({"storyboard": storyboard}).eq("id", job_id).execute()
+        # Cost tracking
+        tts_cost_usd = round((total_tts_chars / 1_000_000) * 15.00, 6)
+        sb.table("video_jobs").update({
+            "storyboard": storyboard,
+            "cost_tts_chars": total_tts_chars,
+            "cost_tts_usd": tts_cost_usd,
+        }).eq("id", job_id).execute()
 
-        # 3. Remotion render — sunucu yapılandırılmamışsa veya yanıt vermiyorsa atla
-        is_remotion_configured = (
-            REMOTION_URL
-            and "localhost" not in REMOTION_URL
-            and "127.0.0.1" not in REMOTION_URL
+        # ── 3. Remotion render ─────────────────────────────────
+        remotion_url = settings.REMOTION_URL
+        is_remotion_configured = bool(
+            remotion_url
+            and "localhost" not in remotion_url
+            and "127.0.0.1" not in remotion_url
         )
 
         if not is_remotion_configured:
-            logger.info(f"[video] {job_id} Remotion yapılandırılmamış, ses-hazır olarak işaretleniyor")
+            logger.info(f"[video] {job_id} Remotion yapılandırılmamış → ses-hazır")
             _set_status(job_id, "ready_for_review", {
                 "error_message": (
                     "Render sunucusu bağlı değil — ses sahneleri hazır. "
-                    "Videoyu izlemek için REMOTION_URL ortam değişkenini yapılandırın."
+                    "REMOTION_URL ortam değişkenini yapılandırın."
                 )
             })
-        else:
-            _set_status(job_id, "rendering")
-            logger.info(f"[video] {job_id} Remotion render tetikleniyor — URL: {REMOTION_URL}")
+            return
+
+        _set_status(job_id, "rendering")
+        logger.info(f"[video] {job_id} Remotion render tetikleniyor — {remotion_url}")
+
+        try:
+            health_ok = False
             try:
-                # Hızlı health check (5s) — cevap vermiyorsa render denemesi
-                remotion_alive = False
-                try:
-                    health = httpx.get(f"{REMOTION_URL}/health", timeout=5)
-                    remotion_alive = health.status_code == 200
-                    logger.info(f"[video] {job_id} Remotion health: {health.status_code}")
-                except Exception as he:
-                    logger.warning(f"[video] {job_id} Health check başarısız: {he}")
+                h = httpx.get(f"{remotion_url}/health", timeout=5)
+                health_ok = h.status_code == 200
+                logger.info(f"[video] {job_id} Remotion health: {h.status_code}")
+            except Exception as he:
+                logger.warning(f"[video] {job_id} Health check başarısız: {he}")
 
-                if not remotion_alive:
-                    raise Exception(
-                        f"Remotion sunucusuna ulaşılamıyor ({REMOTION_URL}). "
-                        "Railway servis durumunu kontrol edin."
-                    )
-
-                resp = httpx.post(
-                    f"{REMOTION_URL}/render",
-                    json={"job_id": job_id, "storyboard": storyboard},
-                    timeout=60,
+            if not health_ok:
+                raise Exception(
+                    f"Remotion sunucusuna ulaşılamıyor ({remotion_url}). "
+                    "Railway servis durumunu kontrol edin."
                 )
-                if resp.status_code != 200:
-                    raise Exception(f"Render başarısız (HTTP {resp.status_code}): {resp.text[:200]}")
-                logger.info(f"[video] {job_id} Remotion render başlatıldı: {resp.json()}")
-            except Exception as e:
-                logger.error(f"[video] {job_id} Remotion render hatası: {e}")
-                _set_status(job_id, "failed", {
-                    "error_message": (
-                        f"Render sunucusu başarısız: {str(e)[:300]} — "
-                        "Ses sahneleri hazır, ancak video oluşturulamadı. "
-                        "Railway servisini kontrol edip yeniden deneyin."
-                    )
-                })
+
+            resp = httpx.post(
+                f"{remotion_url}/render",
+                json={"job_id": job_id, "storyboard": storyboard},
+                timeout=60,
+            )
+            if resp.status_code != 200:
+                raise Exception(f"Render başarısız (HTTP {resp.status_code}): {resp.text[:200]}")
+            logger.info(f"[video] {job_id} Remotion render başlatıldı: {resp.json()}")
+
+        except Exception as e:
+            logger.error(f"[video] {job_id} Remotion render hatası: {e}")
+            _set_status(job_id, "failed", {
+                "error_message": (
+                    f"Render sunucusu başarısız: {str(e)[:300]} — "
+                    "Ses sahneleri hazır. Railway servisini kontrol edip yeniden deneyin."
+                )
+            })
 
     except Exception as e:
         logger.exception(f"[video] {job_id} pipeline hatası")
         _set_status(job_id, "failed", {"error_message": str(e)[:500]})
+
+
+# ── Watchdog ──────────────────────────────────────────────────
+
+def _watchdog_sweep(sb=None) -> None:
+    """
+    Aktif işleri kontrol et; WATCHDOG_MINUTES+ süre ilerleme yoksa failed yap.
+    Lazy (GET /jobs'ta) ve scheduled (lifespan) olarak çağrılabilir.
+    """
+    from datetime import datetime, timezone, timedelta
+    if sb is None:
+        sb = get_supabase_client()
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=_WATCHDOG_MINUTES)).isoformat()
+    stuck = sb.table("video_jobs").select("id, status, updated_at").in_(
+        "status", ["rendering", "tts_generating", "scripting", "pending"]
+    ).lt("updated_at", cutoff).execute()
+    for j in (stuck.data or []):
+        logger.warning(f"[video] watchdog: {j['id'][:8]} {j['status']} → failed")
+        sb.table("video_jobs").update({
+            "status": "failed",
+            "error_message": (
+                f"İş {_WATCHDOG_MINUTES}+ dakika boyunca '{j['status']}' durumunda kaldı. "
+                "TTS veya render adımında sessiz hata oluşmuş olabilir."
+            ),
+        }).eq("id", j["id"]).execute()
+
+
+# ── Startup recovery ─────────────────────────────────────────
+
+def recover_pending_jobs():
+    """
+    Uygulama başlatıldığında çağrılır.
+    Railway restart'ında 'pending' kalmış işleri yeniden kuyruğa alır.
+    """
+    try:
+        sb = get_supabase_client()
+        # Önce takılı olanları temizle
+        _watchdog_sweep(sb)
+        # Hâlâ pending kalan işler (yeni oluşturulan) — payload_json ile yeniden başlat
+        pending = sb.table("video_jobs").select("*").eq("status", "pending").execute().data or []
+        if not pending:
+            return
+        logger.info(f"[video] startup recovery: {len(pending)} pending iş bulundu")
+        import threading
+        for job in pending:
+            raw = job.get("payload_json") or {}
+            if not raw:
+                logger.warning(f"[video] {job['id'][:8]} payload_json yok — atlanıyor")
+                continue
+            questions_raw = None
+            if raw.get("questions"):
+                questions_raw = [
+                    QuizQuestion(
+                        text=q["text"],
+                        options=[QuizOption(**o) for o in q["options"]],
+                        correct_label=q["correct_label"],
+                        explanation=q.get("explanation"),
+                    )
+                    for q in raw["questions"]
+                ]
+            rebuilt = CreateVideoPayload(
+                type=raw.get("type", job["type"]),
+                title=raw.get("title", job["title"]),
+                lesson_name=raw.get("lesson_name", job.get("lesson_name")),
+                topic=raw.get("topic", job.get("topic")),
+                description=raw.get("description"),
+                format=raw.get("format", job.get("format", "16:9")),
+                target_duration_minutes=raw.get("target_duration_minutes", job.get("target_duration_minutes")),
+                questions=questions_raw,
+            )
+            t = threading.Thread(target=_run_pipeline, args=(job["id"], rebuilt), daemon=True)
+            t.start()
+            logger.info(f"[video] {job['id'][:8]} recovery thread başlatıldı")
+    except Exception as e:
+        logger.error(f"[video] startup recovery hatası: {e}")
 
 
 # ── Endpoint'ler ──────────────────────────────────────────────
@@ -400,6 +564,10 @@ def _run_pipeline(job_id: str, payload: CreateVideoPayload):
 def create_video_job(payload: CreateVideoPayload, background_tasks: BackgroundTasks):
     sb = get_supabase_client()
     job_id = str(uuid.uuid4())
+
+    # payload_json: tüm yük DB'de saklanır (Railway restart recovery için)
+    payload_json = payload.model_dump(mode="json")
+
     r = sb.table("video_jobs").insert({
         "id": job_id,
         "type": payload.type,
@@ -409,32 +577,12 @@ def create_video_job(payload: CreateVideoPayload, background_tasks: BackgroundTa
         "format": payload.format,
         "target_duration_minutes": payload.target_duration_minutes,
         "status": "pending",
+        "payload_json": payload_json,
     }).execute()
     job = r.data[0]
     background_tasks.add_task(_run_pipeline, job_id, payload)
     logger.info(f"[video] görev oluşturuldu: {job_id} tip={payload.type}")
     return job
-
-
-_WATCHDOG_MINUTES = 30  # bu kadar ilerleme yoksa → failed
-
-def _watchdog_sweep(sb) -> None:
-    """Aktif işleri kontrol et; takılı olanları failed yap (lazy watchdog)."""
-    from datetime import datetime, timezone, timedelta
-    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=_WATCHDOG_MINUTES)).isoformat()
-    stuck_resp = sb.table("video_jobs").select("id, status, updated_at").in_(
-        "status", ["rendering", "tts_generating", "scripting", "pending"]
-    ).lt("updated_at", cutoff).execute()
-    for j in (stuck_resp.data or []):
-        logger.warning(f"[video] watchdog: {j['id'][:8]} {j['status']} → failed")
-        sb.table("video_jobs").update({
-            "status": "failed",
-            "error_message": (
-                f"İş {_WATCHDOG_MINUTES}+ dakika boyunca '{j['status']}' durumunda "
-                "kaldı ve otomatik olarak başarısız sayıldı. "
-                "TTS veya render adımında sessiz hata oluşmuş olabilir."
-            ),
-        }).eq("id", j["id"]).execute()
 
 
 @router.get("/jobs")
@@ -443,7 +591,7 @@ def list_jobs(type: Optional[str] = None):
     try:
         _watchdog_sweep(sb)
     except Exception as e:
-        logger.warning(f"[video] watchdog hatası (görmezden geliniyor): {e}")
+        logger.warning(f"[video] watchdog hatası: {e}")
     q = sb.table("video_jobs").select("*").order("created_at", desc=True)
     if type:
         q = q.eq("type", type)
@@ -454,7 +602,11 @@ def list_jobs(type: Optional[str] = None):
 def get_job(job_id: str):
     sb = get_supabase_client()
     job = _get_job(job_id)
-    scenes = sb.table("video_scenes").select("*").eq("job_id", job_id).order("scene_index").execute().data or []
+    scenes = (
+        sb.table("video_scenes").select("*")
+        .eq("job_id", job_id).order("scene_index")
+        .execute().data or []
+    )
     job["scenes"] = scenes
     return job
 
@@ -482,24 +634,49 @@ def regenerate_job(job_id: str, background_tasks: BackgroundTasks):
     sb.table("video_scenes").delete().eq("job_id", job_id).execute()
     _set_status(job_id, "pending", {"storyboard": None, "video_url": None, "error_message": None})
 
-    # Orijinal storyboard'dan soruları geri çıkar
-    storyboard = job.get("storyboard") or {}
-    questions_raw = []
-    for scene in storyboard.get("scenes", []):
-        if scene.get("component") == "QuestionScene":
-            questions_raw.append(QuizQuestion(
-                text=scene.get("question_text", ""),
-                options=[QuizOption(**o) for o in scene.get("options", [])],
-                correct_label=scene.get("correct_label", "A"),
-            ))
+    # payload_json öncelikli — yoksa storyboard'dan geri çıkar
+    raw = job.get("payload_json") or {}
+    if raw:
+        questions_raw = None
+        if raw.get("questions"):
+            questions_raw = [
+                QuizQuestion(
+                    text=q["text"],
+                    options=[QuizOption(**o) for o in q["options"]],
+                    correct_label=q["correct_label"],
+                    explanation=q.get("explanation"),
+                )
+                for q in raw["questions"]
+            ]
+        rebuilt = CreateVideoPayload(
+            type=raw.get("type", job["type"]),
+            title=raw.get("title", job["title"]),
+            lesson_name=raw.get("lesson_name", job.get("lesson_name")),
+            topic=raw.get("topic", job.get("topic")),
+            description=raw.get("description"),
+            format=raw.get("format", job.get("format", "16:9")),
+            target_duration_minutes=raw.get("target_duration_minutes", job.get("target_duration_minutes")),
+            questions=questions_raw,
+        )
+    else:
+        # Fallback: storyboard'dan soruları çıkar
+        storyboard = job.get("storyboard") or {}
+        questions_raw = []
+        for scene in storyboard.get("scenes", []):
+            if scene.get("component") == "QuestionScene":
+                questions_raw.append(QuizQuestion(
+                    text=scene.get("question_text", ""),
+                    options=[QuizOption(**o) for o in scene.get("options", [])],
+                    correct_label=scene.get("correct_label", "A"),
+                ))
+        rebuilt = CreateVideoPayload(
+            type=job["type"], title=job["title"],
+            lesson_name=job.get("lesson_name"), topic=job.get("topic"),
+            format=job.get("format", "16:9"),
+            target_duration_minutes=job.get("target_duration_minutes"),
+            questions=questions_raw or None,
+        )
 
-    rebuilt = CreateVideoPayload(
-        type=job["type"], title=job["title"],
-        lesson_name=job.get("lesson_name"), topic=job.get("topic"),
-        format=job.get("format", "16:9"),
-        target_duration_minutes=job.get("target_duration_minutes"),
-        questions=questions_raw or None,
-    )
     background_tasks.add_task(_run_pipeline, job_id, rebuilt)
     return {"message": "Yeniden üretim başlatıldı", "job_id": job_id}
 
@@ -516,7 +693,7 @@ def regenerate_scene(scene_id: str, background_tasks: BackgroundTasks):
         try:
             if not voice_text.strip():
                 return
-            audio_bytes = _tts_bytes(voice_text)
+            audio_bytes, _ = _tts_bytes(voice_text)
             filename = f"{job_id}_{scene_index}_r{uuid.uuid4().hex[:6]}.mp3"
             tts_url = _upload_tts(audio_bytes, filename)
             duration = _estimate_duration(voice_text)
@@ -528,9 +705,14 @@ def regenerate_scene(scene_id: str, background_tasks: BackgroundTasks):
             logger.info(f"[video] sahne {scene_id} yeniden üretildi")
         except Exception as e:
             logger.error(f"[video] sahne {scene_id} yeniden üretim hatası: {e}")
-            get_supabase_client().table("video_scenes").update({"status": "failed"}).eq("id", scene_id).execute()
+            get_supabase_client().table("video_scenes").update(
+                {"status": "failed"}
+            ).eq("id", scene_id).execute()
 
-    background_tasks.add_task(_regen, scene_id, scene.get("voice_text") or "", scene["job_id"], scene["scene_index"])
+    background_tasks.add_task(
+        _regen, scene_id,
+        scene.get("voice_text") or "", scene["job_id"], scene["scene_index"]
+    )
     return {"message": "Sahne yeniden üretiliyor", "scene_id": scene_id}
 
 

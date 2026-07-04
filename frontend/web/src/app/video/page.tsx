@@ -285,77 +285,88 @@ function PreviewModal({ job, onClose, onApprove, onReject }: {
   )
 }
 
-// ── Video oluşturma modalı ────────────────────────────────────
+// ── 3 Adımlı Video Sihirbazı ─────────────────────────────────
+
+type WizardStep = 'content' | 'format' | 'review'
 
 const QUIZ_OPTION_LABELS = ['A', 'B', 'C', 'D']
 
-// Tip bazlı konfigürasyon
-const TYPE_CONFIG: Record<VideoType, {
-  needsLesson: boolean
-  needsTopic: boolean
-  topicLabel: string
-  descriptionPlaceholder: string
-  defaultFormat: VideoFormat
-  defaultMinutes: number
-}> = {
-  lesson: {
-    needsLesson: true, needsTopic: true,
-    topicLabel: 'Konu',
-    descriptionPlaceholder: 'Bu derste özellikle hangi konu anlatılsın? Ton veya tarz notu ekleyebilirsin.',
-    defaultFormat: '16:9', defaultMinutes: 25,
-  },
-  quiz: {
-    needsLesson: true, needsTopic: true,
-    topicLabel: 'Konu / Soru Tipi',
-    descriptionPlaceholder: 'Hangi soru tipleri çözülsün? Özel not ekleyebilirsin.',
-    defaultFormat: '16:9', defaultMinutes: 15,
-  },
-  motivation: {
-    needsLesson: false, needsTopic: false,
-    topicLabel: 'Video Teması (isteğe bağlı)',
-    descriptionPlaceholder: 'İstersen video temasını yazabilirsin. Boş bırakırsan sistem otomatik oluşturacaktır.',
-    defaultFormat: '16:9', defaultMinutes: 3,
-  },
-  shorts: {
-    needsLesson: false, needsTopic: false,
-    topicLabel: 'Konu (isteğe bağlı)',
-    descriptionPlaceholder: 'Trend olabilecek kısa içerik fikri yazabilir veya boş bırakabilirsin.',
-    defaultFormat: '9:16', defaultMinutes: 1,
-  },
+const WIZARD_TYPES: { type: VideoType; label: string; desc: string }[] = [
+  { type: 'lesson', label: 'Konu Anlatımı', desc: 'Bir konuyu baştan sona anlatan eğitim videosu' },
+  { type: 'quiz',   label: 'Soru Çözümü',   desc: 'SGS soruları ile adım adım çözüm videosu' },
+  { type: 'shorts', label: 'Kısa İçerik',   desc: 'Instagram Reels / YouTube Shorts (≤60 sn)' },
+]
+
+const TYPE_DEFAULTS: Partial<Record<VideoType, { format: VideoFormat; minutes: number }>> = {
+  lesson: { format: '16:9', minutes: 12 },
+  quiz:   { format: '16:9', minutes: 8  },
+  shorts: { format: '9:16', minutes: 1  },
 }
 
-const INPUT_STYLE: React.CSSProperties = {
+const INP: React.CSSProperties = {
   width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10,
-  padding: '12px 14px', fontSize: 15, outline: 'none',
+  padding: '11px 14px', fontSize: 14, outline: 'none',
   boxSizing: 'border-box', color: '#0f172a', background: '#fff',
 }
 
+function WizardIndicator({ step }: { step: WizardStep }) {
+  const steps: { key: WizardStep; label: string }[] = [
+    { key: 'content', label: 'İçerik Seç' },
+    { key: 'format',  label: 'Format Seç' },
+    { key: 'review',  label: 'Üret' },
+  ]
+  const cur = steps.findIndex(s => s.key === step)
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', padding: '16px 28px 0', gap: 0 }}>
+      {steps.map((s, i) => (
+        <div key={s.key} style={{ display: 'flex', alignItems: 'center', flex: i < steps.length - 1 ? 1 : 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{
+              width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+              background: i < cur ? '#10b981' : i === cur ? '#0B2A4A' : '#e2e8f0',
+              color: i <= cur ? '#fff' : '#94a3b8',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 12, fontWeight: 700,
+            }}>
+              {i < cur ? '✓' : i + 1}
+            </div>
+            <span style={{ fontSize: 13, fontWeight: i === cur ? 600 : 400, color: i === cur ? '#0B2A4A' : '#94a3b8' }}>
+              {s.label}
+            </span>
+          </div>
+          {i < steps.length - 1 && (
+            <div style={{ flex: 1, height: 1.5, background: i < cur ? '#10b981' : '#e2e8f0', margin: '0 12px' }} />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreated: (job: VideoJob) => void }) {
-  const [step, setStep] = useState<'config' | 'questions'>('config')
-  const [type, setType] = useState<VideoType>('quiz')
-  const [title, setTitle] = useState('')
+  const [step, setStep] = useState<WizardStep>('content')
+  const [type, setType] = useState<VideoType>('lesson')
   const [lessonName, setLessonName] = useState('')
   const [topic, setTopic] = useState('')
-  const [description, setDescription] = useState('')
+  const [showQuestions, setShowQuestions] = useState(false)
+  const [questions, setQuestions] = useState<CreateVideoPayload['questions']>(
+    Array.from({ length: 4 }, () => ({
+      text: '', correct_label: 'A', explanation: '',
+      options: QUIZ_OPTION_LABELS.map(l => ({ label: l, text: '' })),
+    }))
+  )
   const [format, setFormat] = useState<VideoFormat>('16:9')
-  const [targetMinutes, setTargetMinutes] = useState(15)
+  const [targetMinutes, setTargetMinutes] = useState(12)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const cfg = TYPE_CONFIG[type]
-
-  // Tip değişince format/süre sıfırla
   const handleTypeChange = (t: VideoType) => {
     setType(t)
-    setFormat(TYPE_CONFIG[t].defaultFormat)
-    setTargetMinutes(TYPE_CONFIG[t].defaultMinutes)
+    const d = TYPE_DEFAULTS[t]
+    if (d) { setFormat(d.format); setTargetMinutes(d.minutes) }
   }
-
-  const [questions, setQuestions] = useState<CreateVideoPayload['questions']>([
-    { text: '', options: QUIZ_OPTION_LABELS.map(l => ({ label: l, text: '' })), correct_label: 'A', explanation: '' },
-    { text: '', options: QUIZ_OPTION_LABELS.map(l => ({ label: l, text: '' })), correct_label: 'A', explanation: '' },
-    { text: '', options: QUIZ_OPTION_LABELS.map(l => ({ label: l, text: '' })), correct_label: 'A', explanation: '' },
-    { text: '', options: QUIZ_OPTION_LABELS.map(l => ({ label: l, text: '' })), correct_label: 'A', explanation: '' },
-  ])
 
   const updateQuestion = (qi: number, field: string, value: string) => {
     setQuestions(prev => {
@@ -375,26 +386,16 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
     })
   }
 
-  const validate = (): boolean => {
-    if (cfg.needsLesson && !lessonName.trim()) {
-      toast.error('Ders adı zorunludur')
-      return false
-    }
-    if (cfg.needsTopic && !topic.trim()) {
-      toast.error('Konu zorunludur')
-      return false
-    }
+  const validateContent = () => {
+    if (type !== 'shorts' && !lessonName.trim()) { toast.error('Ders adı zorunludur'); return false }
+    if (type !== 'shorts' && !topic.trim()) { toast.error('Konu zorunludur'); return false }
     return true
   }
 
   const handleSubmit = async () => {
-    if (!validate()) return
     setLoading(true)
     try {
-      const autoTitle = title.trim() ||
-        (type === 'motivation' ? 'Motivasyon Videosu' :
-         type === 'shorts' ? 'Kısa İçerik' :
-         `${lessonName} — ${topic}`)
+      const autoTitle = title.trim() || (type === 'shorts' ? 'Kısa İçerik' : `${lessonName} — ${topic}`)
       const job = await videoService.createJob({
         type,
         title: autoTitle,
@@ -415,6 +416,258 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
     }
   }
 
+  // ── Adım 1: İçerik Seç ─────────────────────────────────────
+  const renderContent = () => (
+    <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Tip seçimi */}
+      <div>
+        <p style={{ fontSize: 13, fontWeight: 600, color: '#475569', margin: '0 0 10px' }}>Video Tipi</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {WIZARD_TYPES.map(({ type: t, label, desc }) => (
+            <button key={t} onClick={() => handleTypeChange(t)} style={{
+              textAlign: 'left', padding: '14px 18px', borderRadius: 12, cursor: 'pointer',
+              border: `2px solid ${type === t ? '#0B2A4A' : '#e2e8f0'}`,
+              background: type === t ? '#0B2A4A' : '#fff',
+              transition: 'all 0.12s',
+            }}>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: type === t ? '#fff' : '#0B2A4A' }}>{label}</p>
+              <p style={{ margin: '3px 0 0', fontSize: 12, color: type === t ? 'rgba(255,255,255,0.65)' : '#94a3b8' }}>{desc}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Ders + Konu (lesson/quiz) */}
+      {type !== 'shorts' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>
+              Ders Adı <span style={{ color: '#ef4444' }}>*</span>
+            </label>
+            <input value={lessonName} onChange={e => setLessonName(e.target.value)}
+              placeholder="Örn: Vergi Hukuku" style={INP} />
+          </div>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>
+              Konu <span style={{ color: '#ef4444' }}>*</span>
+            </label>
+            <input value={topic} onChange={e => setTopic(e.target.value)}
+              placeholder="Örn: Katma Değer Vergisi" style={INP} />
+          </div>
+        </div>
+      )}
+
+      {/* Konu (shorts için opsiyonel) */}
+      {type === 'shorts' && (
+        <div>
+          <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>
+            Konu <span style={{ color: '#94a3b8', fontWeight: 400 }}>(opsiyonel)</span>
+          </label>
+          <input value={topic} onChange={e => setTopic(e.target.value)}
+            placeholder="Örn: Vergi beyanname döneminde dikkat edilmesi gerekenler"
+            style={INP} />
+        </div>
+      )}
+
+      {/* Quiz sorular — katlanabilir */}
+      {type === 'quiz' && (
+        <div>
+          <button
+            onClick={() => setShowQuestions(v => !v)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+              fontSize: 13, fontWeight: 600, color: '#475569',
+            }}
+          >
+            <ChevronRight size={14} style={{ transition: 'transform 0.15s', transform: showQuestions ? 'rotate(90deg)' : 'none' }} />
+            Soruları Manuel Gir
+            <span style={{ fontWeight: 400, color: '#94a3b8' }}>(boş bırakırsanız GPT otomatik oluşturur)</span>
+          </button>
+
+          {showQuestions && (
+            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {questions?.map((q, qi) => (
+                <div key={qi} style={{ border: '1.5px solid #e2e8f0', borderRadius: 12, padding: 16, background: '#fafafa' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: '#0B2A4A' }}>Soru {qi + 1}</p>
+                  <textarea value={q.text} onChange={e => updateQuestion(qi, 'text', e.target.value)}
+                    placeholder="Soru metni..." rows={2}
+                    style={{ ...INP, resize: 'vertical', marginBottom: 8, fontSize: 13 }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                    {q.options.map((opt, oi) => (
+                      <div key={opt.label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span
+                          onClick={() => updateQuestion(qi, 'correct_label', opt.label)}
+                          style={{
+                            width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+                            background: q.correct_label === opt.label ? '#10b981' : '#0B2A4A',
+                            color: '#fff', fontSize: 12, fontWeight: 700,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                          }}
+                        >
+                          {opt.label}
+                        </span>
+                        <input value={opt.text} onChange={e => updateOption(qi, oi, e.target.value)}
+                          placeholder={`${opt.label} şıkkı`}
+                          style={{
+                            flex: 1, border: `1.5px solid ${q.correct_label === opt.label ? '#10b981' : '#e2e8f0'}`,
+                            borderRadius: 8, padding: '7px 11px', fontSize: 13, outline: 'none', color: '#0f172a',
+                          }} />
+                      </div>
+                    ))}
+                  </div>
+                  <input value={q.explanation ?? ''} onChange={e => updateQuestion(qi, 'explanation', e.target.value)}
+                    placeholder="Doğru cevabın açıklaması (opsiyonel)" style={{ ...INP, fontSize: 12 }} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
+  // ── Adım 2: Format Seç ─────────────────────────────────────
+  const renderFormat = () => (
+    <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Format */}
+      <div>
+        <p style={{ fontSize: 13, fontWeight: 600, color: '#475569', margin: '0 0 10px' }}>Platform Formatı</p>
+        <div style={{ display: 'flex', gap: 12 }}>
+          {(['16:9', '9:16'] as VideoFormat[]).map(f => {
+            const active = format === f
+            return (
+              <button key={f} onClick={() => setFormat(f)} style={{
+                flex: 1, padding: '16px 12px', borderRadius: 12, cursor: 'pointer',
+                border: `2px solid ${active ? '#0B2A4A' : '#e2e8f0'}`,
+                background: active ? '#0B2A4A' : '#fff',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+              }}>
+                {/* Oran görseli */}
+                <div style={{
+                  border: `2px solid ${active ? 'rgba(255,255,255,0.4)' : '#cbd5e1'}`,
+                  borderRadius: 4,
+                  width: f === '16:9' ? 64 : 36,
+                  height: f === '16:9' ? 36 : 64,
+                  background: active ? 'rgba(255,255,255,0.1)' : '#f8fafc',
+                }} />
+                <div>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: active ? '#fff' : '#0B2A4A' }}>
+                    {f === '16:9' ? 'YouTube' : 'Reels / Shorts'}
+                  </p>
+                  <p style={{ margin: '2px 0 0', fontSize: 11, color: active ? 'rgba(255,255,255,0.6)' : '#94a3b8' }}>
+                    {f} · {f === '16:9' ? 'Yatay' : 'Dikey'}
+                  </p>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Süre */}
+      <div>
+        <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>
+          Hedef Süre (dakika)
+        </label>
+        <input type="number" min={1} max={60} value={targetMinutes}
+          onChange={e => setTargetMinutes(Number(e.target.value))}
+          style={{ ...INP, maxWidth: 140 }} />
+        <p style={{ margin: '6px 0 0', fontSize: 12, color: '#94a3b8' }}>
+          {format === '9:16' ? 'Kısa içerik için önerilen: 1 dakika' : type === 'quiz' ? 'Önerilen: 8–15 dakika' : 'Önerilen: 10–15 dakika'}
+        </p>
+      </div>
+
+      {/* Gelişmiş ayarlar */}
+      <div>
+        <button
+          onClick={() => setShowAdvanced(v => !v)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8, background: 'none',
+            border: 'none', cursor: 'pointer', padding: 0,
+            fontSize: 13, fontWeight: 600, color: '#475569',
+          }}
+        >
+          <ChevronRight size={14} style={{ transition: 'transform 0.15s', transform: showAdvanced ? 'rotate(90deg)' : 'none' }} />
+          Gelişmiş Ayarlar
+        </button>
+
+        {showAdvanced && (
+          <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>
+                Başlık <span style={{ color: '#94a3b8', fontWeight: 400 }}>(boş = otomatik)</span>
+              </label>
+              <input value={title} onChange={e => setTitle(e.target.value)}
+                placeholder={type === 'quiz' ? 'Örn: SGS 2024 — KDV Soru Çözümü' : 'Örn: Vergi Hukuku — KDV Konu Anlatımı'}
+                style={INP} />
+            </div>
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>
+                Yönetmen Notu <span style={{ color: '#94a3b8', fontWeight: 400 }}>(opsiyonel)</span>
+              </label>
+              <textarea value={description} onChange={e => setDescription(e.target.value)}
+                placeholder="Özel ton, vurgu noktası veya hedef kitle notu..."
+                rows={3} style={{ ...INP, resize: 'vertical', lineHeight: 1.6 }} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  // ── Adım 3: Özet + Üret ───────────────────────────────────
+  const renderReview = () => {
+    const autoTitle = title.trim() || (type === 'shorts' ? 'Kısa İçerik' : `${lessonName} — ${topic}`)
+    const typeDef = WIZARD_TYPES.find(t => t.type === type)
+    return (
+      <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
+          Aşağıdaki ayarlarla video üretimi başlatılacak. Onayladıktan sonra iş kuyruğa alınır.
+        </p>
+        <div style={{
+          border: '1.5px solid #e2e8f0', borderRadius: 14, overflow: 'hidden',
+        }}>
+          {[
+            { label: 'Başlık', value: autoTitle },
+            { label: 'Tip', value: typeDef?.label ?? type },
+            ...(type !== 'shorts' ? [
+              { label: 'Ders', value: lessonName },
+              { label: 'Konu', value: topic },
+            ] : []),
+            { label: 'Platform', value: format === '16:9' ? 'YouTube (16:9 yatay)' : 'Reels / Shorts (9:16 dikey)' },
+            { label: 'Hedef Süre', value: `${targetMinutes} dakika` },
+            ...(type === 'quiz' && showQuestions ? [{ label: 'Soru Girişi', value: 'Manuel (4 soru)' }] : []),
+            ...(description.trim() ? [{ label: 'Not', value: description.trim() }] : []),
+          ].map(({ label, value }, i) => (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'flex-start', gap: 16, padding: '12px 18px',
+              background: i % 2 === 0 ? '#f8fafc' : '#fff',
+              borderBottom: '1px solid #f1f5f9',
+            }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', width: 100, flexShrink: 0, paddingTop: 1, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                {label}
+              </span>
+              <span style={{ fontSize: 13, color: '#0f172a', fontWeight: 500 }}>{value}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Üretim süresi uyarısı */}
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px',
+          background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 10,
+        }}>
+          <AlertTriangle size={15} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }} />
+          <p style={{ margin: 0, fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
+            Üretim süresi video uzunluğuna göre <strong>3–15 dakika</strong> sürebilir.
+            Sayfadan ayrılabilirsiniz — iş arka planda devam eder ve tamamlandığında burada görünür.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{
       position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
@@ -422,195 +675,62 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
       zIndex: 1000, padding: 24,
     }}>
       <div style={{
-        background: '#fff', borderRadius: 20, width: '100%', maxWidth: 760,
-        maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+        background: '#fff', borderRadius: 20, width: '100%', maxWidth: 680,
+        maxHeight: '92vh', overflow: 'hidden', display: 'flex', flexDirection: 'column',
         boxShadow: '0 24px 64px rgba(0,0,0,0.2)',
       }}>
         {/* Header */}
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          padding: '20px 28px', borderBottom: '1px solid #f1f5f9',
+          padding: '20px 28px 0', borderBottom: '1px solid #f1f5f9', paddingBottom: 16,
         }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B2A4A' }}>
-            {step === 'config' ? 'Yeni Video Görevi' : 'Soruları Girin'}
-          </h2>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0B2A4A' }}>Yeni Video Görevi</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}>
-            <X size={22} />
+            <X size={20} />
           </button>
         </div>
 
+        {/* Adım göstergesi */}
+        <WizardIndicator step={step} />
+
+        {/* İçerik */}
         <div style={{ overflow: 'auto', flex: 1 }}>
-          {step === 'config' ? (
-            <div style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-              {/* Video tipi */}
-              <div>
-                <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>Video Tipi</label>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  {(['quiz', 'lesson', 'motivation', 'shorts'] as VideoType[]).map(t => (
-                    <button key={t} onClick={() => handleTypeChange(t)} style={{
-                      padding: '10px 20px', borderRadius: 10, cursor: 'pointer',
-                      border: `2px solid ${type === t ? '#0B2A4A' : '#e2e8f0'}`,
-                      background: type === t ? '#0B2A4A' : '#fff',
-                      color: type === t ? '#fff' : '#475569',
-                      fontSize: 14, fontWeight: 600, transition: 'all 0.15s',
-                    }}>
-                      {VIDEO_TYPE_LABELS[t]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Başlık (eğitim tiplerinde göster, diğerlerinde opsiyonel açıklama olarak) */}
-              {(cfg.needsLesson) && (
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>
-                    Başlık <span style={{ color: '#94a3b8', fontWeight: 400 }}>(boş bırakılırsa otomatik oluşturulur)</span>
-                  </label>
-                  <input value={title} onChange={e => setTitle(e.target.value)}
-                    placeholder={`Örn: ${type === 'quiz' ? 'SGS 2024 — KDV Soru Çözümü' : 'Vergi Hukuku — KDV Konu Anlatımı'}`}
-                    style={INPUT_STYLE} />
-                </div>
-              )}
-
-              {/* Ders + konu — sadece eğitim tiplerinde */}
-              {cfg.needsLesson && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>
-                      Ders Adı <span style={{ color: '#ef4444' }}>*</span>
-                    </label>
-                    <input value={lessonName} onChange={e => setLessonName(e.target.value)}
-                      placeholder="Örn: Vergi Hukuku" style={INPUT_STYLE} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>
-                      {cfg.topicLabel} <span style={{ color: '#ef4444' }}>*</span>
-                    </label>
-                    <input value={topic} onChange={e => setTopic(e.target.value)}
-                      placeholder="Örn: Katma Değer Vergisi" style={INPUT_STYLE} />
-                  </div>
-                </div>
-              )}
-
-              {/* Konu — motivasyon/shorts için opsiyonel */}
-              {!cfg.needsLesson && (
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>
-                    {cfg.topicLabel}
-                  </label>
-                  <input value={topic} onChange={e => setTopic(e.target.value)}
-                    placeholder={
-                      type === 'motivation'
-                        ? 'Örn: Hedeflerine ulaşmak için vazgeçmemenin önemi'
-                        : 'Örn: Vergi, kariyer, yapay zeka...'
-                    }
-                    style={INPUT_STYLE} />
-                </div>
-              )}
-
-              {/* Açıklama / Not — tüm tipler için opsiyonel */}
-              <div>
-                <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>
-                  Açıklama / Yönetmen Notu
-                  <span style={{ color: '#94a3b8', fontWeight: 400 }}> — opsiyonel</span>
-                </label>
-                <textarea
-                  value={description} onChange={e => setDescription(e.target.value)}
-                  placeholder={cfg.descriptionPlaceholder}
-                  rows={3}
-                  style={{
-                    ...INPUT_STYLE, resize: 'vertical', lineHeight: 1.6,
-                    color: '#0f172a',
-                  }}
-                />
-              </div>
-
-              {/* Format + süre */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>Format</label>
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    {(['16:9', '9:16'] as VideoFormat[]).map(f => (
-                      <button key={f} onClick={() => setFormat(f)} style={{
-                        flex: 1, padding: '10px', borderRadius: 10, cursor: 'pointer',
-                        border: `2px solid ${format === f ? '#0B2A4A' : '#e2e8f0'}`,
-                        background: format === f ? '#0B2A4A' : '#fff',
-                        color: format === f ? '#fff' : '#475569',
-                        fontSize: 13, fontWeight: 600,
-                      }}>
-                        {f === '16:9' ? '16:9 (Yatay)' : '9:16 (Dikey)'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>
-                    Hedef Süre (dakika)
-                  </label>
-                  <input type="number" min={1} max={60}
-                    value={targetMinutes} onChange={e => setTargetMinutes(Number(e.target.value))}
-                    style={{ ...INPUT_STYLE }} />
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* Sorular adımı — yalnızca quiz tipi */
-            <div style={{ padding: 28 }}>
-              <p style={{ margin: '0 0 20px', fontSize: 14, color: '#64748b' }}>
-                Soruları girin. Boş bırakırsanız backend konuya göre otomatik oluşturur.
-              </p>
-              {questions?.map((q, qi) => (
-                <div key={qi} style={{ border: '1.5px solid #e2e8f0', borderRadius: 14, padding: 20, marginBottom: 16 }}>
-                  <p style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#0B2A4A' }}>Soru {qi + 1}</p>
-                  <textarea value={q.text} onChange={e => updateQuestion(qi, 'text', e.target.value)}
-                    placeholder="Soru metni..." rows={2}
-                    style={{ ...INPUT_STYLE, resize: 'vertical', marginBottom: 10 }} />
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
-                    {q.options.map((opt, oi) => (
-                      <div key={opt.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{
-                          width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-                          background: q.correct_label === opt.label ? '#10b981' : '#0B2A4A',
-                          color: '#fff', fontSize: 13, fontWeight: 700,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                        }} onClick={() => updateQuestion(qi, 'correct_label', opt.label)}>
-                          {opt.label}
-                        </span>
-                        <input value={opt.text} onChange={e => updateOption(qi, oi, e.target.value)}
-                          placeholder={`${opt.label} şıkkı...`}
-                          style={{
-                            flex: 1, border: `1.5px solid ${q.correct_label === opt.label ? '#10b981' : '#e2e8f0'}`,
-                            borderRadius: 8, padding: '8px 12px', fontSize: 14, outline: 'none', color: '#0f172a',
-                          }} />
-                      </div>
-                    ))}
-                  </div>
-                  <input value={q.explanation ?? ''} onChange={e => updateQuestion(qi, 'explanation', e.target.value)}
-                    placeholder="Doğru cevabın açıklaması (opsiyonel)..."
-                    style={{ ...INPUT_STYLE, fontSize: 13 }} />
-                </div>
-              ))}
-            </div>
-          )}
+          {step === 'content' && renderContent()}
+          {step === 'format'  && renderFormat()}
+          {step === 'review'  && renderReview()}
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '16px 28px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-          {step === 'questions' && (
-            <Button variant="secondary" onClick={() => setStep('config')}>Geri</Button>
-          )}
-          {type === 'quiz' && step === 'config' ? (
-            <Button onClick={() => { if (validate()) setStep('questions') }}>
-              Soruları Gir <ChevronRight size={16} />
-            </Button>
-          ) : (
-            <Button onClick={handleSubmit} disabled={loading}>
-              {loading
-                ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Oluşturuluyor...</>
-                : 'Video Görevi Başlat'}
-            </Button>
-          )}
+        <div style={{
+          padding: '14px 28px', borderTop: '1px solid #f1f5f9',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+        }}>
+          <div>
+            {step !== 'content' && (
+              <Button variant="secondary" onClick={() => setStep(step === 'review' ? 'format' : 'content')}>
+                Geri
+              </Button>
+            )}
+          </div>
+          <div>
+            {step === 'content' && (
+              <Button onClick={() => { if (validateContent()) setStep('format') }}>
+                Format Seç <ChevronRight size={15} />
+              </Button>
+            )}
+            {step === 'format' && (
+              <Button onClick={() => setStep('review')}>
+                Özeti Gör <ChevronRight size={15} />
+              </Button>
+            )}
+            {step === 'review' && (
+              <Button onClick={handleSubmit} disabled={loading}>
+                {loading
+                  ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Başlatılıyor...</>
+                  : <><Film size={14} /> Video Görevi Başlat</>}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>

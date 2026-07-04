@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import DailyBriefCard from '@/components/dashboard/DailyBriefCard'
 import { dashboardService, type DashboardData } from '@/services/dashboard.service'
+import Link from 'next/link'
 import {
   FileText, Users, Video, Database, AlertCircle,
-  Clock, CheckCircle2, TrendingUp, GraduationCap
+  Clock, CheckCircle2, TrendingUp, GraduationCap,
+  Upload, Film, ArrowRight,
 } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import { useAuth } from '@/hooks/useAuth'
@@ -96,6 +98,42 @@ export default function DashboardPage() {
               ? `Dikkat: ${alerts.join(' · ')}`
               : 'Tüm sistemler çalışıyor.'}
           </p>
+        </div>
+
+        {/* Hızlı Akışlar */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Link href="/knowledge" className="group relative bg-surface-50 border border-surface-200 hover:border-blue-500/40 rounded-xl p-4 transition-all duration-150 hover:bg-blue-500/5">
+            <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center mb-3">
+              <Upload size={16} />
+            </div>
+            <p className="text-sm font-semibold text-white">PDF Yükle</p>
+            <p className="text-xs text-gray-500 mt-0.5">Bilgi tabanına doküman ekle</p>
+            <ArrowRight size={13} className="absolute top-4 right-4 text-gray-600 group-hover:text-blue-400 transition-colors" />
+          </Link>
+
+          <Link href="/video" className="group relative bg-surface-50 border border-surface-200 hover:border-brand-500/40 rounded-xl p-4 transition-all duration-150 hover:bg-brand-500/5">
+            <div className="w-8 h-8 rounded-lg bg-brand-500/10 text-brand-400 flex items-center justify-center mb-3">
+              <Film size={16} />
+            </div>
+            <p className="text-sm font-semibold text-white">Video Üret</p>
+            <p className="text-xs text-gray-500 mt-0.5">Konu anlatımı veya soru çözümü</p>
+            <ArrowRight size={13} className="absolute top-4 right-4 text-gray-600 group-hover:text-brand-400 transition-colors" />
+          </Link>
+
+          <Link href="/video" className="group relative bg-surface-50 border border-surface-200 hover:border-orange-500/40 rounded-xl p-4 transition-all duration-150 hover:bg-orange-500/5">
+            {s && s.pending_content > 0 && (
+              <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-orange-400 animate-pulse" />
+            )}
+            <div className="w-8 h-8 rounded-lg bg-orange-500/10 text-orange-400 flex items-center justify-center mb-3">
+              <Clock size={16} />
+            </div>
+            <p className="text-sm font-semibold text-white">Onay Bekleyen</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {s?.pending_content
+                ? <><span className="text-orange-400 font-medium">{s.pending_content}</span> video inceleme bekliyor</>
+                : 'İnceleme bekleyen video yok'}
+            </p>
+          </Link>
         </div>
 
         {/* KPI Izgarası */}
