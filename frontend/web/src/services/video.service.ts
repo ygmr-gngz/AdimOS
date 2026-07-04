@@ -2,13 +2,14 @@ import apiClient from '@/lib/api-client'
 
 // ── Tipler ────────────────────────────────────────────────────
 
-export type VideoType = 'quiz' | 'lesson' | 'shorts' | 'motivation'
+export type VideoType = 'quiz' | 'lesson' | 'shorts' | 'motivation' | 'infographic'
 export type VideoFormat = '16:9' | '9:16'
 export type VideoStatus =
   | 'draft'
   | 'pending'
   | 'scripting'
   | 'tts_generating'
+  | 'warmup_pinging'
   | 'rendering'
   | 'ready_for_review'
   | 'approved'
@@ -17,6 +18,7 @@ export type VideoStatus =
   | 'published'
   | 'rejected'
   | 'failed'
+  | 'archived'
 
 export interface VideoScene {
   id: string
@@ -55,6 +57,8 @@ export interface CreateVideoPayload {
   description?: string
   format: VideoFormat
   target_duration_minutes?: number
+  pre_storyboard?: Record<string, unknown>
+  infographic_template?: string
   questions?: {
     text: string
     options: { label: string; text: string }[]
@@ -70,6 +74,7 @@ export const VIDEO_STATUS_LABELS: Record<VideoStatus, string> = {
   pending: 'Bekliyor',
   scripting: 'Senaryo yazılıyor',
   tts_generating: 'Ses üretiliyor',
+  warmup_pinging: 'Render servisi hazırlanıyor',
   rendering: 'Video oluşturuluyor',
   ready_for_review: 'İnceleme bekliyor',
   approved: 'Onaylandı',
@@ -78,6 +83,7 @@ export const VIDEO_STATUS_LABELS: Record<VideoStatus, string> = {
   published: 'Yayınlandı',
   rejected: 'Reddedildi',
   failed: 'Hata',
+  archived: 'Arşivlendi',
 }
 
 export const VIDEO_STATUS_COLORS: Record<VideoStatus, string> = {
@@ -85,6 +91,7 @@ export const VIDEO_STATUS_COLORS: Record<VideoStatus, string> = {
   pending: '#94a3b8',
   scripting: '#f59e0b',
   tts_generating: '#f59e0b',
+  warmup_pinging: '#0ea5e9',
   rendering: '#3b82f6',
   ready_for_review: '#8b5cf6',
   approved: '#10b981',
@@ -93,6 +100,7 @@ export const VIDEO_STATUS_COLORS: Record<VideoStatus, string> = {
   published: '#059669',
   rejected: '#ef4444',
   failed: '#ef4444',
+  archived: '#64748b',
 }
 
 export const VIDEO_TYPE_LABELS: Record<VideoType, string> = {
@@ -100,6 +108,7 @@ export const VIDEO_TYPE_LABELS: Record<VideoType, string> = {
   lesson: 'Ders Anlatımı',
   shorts: 'Reels / Shorts',
   motivation: 'Motivasyon',
+  infographic: 'Görsel Post',
 }
 
 // ── Service ───────────────────────────────────────────────────
@@ -137,6 +146,15 @@ const videoService = {
   async regenerateJob(jobId: string): Promise<VideoJob> {
     const { data } = await apiClient.post(`/video/jobs/${jobId}/regenerate`)
     return data
+  },
+
+  async renderHealth(): Promise<{ circuit_open: boolean; consecutive_failures: number; threshold: number }> {
+    const { data } = await apiClient.get('/video/render-health')
+    return data
+  },
+
+  async resetCircuit(): Promise<void> {
+    await apiClient.post('/video/render-health/reset')
   },
 }
 

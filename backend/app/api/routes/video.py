@@ -21,6 +21,11 @@ _WATCHDOG_MINUTES = 30
 import threading
 _pipeline_semaphore = threading.Semaphore(_MAX_CONCURRENT)
 
+# ── Remotion devre kesici ─────────────────────────────────────
+_remotion_lock = threading.Lock()
+_remotion_consecutive_failures = 0
+_CIRCUIT_OPEN_THRESHOLD = 3
+
 
 # ── Pydantic modeller ─────────────────────────────────────────
 
@@ -35,7 +40,7 @@ class QuizQuestion(BaseModel):
     explanation: Optional[str] = None
 
 class CreateVideoPayload(BaseModel):
-    type: str                              # quiz | lesson | shorts | motivation
+    type: str                              # quiz | lesson | shorts | motivation | infographic
     title: str
     lesson_name: Optional[str] = None
     topic: Optional[str] = None
@@ -43,6 +48,8 @@ class CreateVideoPayload(BaseModel):
     format: str = "16:9"
     target_duration_minutes: Optional[int] = 12
     questions: Optional[List[QuizQuestion]] = None
+    pre_storyboard: Optional[dict] = None         # infografik önceden üretilmiş storyboard
+    infographic_template: Optional[str] = None    # card_grid | comparison | process
 
 class RejectBody(BaseModel):
     reason: Optional[str] = None
@@ -89,6 +96,30 @@ def _get_brand() -> dict:
             "background_color": "#FAF7F0", "font_heading": "Playfair Display",
             "font_body": "Lato",
         }
+
+
+# ── Remotion warm-up ─────────────────────────────────────────
+
+def _remotion_warm_up(url: str, job_id: str) -> bool:
+    """
+    Railway App Sleeping için warm-up: giderek artan timeout ile dener.
+    Toplam max ~90 sn. True → yanıt verdi.
+    """
+    import httpx as _httpx
+    attempts = [(15, 0), (30, 5), (45, 10)]  # (timeout_sn, önceki_bekleme_sn)
+    for timeout, pre_sleep in attempts:
+        if pre_sleep:
+            logger.info(f"[video] {job_id[:8]} warm-up {pre_sleep}s bekliyor...")
+            time.sleep(pre_sleep)
+        try:
+            r = _httpx.get(f"{url}/health", timeout=float(timeout))
+            if r.status_code == 200:
+                logger.info(f"[video] {job_id[:8]} Remotion yanıt verdi (timeout={timeout}s)")
+                return True
+            logger.warning(f"[video] {job_id[:8]} Remotion health HTTP {r.status_code}")
+        except Exception as exc:
+            logger.warning(f"[video] {job_id[:8]} warm-up timeout={timeout}s: {exc}")
+    return False
 
 
 # ── TTS — retry + pronunciation + cost tracking ───────────────
@@ -303,6 +334,21 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
     total_tts_chars = 0
 
     try:
+        # ── 0. İnfografik kısayolu (TTS/Render yok) ───────────────
+        if payload.type == "infographic":
+            storyboard = payload.pre_storyboard or {}
+            if not storyboard:
+                # Bilgi Merkezi RAG + LLM ile otomatik üret
+                from app.modules.content.infographic_generator import generate_infographic_storyboard
+                topic = payload.topic or payload.title or "Genel Muhasebe"
+                template = payload.infographic_template or "card_grid"
+                storyboard = generate_infographic_storyboard(topic, template=template)
+                logger.info(f"[video] {job_id[:8]} infografik storyboard üretildi topic='{topic}'")
+            sb.table("video_jobs").update({"storyboard": storyboard}).eq("id", job_id).execute()
+            _set_status(job_id, "ready_for_review")
+            logger.info(f"[video] {job_id[:8]} infografik hazır (render yok)")
+            return
+
         # ── 1. Senaryo ──────────────────────────────────────────
         _set_status(job_id, "scripting")
         logger.info(f"[video] {job_id} senaryo oluşturuluyor tip={payload.type}")
@@ -318,6 +364,29 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 brand=brand,
                 description=payload.description or "",
             )
+        elif payload.type == "motivation":
+            from app.modules.content.motivation_generator import generate_motivation_storyboard
+            platform = "reels" if payload.format == "9:16" else "shorts"
+            tone = payload.description or "sıcak ve samimi"
+            topic_text = payload.topic or payload.title
+            result = generate_motivation_storyboard(topic_text, platform, tone)
+            scenes = []
+            for i, scene in enumerate(result.get("scenes", []), 1):
+                narration = scene.get("narration", "")
+                scenes.append({
+                    "id": i, "component": "MotivationScene", "duration_seconds": 15,
+                    "message": narration or " ".join(scene.get("display_lines", [])),
+                    "message_author": "@adimmusavir",
+                    "voice_text": narration,
+                })
+            storyboard = {
+                "video_type": "motivation",
+                "title": result.get("title", payload.title),
+                "format": payload.format,
+                "language": "tr",
+                "brand": brand,
+                "scenes": scenes,
+            }
         else:
             topic_text = payload.topic or payload.title
             desc_text = payload.description or ""
@@ -442,24 +511,46 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
             })
             return
 
+        global _remotion_consecutive_failures
+        with _remotion_lock:
+            circuit_open = _remotion_consecutive_failures >= _CIRCUIT_OPEN_THRESHOLD
+            fail_count = _remotion_consecutive_failures
+
+        if circuit_open:
+            logger.warning(f"[video] {job_id[:8]} devre kesici açık ({fail_count} ardışık hata)")
+            _set_status(job_id, "ready_for_review", {
+                "error_message": (
+                    f"Render servisi yanıt vermiyor (devre kesici: {fail_count} ardışık hata). "
+                    "Ses sahneleri hazır — servis düzelince 'Yeniden Dene' ile render başlatın."
+                )
+            })
+            return
+
+        # Warm-up
+        _set_status(job_id, "warmup_pinging")
+        logger.info(f"[video] {job_id[:8]} Remotion warm-up başlıyor ({remotion_url})")
+        service_up = _remotion_warm_up(remotion_url, job_id)
+
+        if not service_up:
+            with _remotion_lock:
+                _remotion_consecutive_failures += 1
+                fail_count = _remotion_consecutive_failures
+            logger.error(f"[video] {job_id[:8]} Remotion 90s içinde yanıt vermedi (ardışık: {fail_count})")
+            _set_status(job_id, "failed", {
+                "error_message": (
+                    "Render servisi 90 saniye boyunca yanıt vermedi. "
+                    "Railway servisinin ayakta olduğundan emin olup 'Yeniden Dene' ile tekrar başlatın."
+                )
+            })
+            return
+
+        with _remotion_lock:
+            _remotion_consecutive_failures = 0
+
         _set_status(job_id, "rendering")
-        logger.info(f"[video] {job_id} Remotion render tetikleniyor — {remotion_url}")
+        logger.info(f"[video] {job_id[:8]} Remotion render tetikleniyor")
 
         try:
-            health_ok = False
-            try:
-                h = httpx.get(f"{remotion_url}/health", timeout=5)
-                health_ok = h.status_code == 200
-                logger.info(f"[video] {job_id} Remotion health: {h.status_code}")
-            except Exception as he:
-                logger.warning(f"[video] {job_id} Health check başarısız: {he}")
-
-            if not health_ok:
-                raise Exception(
-                    f"Remotion sunucusuna ulaşılamıyor ({remotion_url}). "
-                    "Railway servis durumunu kontrol edin."
-                )
-
             resp = httpx.post(
                 f"{remotion_url}/render",
                 json={"job_id": job_id, "storyboard": storyboard},
@@ -467,14 +558,16 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
             )
             if resp.status_code != 200:
                 raise Exception(f"Render başarısız (HTTP {resp.status_code}): {resp.text[:200]}")
-            logger.info(f"[video] {job_id} Remotion render başlatıldı: {resp.json()}")
+            logger.info(f"[video] {job_id[:8]} Remotion render başlatıldı: {resp.json()}")
 
         except Exception as e:
-            logger.error(f"[video] {job_id} Remotion render hatası: {e}")
+            with _remotion_lock:
+                _remotion_consecutive_failures += 1
+            logger.error(f"[video] {job_id[:8]} Remotion render hatası: {e}")
             _set_status(job_id, "failed", {
                 "error_message": (
-                    f"Render sunucusu başarısız: {str(e)[:300]} — "
-                    "Ses sahneleri hazır. Railway servisini kontrol edip yeniden deneyin."
+                    f"Render başarısız: {str(e)[:300]} — "
+                    "Ses sahneleri hazır. Railway servisini kontrol edip 'Yeniden Dene' ile tekrar başlatın."
                 )
             })
 
@@ -816,3 +909,182 @@ def render_callback(body: RenderCallback):
         })
         logger.error(f"[video] {body.job_id} render hatası: {body.error}")
     return {"ok": True}
+
+
+# ── Render health / devre kesici ──────────────────────────────
+
+@router.get("/render-health")
+def render_health():
+    """Remotion devre kesici durumunu döndür."""
+    with _remotion_lock:
+        failures = _remotion_consecutive_failures
+    remotion_url = settings.REMOTION_URL
+    return {
+        "circuit_open": failures >= _CIRCUIT_OPEN_THRESHOLD,
+        "consecutive_failures": failures,
+        "threshold": _CIRCUIT_OPEN_THRESHOLD,
+        "remotion_url_configured": bool(remotion_url),
+        "railway_config_tips": [
+            "App Sleeping'i kapat: Railway → Service → Settings → Sleep Policy → Never Sleep",
+            "Restart policy 'on-failure' yap: Settings → Deploy → Restart Policy → On Failure",
+            "Health check: /health endpoint tanımla",
+            "RAM: Remotion render yoğundur, en az 512MB-1GB öner",
+        ],
+    }
+
+
+@router.post("/render-health/reset")
+def render_health_reset():
+    """Devre kesiciyi manuel sıfırla (servis düzeldikten sonra)."""
+    global _remotion_consecutive_failures
+    with _remotion_lock:
+        old = _remotion_consecutive_failures
+        _remotion_consecutive_failures = 0
+    logger.info(f"[video] devre kesici sıfırlandı (eski değer: {old})")
+    return {"ok": True, "reset_from": old}
+
+
+# ── GÖREV 4: Cleanup altyapısı ────────────────────────────────
+
+@router.get("/cleanup/inventory")
+def cleanup_inventory():
+    """Video işlerini tara, sınıflandır ve say."""
+    from datetime import datetime, timezone, timedelta
+    sb = get_supabase_client()
+    now = datetime.now(timezone.utc)
+    stuck_cutoff = (now - timedelta(hours=4)).isoformat()
+
+    all_jobs = (
+        sb.table("video_jobs")
+        .select("id, status, video_url, created_at, file_size_bytes, type")
+        .order("created_at", desc=True)
+        .execute().data or []
+    )
+
+    active_statuses = {"scripting", "tts_generating", "warmup_pinging", "rendering", "pending"}
+
+    counts = {
+        "completed_healthy": 0,
+        "completed_broken": 0,
+        "failed": 0,
+        "stuck": 0,
+        "archived": 0,
+        "total": len(all_jobs),
+    }
+    for job in all_jobs:
+        status = job["status"]
+        if status == "archived":
+            counts["archived"] += 1
+        elif status in ("approved", "published") and job.get("video_url"):
+            counts["completed_healthy"] += 1
+        elif status in ("approved", "published") and not job.get("video_url"):
+            counts["completed_broken"] += 1
+        elif status == "failed":
+            counts["failed"] += 1
+        elif status in active_statuses and job["created_at"] < stuck_cutoff:
+            counts["stuck"] += 1
+
+    return {"inventory": counts, "jobs_sample": all_jobs[:20]}
+
+
+@router.post("/cleanup/dry-run")
+def cleanup_dry_run():
+    """
+    Dry-run: silinecek/arşivlenecek işleri listele, gerçek işlem yapma.
+    Onaydan önce kullanıcıya sun.
+    """
+    from datetime import datetime, timezone, timedelta
+    sb = get_supabase_client()
+    now = datetime.now(timezone.utc)
+    stuck_cutoff = (now - timedelta(hours=4)).isoformat()
+    old_failed_cutoff = (now - timedelta(days=7)).isoformat()
+
+    to_archive = []  # iş kayıtları arşivlenecek (silinmiyor)
+    to_delete_tts = 0  # silme tahmini (TTS dosyaları)
+
+    # 7 günden eski failed işler → arşiv
+    old_failed = (
+        sb.table("video_jobs").select("id, title, status, created_at")
+        .eq("status", "failed").lt("created_at", old_failed_cutoff)
+        .execute().data or []
+    )
+    for job in old_failed:
+        to_archive.append({
+            "id": job["id"], "title": job.get("title", "?"),
+            "reason": f"7+ gün önce başarısız", "status": job["status"],
+        })
+        to_delete_tts += 1
+
+    # 4+ saat stuck işler → arşiv
+    active_statuses = ["scripting", "tts_generating", "warmup_pinging", "rendering", "pending"]
+    stuck_jobs = (
+        sb.table("video_jobs").select("id, title, status, created_at")
+        .in_("status", active_statuses).lt("updated_at", stuck_cutoff)
+        .execute().data or []
+    )
+    for job in stuck_jobs:
+        to_archive.append({
+            "id": job["id"], "title": job.get("title", "?"),
+            "reason": f"4+ saat takılı ({job['status']})", "status": job["status"],
+        })
+        to_delete_tts += 1
+
+    return {
+        "dry_run": True,
+        "to_archive_count": len(to_archive),
+        "estimated_tts_files_to_delete": to_delete_tts,
+        "items": to_archive,
+        "note": "Onaylamak için POST /video/cleanup/apply çağırın.",
+    }
+
+
+@router.post("/cleanup/apply")
+def cleanup_apply():
+    """
+    Temizliği uygula: stuck/eski-failed işleri 'archived' yap,
+    orta TTS dosyalarını temizle.
+    """
+    from datetime import datetime, timezone, timedelta
+    sb = get_supabase_client()
+    now = datetime.now(timezone.utc)
+    stuck_cutoff = (now - timedelta(hours=4)).isoformat()
+    old_failed_cutoff = (now - timedelta(days=7)).isoformat()
+    archived_at = now.isoformat()
+    archived_count = 0
+
+    # Eski failed → archived
+    old_failed_ids = [
+        r["id"] for r in (
+            sb.table("video_jobs").select("id")
+            .eq("status", "failed").lt("created_at", old_failed_cutoff)
+            .execute().data or []
+        )
+    ]
+    if old_failed_ids:
+        sb.table("video_jobs").update({
+            "status": "archived", "archived_at": archived_at,
+        }).in_("id", old_failed_ids).execute()
+        archived_count += len(old_failed_ids)
+
+    # Stuck → archived
+    active_statuses = ["scripting", "tts_generating", "warmup_pinging", "rendering", "pending"]
+    stuck_ids = [
+        r["id"] for r in (
+            sb.table("video_jobs").select("id")
+            .in_("status", active_statuses).lt("updated_at", stuck_cutoff)
+            .execute().data or []
+        )
+    ]
+    if stuck_ids:
+        sb.table("video_jobs").update({
+            "status": "archived", "archived_at": archived_at,
+            "error_message": "Otomatik temizlik: 4+ saat takılı kaldı",
+        }).in_("id", stuck_ids).execute()
+        archived_count += len(stuck_ids)
+
+    logger.info(f"[video] cleanup/apply: {archived_count} iş arşivlendi")
+    return {
+        "archived": archived_count,
+        "archived_at": archived_at,
+        "message": f"{archived_count} iş arşivlendi. Onaylı/yayınlanmış içeriklere dokunulmadı.",
+    }

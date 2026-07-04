@@ -63,41 +63,39 @@ def _background_generate(content_id: str, fn, *args):
         push_notification("content_error", "İçerik üretim hatası", f"Üretim başarısız: {str(e)[:120]}")
 
 
-# ── Generate endpoints
+# ── Generate endpoints (eski otomasyon kaynakları — SADECE Video Prodüksiyon'dan çağrılabilir)
+# GÖREV 1: Bu endpointler İçerik Otomasyonu'ndan kaldırıldı.
+# Frontend artık bu endpointleri çağırmıyor; koruma için 403 dönülür.
+
+_AUTOMATION_DISABLED_MSG = (
+    "Bu endpoint devre dışı bırakıldı. İçerik Otomasyonu artık kendi video üretimi yapmaz — "
+    "Video Prodüksiyon (/video/create) kullanın."
+)
+
 
 @router.post("/video/generate")
 def generate_video(req: ContentRequest, bg: BackgroundTasks):
-    row = create_content(req.topic, "video")
-    bg.add_task(_background_generate, row["id"], create_normal_video, req.topic, req.duration_minutes, req.category)
-    return {"content_id": row["id"], "status": "generating"}
+    raise HTTPException(status_code=403, detail=_AUTOMATION_DISABLED_MSG)
 
 
 @router.post("/short/generate")
 def generate_short(req: ContentRequest, bg: BackgroundTasks):
-    row = create_content(req.topic, "short")
-    bg.add_task(_background_generate, row["id"], create_short_video, req.topic, req.category)
-    return {"content_id": row["id"], "status": "generating"}
+    raise HTTPException(status_code=403, detail=_AUTOMATION_DISABLED_MSG)
 
 
 @router.post("/post/generate")
 def generate_post_endpoint(req: ContentRequest, bg: BackgroundTasks):
-    row = create_content(req.topic, "post")
-    bg.add_task(_background_generate, row["id"], create_post, req.topic)
-    return {"content_id": row["id"], "status": "generating"}
+    raise HTTPException(status_code=403, detail=_AUTOMATION_DISABLED_MSG)
 
 
 @router.post("/question-solution/generate")
 def generate_question_solution(req: ContentRequest, bg: BackgroundTasks):
-    row = create_content(req.topic, "question_solution")
-    bg.add_task(_background_generate, row["id"], create_question_solution_video, req.topic, req.question_text, req.category)
-    return {"content_id": row["id"], "status": "generating"}
+    raise HTTPException(status_code=403, detail=_AUTOMATION_DISABLED_MSG)
 
 
 @router.post("/topic-explanation/generate")
 def generate_topic_explanation(req: ContentRequest, bg: BackgroundTasks):
-    row = create_content(req.topic, "topic_explanation")
-    bg.add_task(_background_generate, row["id"], create_topic_explanation_video, req.topic, req.category)
-    return {"content_id": row["id"], "status": "generating"}
+    raise HTTPException(status_code=403, detail=_AUTOMATION_DISABLED_MSG)
 
 
 # ── Motivasyon videosu

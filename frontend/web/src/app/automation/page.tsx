@@ -5,13 +5,11 @@ import AppShell from '@/components/layout/AppShell'
 import ContentCard from '@/components/automation/ContentCard'
 import ContentEditModal from '@/components/automation/ContentEditModal'
 import CleanupReportModal from '@/components/automation/CleanupReportModal'
-import GenerateContentModal from '@/components/automation/GenerateContentModal'
 import VideoReviewModal from '@/components/automation/VideoReviewModal'
-import Button from '@/components/ui/Button'
 import { automationService } from '@/services/automation.service'
 import apiClient from '@/lib/api-client'
-import type { ContentPiece, GenerateContentRequest } from '@/types/automation'
-import { Plus, Video, Film, Filter, Trash2 } from 'lucide-react'
+import type { ContentPiece } from '@/types/automation'
+import { Video, Film, Filter, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { clsx } from 'clsx'
 
@@ -26,7 +24,6 @@ const FILTERS = [
 export default function AutomationPage() {
   const [content, setContent] = useState<ContentPiece[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [isModalOpen, setIsModalOpen] = useState(false)
   const [editModal, setEditModal] = useState<{ id: string; title: string } | null>(null)
   const [cleanupOpen, setCleanupOpen] = useState(false)
   const [reviewContent, setReviewContent] = useState<ContentPiece | null>(null)
@@ -57,12 +54,6 @@ export default function AutomationPage() {
     fetchContent()
     return () => { if (pollRef.current) clearTimeout(pollRef.current) }
   }, [fetchContent])
-
-  const handleGenerate = async (request: GenerateContentRequest) => {
-    const piece = await automationService.generateContent(request)
-    setContent((prev) => [piece, ...prev])
-    toast.success('İçerik üretildi! Onaylamak için bekliyor.')
-  }
 
   const handleApprove = async (id: string) => {
     try {
@@ -152,7 +143,7 @@ export default function AutomationPage() {
           <div>
             <h2 className="text-xl font-bold text-white mb-1">İçerik Otomasyonu</h2>
             <p className="text-sm text-gray-500">
-              YouTube, Instagram ve Shorts için AI içerik üretin — onay verin — otomatik yayınlayın
+              Onaylanan içerikler burada toplanır — yayın zamanlaması ve platform yönetimi
             </p>
           </div>
           <div className="flex gap-2">
@@ -163,9 +154,6 @@ export default function AutomationPage() {
             >
               <Trash2 size={13} /> Sistem Temizliği
             </button>
-            <Button onClick={() => setIsModalOpen(true)}>
-              <Plus size={16} /> İçerik Üret
-            </Button>
           </div>
         </div>
 
@@ -225,10 +213,9 @@ export default function AutomationPage() {
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <Video size={48} className="text-gray-600 mb-4" />
             <p className="text-sm font-medium text-gray-400">Henüz içerik yok</p>
-            <p className="text-xs text-gray-600 mt-1 mb-4">İçerik Üret butonuna tıklayarak başlayın</p>
-            <Button onClick={() => setIsModalOpen(true)} variant="secondary">
-              <Plus size={15} /> İlk İçeriği Oluştur
-            </Button>
+            <p className="text-xs text-gray-600 mt-1">
+              Video Prodüksiyon&apos;da üretilen ve onaylanan içerikler burada görünür
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -249,12 +236,6 @@ export default function AutomationPage() {
           </div>
         )}
       </div>
-
-      <GenerateContentModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onGenerate={handleGenerate}
-      />
 
       {editModal && (
         <ContentEditModal

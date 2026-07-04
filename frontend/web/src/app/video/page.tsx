@@ -7,7 +7,8 @@ import Button from '@/components/ui/Button'
 import toast from 'react-hot-toast'
 import {
   Film, Plus, X, ChevronRight, CheckCircle, XCircle,
-  Clock, RefreshCw, AlertTriangle, Loader2,
+  Clock, RefreshCw, AlertTriangle, Loader2, Image, Zap,
+  LayoutGrid, ArrowLeftRight, ListOrdered,
 } from 'lucide-react'
 import videoService, {
   VideoJob, VideoScene, VideoStatus, VideoType, VideoFormat,
@@ -19,7 +20,7 @@ import videoService, {
 function StatusBadge({ status }: { status: VideoStatus }) {
   const label = VIDEO_STATUS_LABELS[status]
   const color = VIDEO_STATUS_COLORS[status]
-  const isSpinning = ['scripting', 'tts_generating', 'rendering'].includes(status)
+  const isSpinning = ['scripting', 'tts_generating', 'warmup_pinging', 'rendering'].includes(status)
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -46,15 +47,17 @@ const PIPELINE_STEPS: { key: VideoStatus; label: string }[] = [
 ]
 
 const STATUS_ORDER: VideoStatus[] = [
-  'pending', 'scripting', 'tts_generating', 'rendering', 'ready_for_review', 'approved', 'rejected', 'failed',
+  'pending', 'scripting', 'tts_generating', 'warmup_pinging', 'rendering', 'ready_for_review', 'approved', 'rejected', 'failed', 'archived',
 ]
 
 function PipelineBar({ status }: { status: VideoStatus }) {
-  const currentIdx = STATUS_ORDER.indexOf(status)
+  // warmup_pinging → Render adımını aktif göster
+  const effectiveStatus: VideoStatus = status === 'warmup_pinging' ? 'rendering' : status
+  const currentIdx = STATUS_ORDER.indexOf(effectiveStatus)
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
       {PIPELINE_STEPS.map((step, i) => {
-        const stepIdx = STATUS_ORDER.indexOf(step.key)
+        const stepIdx = STATUS_ORDER.indexOf(step.key === 'rendering' ? 'rendering' : step.key)
         const done = currentIdx > stepIdx
         const active = currentIdx === stepIdx
         const color = done ? '#10b981' : active ? '#3b82f6' : '#e2e8f0'
@@ -149,10 +152,19 @@ function PreviewModal({ job, onClose, onApprove, onReject }: {
               />
             ) : (
               <div style={{ textAlign: 'center', color: '#94a3b8' }}>
-                {['rendering', 'tts_generating', 'scripting'].includes(job.status) ? (
+                {['rendering', 'tts_generating', 'scripting', 'warmup_pinging'].includes(job.status) ? (
                   <>
                     <Loader2 size={48} style={{ animation: 'spin 1s linear infinite', marginBottom: 16 }} />
-                    <p style={{ fontSize: 16, margin: 0 }}>Video üretiliyor...</p>
+                    <p style={{ fontSize: 16, margin: 0 }}>
+                      {job.status === 'warmup_pinging'
+                        ? 'Render servisi hazırlanıyor...'
+                        : 'Video üretiliyor...'}
+                    </p>
+                    {job.status === 'warmup_pinging' && (
+                      <p style={{ fontSize: 13, color: '#0ea5e9', margin: '6px 0 0' }}>
+                        Railway render servisi uyanıyor, ~60 saniye bekleyin
+                      </p>
+                    )}
                     <PipelineBar status={job.status} />
                   </>
                 ) : (
@@ -292,15 +304,25 @@ type WizardStep = 'content' | 'format' | 'review'
 const QUIZ_OPTION_LABELS = ['A', 'B', 'C', 'D']
 
 const WIZARD_TYPES: { type: VideoType; label: string; desc: string }[] = [
-  { type: 'lesson', label: 'Konu Anlatımı', desc: 'Bir konuyu baştan sona anlatan eğitim videosu' },
-  { type: 'quiz',   label: 'Soru Çözümü',   desc: 'SGS soruları ile adım adım çözüm videosu' },
-  { type: 'shorts', label: 'Kısa İçerik',   desc: 'Instagram Reels / YouTube Shorts (≤60 sn)' },
+  { type: 'lesson',      label: 'Konu Anlatımı',  desc: 'Bir konuyu baştan sona anlatan eğitim videosu' },
+  { type: 'quiz',        label: 'Soru Çözümü',    desc: 'SGS soruları ile adım adım çözüm videosu' },
+  { type: 'shorts',      label: 'Kısa İçerik',    desc: 'Instagram Reels / YouTube Shorts (≤60 sn)' },
+  { type: 'motivation',  label: 'Motivasyon',     desc: '15-30 saniye motivasyon klibi, dikey format' },
+  { type: 'infographic', label: 'Görsel Post',    desc: 'Anında oluşturulan statik infografik — Remotion gerekmez' },
+]
+
+const INFOGRAPHIC_TEMPLATES: { value: string; label: string; desc: string }[] = [
+  { value: 'card_grid',  label: 'Kart Izgarası',  desc: 'Kategorilere ayrılmış bilgi kartları' },
+  { value: 'comparison', label: 'Karşılaştırma',  desc: 'İki kavramı yan yana karşılaştır' },
+  { value: 'process',    label: 'Süreç Adımları', desc: 'Adım adım süreç veya akış' },
 ]
 
 const TYPE_DEFAULTS: Partial<Record<VideoType, { format: VideoFormat; minutes: number }>> = {
-  lesson: { format: '16:9', minutes: 12 },
-  quiz:   { format: '16:9', minutes: 8  },
-  shorts: { format: '9:16', minutes: 1  },
+  lesson:      { format: '16:9', minutes: 12 },
+  quiz:        { format: '16:9', minutes: 8  },
+  shorts:      { format: '9:16', minutes: 1  },
+  motivation:  { format: '9:16', minutes: 1  },
+  infographic: { format: '9:16', minutes: 1  },
 }
 
 const INP: React.CSSProperties = {
@@ -348,6 +370,7 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
   const [type, setType] = useState<VideoType>('lesson')
   const [lessonName, setLessonName] = useState('')
   const [topic, setTopic] = useState('')
+  const [infographicTemplate, setInfographicTemplate] = useState('card_grid')
   const [showQuestions, setShowQuestions] = useState(false)
   const [questions, setQuestions] = useState<CreateVideoPayload['questions']>(
     Array.from({ length: 4 }, () => ({
@@ -387,26 +410,42 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
   }
 
   const validateContent = () => {
-    if (type !== 'shorts' && !lessonName.trim()) { toast.error('Ders adı zorunludur'); return false }
-    if (type !== 'shorts' && !topic.trim()) { toast.error('Konu zorunludur'); return false }
+    if (type === 'infographic' || type === 'motivation' || type === 'shorts') {
+      if (!topic.trim()) { toast.error('Konu zorunludur'); return false }
+      return true
+    }
+    if (!lessonName.trim()) { toast.error('Ders adı zorunludur'); return false }
+    if (!topic.trim()) { toast.error('Konu zorunludur'); return false }
     return true
   }
 
   const handleSubmit = async () => {
     setLoading(true)
     try {
-      const autoTitle = title.trim() || (type === 'shorts' ? 'Kısa İçerik' : `${lessonName} — ${topic}`)
+      let autoTitle = title.trim()
+      if (!autoTitle) {
+        if (type === 'shorts') autoTitle = 'Kısa İçerik'
+        else if (type === 'infographic') autoTitle = `${topic} — İnfografik`
+        else if (type === 'motivation') autoTitle = `${topic} — Motivasyon`
+        else autoTitle = `${lessonName} — ${topic}`
+      }
       const job = await videoService.createJob({
         type,
         title: autoTitle,
-        lesson_name: lessonName.trim() || undefined,
+        lesson_name: (type !== 'shorts' && type !== 'motivation' && type !== 'infographic')
+          ? (lessonName.trim() || undefined) : undefined,
         topic: topic.trim() || undefined,
         description: description.trim() || undefined,
         format,
         target_duration_minutes: targetMinutes,
+        infographic_template: type === 'infographic' ? infographicTemplate : undefined,
         questions: type === 'quiz' ? questions : undefined,
       })
-      toast.success('Video üretim görevi başlatıldı!')
+      if (type === 'infographic') {
+        toast.success('Görsel post oluşturuldu — incelemeye hazır!')
+      } else {
+        toast.success('Video üretim görevi başlatıldı!')
+      }
       onCreated(job)
       onClose()
     } catch {
@@ -438,7 +477,7 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
       </div>
 
       {/* Ders + Konu (lesson/quiz) */}
-      {type !== 'shorts' && (
+      {type !== 'shorts' && type !== 'motivation' && type !== 'infographic' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <div>
             <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>
@@ -467,6 +506,60 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
             placeholder="Örn: Vergi beyanname döneminde dikkat edilmesi gerekenler"
             style={INP} />
         </div>
+      )}
+
+      {/* Motivasyon — konu zorunlu */}
+      {type === 'motivation' && (
+        <div>
+          <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>
+            Motivasyon Konusu <span style={{ color: '#ef4444' }}>*</span>
+          </label>
+          <input value={topic} onChange={e => setTopic(e.target.value)}
+            placeholder="Örn: SGS sınavına son hafta motivasyonu"
+            style={INP} />
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: '#94a3b8' }}>
+            15-30 saniye, dikey format (9:16), kinetik tipografi
+          </p>
+        </div>
+      )}
+
+      {/* İnfografik — konu + şablon seçimi */}
+      {type === 'infographic' && (
+        <>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>
+              Konu <span style={{ color: '#ef4444' }}>*</span>
+            </label>
+            <input value={topic} onChange={e => setTopic(e.target.value)}
+              placeholder="Örn: KDV hesaplama yöntemleri"
+              style={INP} />
+          </div>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#475569', margin: '0 0 10px' }}>Şablon Seçin</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {INFOGRAPHIC_TEMPLATES.map(({ value, label, desc }) => {
+                const TemplateIcon = value === 'card_grid' ? LayoutGrid : value === 'comparison' ? ArrowLeftRight : ListOrdered
+                return (
+                  <button key={value} onClick={() => setInfographicTemplate(value)} style={{
+                    textAlign: 'left', padding: '12px 16px', borderRadius: 10, cursor: 'pointer',
+                    border: `2px solid ${infographicTemplate === value ? '#0B2A4A' : '#e2e8f0'}`,
+                    background: infographicTemplate === value ? '#0B2A4A' : '#fff',
+                    display: 'flex', alignItems: 'center', gap: 12,
+                  }}>
+                    <TemplateIcon size={18} color={infographicTemplate === value ? '#fff' : '#0B2A4A'} style={{ flexShrink: 0 }} />
+                    <div>
+                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: infographicTemplate === value ? '#fff' : '#0B2A4A' }}>{label}</p>
+                      <p style={{ margin: '2px 0 0', fontSize: 12, color: infographicTemplate === value ? 'rgba(255,255,255,0.6)' : '#94a3b8' }}>{desc}</p>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+            <p style={{ margin: '10px 0 0', fontSize: 12, color: '#0ea5e9', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Zap size={11} /> Bilgi Merkezi&apos;ndeki belgelerden otomatik içerik çekilerek anında oluşturulur
+            </p>
+          </div>
+        </>
       )}
 
       {/* Quiz sorular — katlanabilir */}
@@ -618,28 +711,42 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
   // ── Adım 3: Özet + Üret ───────────────────────────────────
   const renderReview = () => {
-    const autoTitle = title.trim() || (type === 'shorts' ? 'Kısa İçerik' : `${lessonName} — ${topic}`)
+    let autoTitle = title.trim()
+    if (!autoTitle) {
+      if (type === 'shorts') autoTitle = 'Kısa İçerik'
+      else if (type === 'infographic') autoTitle = `${topic} — İnfografik`
+      else if (type === 'motivation') autoTitle = `${topic} — Motivasyon`
+      else autoTitle = `${lessonName} — ${topic}`
+    }
     const typeDef = WIZARD_TYPES.find(t => t.type === type)
+    const templateDef = INFOGRAPHIC_TEMPLATES.find(t => t.value === infographicTemplate)
+    const rows = [
+      { label: 'Başlık', value: autoTitle },
+      { label: 'Tip', value: typeDef?.label ?? type },
+      ...(type !== 'shorts' && type !== 'motivation' && type !== 'infographic' ? [
+        { label: 'Ders', value: lessonName },
+        { label: 'Konu', value: topic },
+      ] : []),
+      ...(type === 'motivation' || type === 'infographic' ? [{ label: 'Konu', value: topic }] : []),
+      ...(type === 'infographic' ? [{ label: 'Şablon', value: templateDef?.label ?? infographicTemplate }] : []),
+      ...(type !== 'infographic' ? [
+        { label: 'Platform', value: format === '16:9' ? 'YouTube (16:9 yatay)' : 'Reels / Shorts (9:16 dikey)' },
+        { label: 'Hedef Süre', value: `${targetMinutes} dakika` },
+      ] : [{ label: 'Format', value: '9:16 dikey — statik görsel' }]),
+      ...(type === 'quiz' && showQuestions ? [{ label: 'Soru Girişi', value: 'Manuel (4 soru)' }] : []),
+      ...(description.trim() ? [{ label: 'Not', value: description.trim() }] : []),
+    ]
     return (
       <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
-          Aşağıdaki ayarlarla video üretimi başlatılacak. Onayladıktan sonra iş kuyruğa alınır.
+          {type === 'infographic'
+            ? 'Bilgi Merkezi verilerinizden otomatik infografik oluşturulacak. Onayladığınızda anında hazır olur.'
+            : 'Aşağıdaki ayarlarla video üretimi başlatılacak. Onayladıktan sonra iş kuyruğa alınır.'}
         </p>
         <div style={{
           border: '1.5px solid #e2e8f0', borderRadius: 14, overflow: 'hidden',
         }}>
-          {[
-            { label: 'Başlık', value: autoTitle },
-            { label: 'Tip', value: typeDef?.label ?? type },
-            ...(type !== 'shorts' ? [
-              { label: 'Ders', value: lessonName },
-              { label: 'Konu', value: topic },
-            ] : []),
-            { label: 'Platform', value: format === '16:9' ? 'YouTube (16:9 yatay)' : 'Reels / Shorts (9:16 dikey)' },
-            { label: 'Hedef Süre', value: `${targetMinutes} dakika` },
-            ...(type === 'quiz' && showQuestions ? [{ label: 'Soru Girişi', value: 'Manuel (4 soru)' }] : []),
-            ...(description.trim() ? [{ label: 'Not', value: description.trim() }] : []),
-          ].map(({ label, value }, i) => (
+          {rows.map(({ label, value }, i) => (
             <div key={i} style={{
               display: 'flex', alignItems: 'flex-start', gap: 16, padding: '12px 18px',
               background: i % 2 === 0 ? '#f8fafc' : '#fff',
@@ -653,17 +760,30 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
           ))}
         </div>
 
-        {/* Üretim süresi uyarısı */}
-        <div style={{
-          display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px',
-          background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 10,
-        }}>
-          <AlertTriangle size={15} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }} />
-          <p style={{ margin: 0, fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
-            Üretim süresi video uzunluğuna göre <strong>3–15 dakika</strong> sürebilir.
-            Sayfadan ayrılabilirsiniz — iş arka planda devam eder ve tamamlandığında burada görünür.
-          </p>
-        </div>
+        {/* Üretim süresi uyarısı — infographic'te gösterme */}
+        {type !== 'infographic' && (
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px',
+            background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 10,
+          }}>
+            <AlertTriangle size={15} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }} />
+            <p style={{ margin: 0, fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
+              Üretim süresi video uzunluğuna göre <strong>3–15 dakika</strong> sürebilir.
+              Sayfadan ayrılabilirsiniz — iş arka planda devam eder ve tamamlandığında burada görünür.
+            </p>
+          </div>
+        )}
+        {type === 'infographic' && (
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px',
+            background: '#f0f9ff', border: '1.5px solid #bae6fd', borderRadius: 10,
+          }}>
+            <Zap size={15} color="#0284c7" style={{ flexShrink: 0, marginTop: 1 }} />
+            <p style={{ margin: 0, fontSize: 12, color: '#075985', lineHeight: 1.6 }}>
+              Remotion render gerekmez — içerik anında oluşturulur ve incelemeye hazır olur.
+            </p>
+          </div>
+        )}
       </div>
     )
   }
@@ -714,8 +834,17 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
           </div>
           <div>
             {step === 'content' && (
-              <Button onClick={() => { if (validateContent()) setStep('format') }}>
-                Format Seç <ChevronRight size={15} />
+              <Button onClick={() => {
+                if (!validateContent()) return
+                if (type === 'infographic') {
+                  setFormat('9:16')
+                  setTargetMinutes(1)
+                  setStep('review')
+                } else {
+                  setStep('format')
+                }
+              }}>
+                {type === 'infographic' ? <><Image size={14} /> Özeti Gör</> : <>Format Seç <ChevronRight size={15} /></>}
               </Button>
             )}
             {step === 'format' && (
@@ -727,7 +856,9 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
               <Button onClick={handleSubmit} disabled={loading}>
                 {loading
                   ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Başlatılıyor...</>
-                  : <><Film size={14} /> Video Görevi Başlat</>}
+                  : type === 'infographic'
+                    ? <><Image size={14} /> Görsel Post Oluştur</>
+                    : <><Film size={14} /> Video Görevi Başlat</>}
               </Button>
             )}
           </div>
@@ -752,7 +883,7 @@ export default function VideoPage() {
   const jobsRef = useRef<VideoJob[]>([]) // closure-safe ref
   const POLL_MAX_MS = 20 * 60 * 1000 // 20 dakika
 
-  const ACTIVE_STATUSES = ['scripting', 'tts_generating', 'rendering']
+  const ACTIVE_STATUSES = ['scripting', 'tts_generating', 'warmup_pinging', 'rendering']
 
   const loadJobs = async () => {
     try {
@@ -824,7 +955,7 @@ export default function VideoPage() {
   }
 
   const pendingReview = jobs.filter(j => j.status === 'ready_for_review')
-  const activeJobs = jobs.filter(j => ['scripting', 'tts_generating', 'rendering'].includes(j.status))
+  const activeJobs = jobs.filter(j => ['scripting', 'tts_generating', 'warmup_pinging', 'rendering'].includes(j.status))
 
   return (
     <AppShell>
@@ -907,7 +1038,7 @@ export default function VideoPage() {
 
         {/* Filtreler */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-          {(['all', 'quiz', 'lesson', 'shorts', 'motivation'] as const).map(f => (
+          {(['all', 'quiz', 'lesson', 'shorts', 'motivation', 'infographic'] as const).map(f => (
             <button
               key={f}
               onClick={() => setFilter(f)}
@@ -959,10 +1090,12 @@ export default function VideoPage() {
                 {/* Tip ikonu */}
                 <div style={{
                   width: 48, height: 48, borderRadius: 12, flexShrink: 0,
-                  background: job.status === 'failed' ? '#fee2e2' : '#f1f5f9',
+                  background: job.status === 'failed' ? '#fee2e2' : job.type === 'infographic' ? '#f0f9ff' : '#f1f5f9',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <Film size={22} color={job.status === 'failed' ? '#ef4444' : '#0B2A4A'} />
+                  {job.type === 'infographic'
+                    ? <Image size={22} color={job.status === 'failed' ? '#ef4444' : '#0284c7'} />
+                    : <Film size={22} color={job.status === 'failed' ? '#ef4444' : '#0B2A4A'} />}
                 </div>
 
                 {/* Bilgiler */}
@@ -978,7 +1111,14 @@ export default function VideoPage() {
                     · {job.format} · {job.target_duration_minutes} dk
                   </p>
                   {ACTIVE_STATUSES.includes(job.status) && (
-                    <PipelineBar status={job.status} />
+                    <>
+                      <PipelineBar status={job.status} />
+                      {job.status === 'warmup_pinging' && (
+                        <p style={{ margin: '4px 0 0', fontSize: 12, color: '#0ea5e9' }}>
+                          Render servisi uyanıyor — ~60 sn
+                        </p>
+                      )}
+                    </>
                   )}
                   {job.error_message && (
                     <p style={{ margin: '6px 0 0', fontSize: 12, color: '#ef4444' }}>
