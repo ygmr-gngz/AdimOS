@@ -18,11 +18,62 @@ export type SceneComponent =
   | 'DefinitionScene'
   | 'BulletListScene'
   | 'QuoteScene'
+  // Bölünmüş ekran soru çözümü
+  | 'SplitQuizScene'
+  | 'SplitQuizVerticalScene'
+  // Muhasebe bileşenleri
+  | 'JournalEntryScene'
+  | 'TAccountScene'
+  | 'CalculationStepsScene'
+  // Motivasyon
+  | 'MotivationScene'
+  // İnfografik
+  | 'InfographicCardGridScene'
+  | 'InfographicComparisonScene'
+  | 'InfographicProcessScene'
 
 export interface QuizOption {
   label: string        // A, B, C, D
   text: string
   is_correct?: boolean
+}
+
+// Çözüm adımı — SplitQuizScene sağ paneli için
+export interface SolutionStep {
+  type: 'text' | 'formula' | 'journal_entry' | 'highlight' | 'note'
+  text?: string             // text / highlight / note tiplerinde açıklama
+  formula?: string          // "KDV = Matrah × %18"
+  result?: string           // "= 1.800 TL"
+  // journal_entry tipinde:
+  debit?: { code?: string; name: string; amount: number }
+  credits?: { code?: string; name: string; amount: number }[]
+}
+
+// Yevmiye kaydı satırı
+export interface JournalRow {
+  code?: string
+  name: string
+  debit?: number
+  credit?: number
+  indent?: boolean  // alacak satırları girintili
+}
+
+// T-hesabı
+export interface TAccountSide {
+  label: string
+  amount: number
+}
+
+// İnfografik kart
+export interface InfographicCard {
+  title: string
+  category?: string         // rozet metni
+  category_color?: string   // rozet rengi hex
+  content?: string          // ana açıklama
+  rule?: string             // kural / not
+  example?: string          // örnek
+  tip?: string              // püf noktası
+  icon?: string             // emoji ikon
 }
 
 export interface Scene {
@@ -41,13 +92,40 @@ export interface Scene {
   options?: QuizOption[]
   correct_label?: string
   explanation?: string
-  highlight_option?: string  // Tek şıkkı vurgulamak için ('A', 'B' vs)
+  highlight_option?: string
   key_point?: string
   bullet_points?: string[]
   definition?: string
   highlight_words?: string[]
   quote?: string
   quote_author?: string
+
+  // Bölünmüş ekran soru çözümü
+  solution_steps?: SolutionStep[]
+  reveal_correct?: boolean     // çözüm sonunda doğru şık vurgulanır
+
+  // Yevmiye / T hesabı
+  journal_rows?: JournalRow[]
+  account_name?: string
+  debit_items?: TAccountSide[]
+  credit_items?: TAccountSide[]
+
+  // Hesaplama adımları
+  calculation_steps?: { label: string; value: string; is_result?: boolean }[]
+
+  // Motivasyon
+  message?: string             // ana motivasyon mesajı
+  message_author?: string      // imza (opsiyonel)
+  bg_variant?: 'dark' | 'gradient'
+
+  // İnfografik
+  infographic_title?: string
+  infographic_subtitle?: string
+  cards?: InfographicCard[]
+  comparison_left?: { title: string; items: string[] }
+  comparison_right?: { title: string; items: string[] }
+  process_steps?: { number: number; title: string; desc: string }[]
+  footer_note?: string
 }
 
 export interface BrandConfig {

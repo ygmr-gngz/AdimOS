@@ -2,6 +2,9 @@ export type DocumentStatus = 'uploaded' | 'processing' | 'indexed' | 'failed'
 
 export type DocumentSourceModule = 'knowledge_center' | 'sgs_academy' | 'crm' | 'content_automation'
 
+/** Kaynak dosyanın fiziksel durumu (GÖREV 6 — kayıp PDF) */
+export type DocumentFileStatus = 'mevcut' | 'kayip' | 'yeniden_yuklendi'
+
 export interface Document {
   id: string
   user_id: string
@@ -10,7 +13,9 @@ export interface Document {
   file_size: number
   mime_type: string
   status: DocumentStatus
+  file_status?: DocumentFileStatus  // null = mevcut (geriye uyumlu)
   chunk_count: number
+  page_count?: number
   source_module: DocumentSourceModule
   sgs_analysis_id?: string | null
   created_at: string

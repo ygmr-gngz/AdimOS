@@ -9,6 +9,15 @@ import { OptionAnalysisScene } from '../scenes/OptionAnalysisScene'
 import { CorrectAnswerScene } from '../scenes/CorrectAnswerScene'
 import { KeyPointScene } from '../scenes/KeyPointScene'
 import { OutroScene } from '../scenes/OutroScene'
+import { SplitQuizScene } from '../scenes/SplitQuizScene'
+import { SplitQuizVerticalScene } from '../scenes/SplitQuizVerticalScene'
+import { JournalEntryScene } from '../scenes/JournalEntryScene'
+import { TAccountScene } from '../scenes/TAccountScene'
+import { CalculationStepsScene } from '../scenes/CalculationStepsScene'
+import { MotivationScene } from '../scenes/MotivationScene'
+import { InfographicCardGridScene } from '../scenes/InfographicCardGridScene'
+import { InfographicComparisonScene } from '../scenes/InfographicComparisonScene'
+import { InfographicProcessScene } from '../scenes/InfographicProcessScene'
 
 function SceneRenderer({ scene, brand }: { scene: Scene; brand: StoryboardJSON['brand'] }) {
   const props = { scene, brand }
@@ -20,6 +29,15 @@ function SceneRenderer({ scene, brand }: { scene: Scene; brand: StoryboardJSON['
     case 'CorrectAnswerScene': return <CorrectAnswerScene {...props} />
     case 'KeyPointScene': return <KeyPointScene {...props} />
     case 'OutroScene': return <OutroScene {...props} />
+    case 'SplitQuizScene': return <SplitQuizScene {...props} />
+    case 'SplitQuizVerticalScene': return <SplitQuizVerticalScene {...props} />
+    case 'JournalEntryScene': return <JournalEntryScene {...props} />
+    case 'TAccountScene': return <TAccountScene {...props} />
+    case 'CalculationStepsScene': return <CalculationStepsScene {...props} />
+    case 'MotivationScene': return <MotivationScene {...props} />
+    case 'InfographicCardGridScene': return <InfographicCardGridScene {...props} />
+    case 'InfographicComparisonScene': return <InfographicComparisonScene {...props} />
+    case 'InfographicProcessScene': return <InfographicProcessScene {...props} />
     default:
       return (
         <div style={{

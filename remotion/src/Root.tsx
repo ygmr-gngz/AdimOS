@@ -1,5 +1,7 @@
 import { Composition } from 'remotion'
 import { QuizVideo, getTotalFrames } from './compositions/QuizVideo'
+import { MotivationVideo, getMotivationTotalFrames } from './compositions/MotivationVideo'
+import { InfographicVideo, getInfographicTotalFrames } from './compositions/InfographicVideo'
 import { StoryboardJSON } from './types'
 import { DEFAULT_BRAND, DIMENSIONS, FPS } from './brand'
 
@@ -57,8 +59,47 @@ const DEMO_STORYBOARD: StoryboardJSON = {
   ],
 }
 
+// Motivasyon demo storyboard
+const DEMO_MOTIVATION: StoryboardJSON = {
+  video_type: 'motivation',
+  title: 'Motivasyon Demo',
+  format: '9:16',
+  language: 'tr',
+  brand: DEFAULT_BRAND,
+  scenes: [
+    {
+      id: 1, component: 'MotivationScene', duration_seconds: 20,
+      message: 'Muhasebe işletmenin dilidir. Bu dili öğrenen, işletmeyi anlatır.',
+    },
+  ],
+}
+
+// İnfografik demo storyboard
+const DEMO_INFOGRAPHIC: StoryboardJSON = {
+  video_type: 'lesson',
+  title: 'İnfografik Demo',
+  format: '9:16',
+  language: 'tr',
+  brand: DEFAULT_BRAND,
+  scenes: [
+    {
+      id: 1, component: 'InfographicCardGridScene', duration_seconds: 15,
+      infographic_title: 'Temel Hesap Grupları',
+      infographic_subtitle: 'Muhasebe Dersleri',
+      cards: [
+        { title: 'Kasa', category: 'Aktif', content: 'Nakit ve nakit benzerleri', icon: '💵' },
+        { title: 'Bankalar', category: 'Aktif', content: 'Banka mevduatları', icon: '🏦' },
+        { title: 'Satışlar', category: 'Gelir', content: 'Mal ve hizmet satış gelirleri', icon: '📈' },
+        { title: 'Borçlar', category: 'Pasif', content: 'Kısa vadeli yükümlülükler', icon: '📋' },
+      ],
+      footer_note: 'SGS Muhasebe Dersleri — Adım Müşavir',
+    },
+  ],
+}
+
 export function Root() {
   const dim = DIMENSIONS['16:9']
+  const dimV = DIMENSIONS['9:16']
 
   return (
     <>
@@ -72,6 +113,34 @@ export function Root() {
         defaultProps={{ storyboard: DEMO_STORYBOARD }}
         calculateMetadata={({ props }) => ({
           durationInFrames: getTotalFrames(props.storyboard),
+          width: DIMENSIONS[props.storyboard.format].width,
+          height: DIMENSIONS[props.storyboard.format].height,
+        })}
+      />
+      <Composition
+        id="MotivationVideo"
+        component={MotivationVideo}
+        durationInFrames={getMotivationTotalFrames(DEMO_MOTIVATION)}
+        fps={FPS}
+        width={dimV.width}
+        height={dimV.height}
+        defaultProps={{ storyboard: DEMO_MOTIVATION }}
+        calculateMetadata={({ props }) => ({
+          durationInFrames: getMotivationTotalFrames(props.storyboard),
+          width: DIMENSIONS[props.storyboard.format].width,
+          height: DIMENSIONS[props.storyboard.format].height,
+        })}
+      />
+      <Composition
+        id="InfographicVideo"
+        component={InfographicVideo}
+        durationInFrames={getInfographicTotalFrames(DEMO_INFOGRAPHIC)}
+        fps={FPS}
+        width={dimV.width}
+        height={dimV.height}
+        defaultProps={{ storyboard: DEMO_INFOGRAPHIC }}
+        calculateMetadata={({ props }) => ({
+          durationInFrames: getInfographicTotalFrames(props.storyboard),
           width: DIMENSIONS[props.storyboard.format].width,
           height: DIMENSIONS[props.storyboard.format].height,
         })}
