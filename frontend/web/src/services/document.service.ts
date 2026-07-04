@@ -39,4 +39,15 @@ export const documentService = {
   async reindex(id: string): Promise<void> {
     await apiClient.post(`/documents/${id}/reindex`)
   },
+
+  async relink(id: string, file: File): Promise<void> {
+    const formData = new FormData()
+    formData.append('file', file)
+    await apiClient.patch(`/documents/${id}/relink`, formData)
+  },
+
+  async verifyStorage(): Promise<{ message: string }> {
+    const { data } = await apiClient.post('/documents/verify-storage')
+    return data
+  },
 }
