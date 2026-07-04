@@ -11,7 +11,7 @@ import Button from '@/components/ui/Button'
 import { automationService } from '@/services/automation.service'
 import apiClient from '@/lib/api-client'
 import type { ContentPiece, GenerateContentRequest } from '@/types/automation'
-import { Plus, Video, Filter, Trash2, Sparkles, ChevronDown } from 'lucide-react'
+import { Plus, Video, Film, Filter, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { clsx } from 'clsx'
 
@@ -145,28 +145,6 @@ export default function AutomationPage() {
 
   const pendingCount = content.filter((c) => c.status === 'pending_approval').length
 
-  // Motivasyon state
-  const [motivOpen, setMotivOpen] = useState(false)
-  const [motivTopic, setMotivTopic] = useState('')
-  const [motivPlatform, setMotivPlatform] = useState<'reels' | 'shorts' | 'carousel' | 'post'>('reels')
-  const [motivLoading, setMotivLoading] = useState(false)
-
-  const handleMotivation = async () => {
-    if (!motivTopic.trim()) { toast.error('Konu girin'); return }
-    setMotivLoading(true)
-    try {
-      await automationService.generateMotivation({ topic: motivTopic.trim(), platform: motivPlatform })
-      toast.success('Motivasyon videosu üretiliyor…')
-      setMotivTopic('')
-      if (pollRef.current) clearTimeout(pollRef.current)
-      pollRef.current = setTimeout(fetchContent, 10000)
-    } catch {
-      toast.error('Motivasyon üretilemedi')
-    } finally {
-      setMotivLoading(false)
-    }
-  }
-
   return (
     <AppShell>
       <div className="space-y-6 animate-fade-in">
@@ -200,42 +178,20 @@ export default function AutomationPage() {
           </div>
         )}
 
-        {/* Motivasyon İçeriği hızlı oluştur */}
-        <div className="bg-surface-50 border border-surface-200 rounded-xl overflow-hidden">
-          <button
-            onClick={() => setMotivOpen(v => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 text-sm text-gray-400 hover:text-gray-200 transition-colors"
+        {/* Video Production yönlendirmesi */}
+        <div className="bg-surface-50 border border-surface-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <Film size={16} className="text-blue-400 shrink-0" />
+            <p className="text-xs text-gray-400">
+              Konu anlatım ve soru çözüm videoları <strong className="text-gray-300">Video Prodüksiyon</strong>&apos;da üretilir. Onaylanan videolar buraya otomatik aktarılır.
+            </p>
+          </div>
+          <a
+            href="/video"
+            className="shrink-0 text-xs font-semibold text-blue-400 hover:text-blue-200 underline underline-offset-2 transition-colors whitespace-nowrap"
           >
-            <span className="flex items-center gap-2 font-medium">
-              <Sparkles size={14} className="text-brand-400" /> Motivasyon İçeriği Oluştur
-            </span>
-            <ChevronDown size={14} className={`transition-transform ${motivOpen ? 'rotate-180' : ''}`} />
-          </button>
-          {motivOpen && (
-            <div className="px-4 pb-4 flex flex-wrap gap-3 border-t border-surface-200 pt-3">
-              <input
-                type="text"
-                placeholder="Motivasyon konusu… örn: SGS sürecinde pes etme"
-                value={motivTopic}
-                onChange={e => setMotivTopic(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleMotivation()}
-                className="flex-1 min-w-[220px] bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 placeholder-gray-600"
-              />
-              <select
-                value={motivPlatform}
-                onChange={e => setMotivPlatform(e.target.value as typeof motivPlatform)}
-                className="bg-surface-100 border border-surface-200 rounded-lg px-3 py-2 text-sm text-gray-300"
-              >
-                <option value="reels">Instagram Reels</option>
-                <option value="shorts">YouTube Shorts</option>
-                <option value="carousel">Carousel</option>
-                <option value="post">Görsel Post</option>
-              </select>
-              <Button onClick={handleMotivation} isLoading={motivLoading} size="sm">
-                <Sparkles size={13} /> Üret
-              </Button>
-            </div>
-          )}
+            Video Prodüksiyon →
+          </a>
         </div>
 
         <div className="flex items-center gap-2">

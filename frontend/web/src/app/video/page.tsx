@@ -626,12 +626,19 @@ export default function VideoPage() {
   const [filter, setFilter] = useState<VideoType | 'all'>('all')
   const [showCreate, setShowCreate] = useState(false)
   const [previewJob, setPreviewJob] = useState<VideoJob | null>(null)
+  const [pollTimedOut, setPollTimedOut] = useState(false)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
+  const pollStartRef = useRef<number>(0)
+  const jobsRef = useRef<VideoJob[]>([]) // closure-safe ref
+  const POLL_MAX_MS = 20 * 60 * 1000 // 20 dakika
+
+  const ACTIVE_STATUSES = ['scripting', 'tts_generating', 'rendering']
 
   const loadJobs = async () => {
     try {
       const data = await videoService.listJobs(filter === 'all' ? undefined : filter)
       setJobs(data)
+      jobsRef.current = data
     } catch {
       // sessiz
     } finally {
@@ -641,11 +648,29 @@ export default function VideoPage() {
 
   useEffect(() => {
     loadJobs()
-    // Aktif iş varsa her 10 saniyede bir yenile
-    pollRef.current = setInterval(() => {
-      const hasActive = jobs.some(j => ['scripting', 'tts_generating', 'rendering'].includes(j.status))
-      if (hasActive) loadJobs()
+    setPollTimedOut(false)
+    pollStartRef.current = Date.now()
+
+    pollRef.current = setInterval(async () => {
+      // jobsRef her zaman güncel — closure bug yok
+      const hasActive = jobsRef.current.some(j => ACTIVE_STATUSES.includes(j.status))
+      if (!hasActive) return
+
+      if (Date.now() - pollStartRef.current > POLL_MAX_MS) {
+        if (pollRef.current) clearInterval(pollRef.current)
+        setPollTimedOut(true)
+        return
+      }
+
+      try {
+        const data = await videoService.listJobs(filter === 'all' ? undefined : filter)
+        setJobs(data)
+        jobsRef.current = data
+        const stillActive = data.some(j => ACTIVE_STATUSES.includes(j.status))
+        if (!stillActive && pollRef.current) clearInterval(pollRef.current)
+      } catch { /* sessiz */ }
     }, 10000)
+
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter])
@@ -727,6 +752,30 @@ export default function VideoPage() {
           </div>
         )}
 
+        {/* Polling zaman aşımı uyarısı */}
+        {pollTimedOut && (
+          <div style={{
+            marginBottom: 16, padding: '12px 16px', borderRadius: 12,
+            background: '#fff7ed', border: '1.5px solid #fed7aa',
+            display: 'flex', alignItems: 'center', gap: 10,
+          }}>
+            <AlertTriangle size={16} color="#ea580c" />
+            <p style={{ margin: 0, fontSize: 13, color: '#9a3412' }}>
+              20 dakika geçti — durum alınamıyor. Sayfayı yenileyerek güncel durumu görün.
+            </p>
+            <button
+              onClick={() => { setPollTimedOut(false); loadJobs(); pollStartRef.current = Date.now() }}
+              style={{
+                marginLeft: 'auto', padding: '4px 12px', borderRadius: 8,
+                border: '1.5px solid #ea580c', background: 'transparent',
+                color: '#ea580c', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              Yenile
+            </button>
+          </div>
+        )}
+
         {/* Filtreler */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
           {(['all', 'quiz', 'lesson', 'shorts', 'motivation'] as const).map(f => (
@@ -766,7 +815,8 @@ export default function VideoPage() {
               <div
                 key={job.id}
                 style={{
-                  background: '#fff', border: '1.5px solid #e2e8f0',
+                  background: job.status === 'failed' ? '#fff5f5' : '#fff',
+                  border: `1.5px solid ${job.status === 'failed' ? '#fca5a5' : job.status === 'ready_for_review' ? '#ddd6fe' : '#e2e8f0'}`,
                   borderRadius: 16, padding: '20px 24px',
                   display: 'flex', alignItems: 'flex-start', gap: 20,
                   cursor: 'pointer', transition: 'box-shadow 0.15s',
@@ -780,9 +830,10 @@ export default function VideoPage() {
                 {/* Tip ikonu */}
                 <div style={{
                   width: 48, height: 48, borderRadius: 12, flexShrink: 0,
-                  background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: job.status === 'failed' ? '#fee2e2' : '#f1f5f9',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <Film size={22} color="#0B2A4A" />
+                  <Film size={22} color={job.status === 'failed' ? '#ef4444' : '#0B2A4A'} />
                 </div>
 
                 {/* Bilgiler */}
@@ -797,13 +848,25 @@ export default function VideoPage() {
                     {VIDEO_TYPE_LABELS[job.type]} · {job.lesson_name} · {job.topic}
                     · {job.format} · {job.target_duration_minutes} dk
                   </p>
-                  {['scripting', 'tts_generating', 'rendering'].includes(job.status) && (
+                  {ACTIVE_STATUSES.includes(job.status) && (
                     <PipelineBar status={job.status} />
                   )}
                   {job.error_message && (
                     <p style={{ margin: '6px 0 0', fontSize: 12, color: '#ef4444' }}>
-                      Hata: {job.error_message}
+                      {job.error_message}
                     </p>
+                  )}
+                  {job.status === 'failed' && (
+                    <button
+                      onClick={e => { e.stopPropagation(); setShowCreate(true) }}
+                      style={{
+                        marginTop: 10, padding: '5px 14px', borderRadius: 8,
+                        border: '1.5px solid #ef4444', background: '#fff',
+                        color: '#ef4444', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                      }}
+                    >
+                      Yeniden Dene
+                    </button>
                   )}
                 </div>
 

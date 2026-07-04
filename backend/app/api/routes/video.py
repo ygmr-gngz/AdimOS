@@ -416,9 +416,34 @@ def create_video_job(payload: CreateVideoPayload, background_tasks: BackgroundTa
     return job
 
 
+_WATCHDOG_MINUTES = 30  # bu kadar ilerleme yoksa → failed
+
+def _watchdog_sweep(sb) -> None:
+    """Aktif işleri kontrol et; takılı olanları failed yap (lazy watchdog)."""
+    from datetime import datetime, timezone, timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=_WATCHDOG_MINUTES)).isoformat()
+    stuck_resp = sb.table("video_jobs").select("id, status, updated_at").in_(
+        "status", ["rendering", "tts_generating", "scripting", "pending"]
+    ).lt("updated_at", cutoff).execute()
+    for j in (stuck_resp.data or []):
+        logger.warning(f"[video] watchdog: {j['id'][:8]} {j['status']} → failed")
+        sb.table("video_jobs").update({
+            "status": "failed",
+            "error_message": (
+                f"İş {_WATCHDOG_MINUTES}+ dakika boyunca '{j['status']}' durumunda "
+                "kaldı ve otomatik olarak başarısız sayıldı. "
+                "TTS veya render adımında sessiz hata oluşmuş olabilir."
+            ),
+        }).eq("id", j["id"]).execute()
+
+
 @router.get("/jobs")
 def list_jobs(type: Optional[str] = None):
     sb = get_supabase_client()
+    try:
+        _watchdog_sweep(sb)
+    except Exception as e:
+        logger.warning(f"[video] watchdog hatası (görmezden geliniyor): {e}")
     q = sb.table("video_jobs").select("*").order("created_at", desc=True)
     if type:
         q = q.eq("type", type)

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Modal from '@/components/ui/Modal'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -22,21 +23,6 @@ type ContentOption = {
 }
 
 const CONTENT_OPTIONS: ContentOption[] = [
-  {
-    platform: 'youtube',
-    content_type: 'video',
-    backend_type: 'topic_explanation',
-    label: 'Konu Anlatım Videosu',
-    description: 'Muhasebe, vergi, SGK, ticaret hukuku konu anlatımı (5-10 dk)',
-  },
-  {
-    platform: 'youtube',
-    content_type: 'video',
-    backend_type: 'question_solution',
-    label: 'Soru Çözüm Videosu',
-    description: 'SMMM/YMM/SGS sınav sorusu çözüm formatı — soru, şıklar, açıklama',
-    showQuestion: true,
-  },
   {
     platform: 'youtube_shorts',
     content_type: 'short',
@@ -61,11 +47,8 @@ const CONTENT_OPTIONS: ContentOption[] = [
 ]
 
 const BACKEND_ROUTE: Record<string, string> = {
-  topic_explanation: 'topic-explanation',
-  question_solution: 'question-solution',
   short: 'short',
   post: 'post',
-  video: 'video',
 }
 
 type Category = 'smmm' | 'sgs' | 'genel'
@@ -97,6 +80,7 @@ const SGS_LESSONS = [
 ]
 
 export default function GenerateContentModal({ isOpen, onClose, onGenerate }: GenerateContentModalProps) {
+  const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [topic, setTopic] = useState('')
   const [questionText, setQuestionText] = useState('')
@@ -136,6 +120,19 @@ export default function GenerateContentModal({ isOpen, onClose, onGenerate }: Ge
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Yeni İçerik Üret" size="lg">
       <div className="space-y-4">
+
+        {/* Video yönlendirmesi */}
+        <div className="flex items-center justify-between bg-blue-500/10 border border-blue-500/30 rounded-xl px-4 py-3">
+          <p className="text-xs text-blue-300">
+            Konu anlatım ve soru çözüm <strong>videoları</strong> Video Prodüksiyon&apos;da üretilir.
+          </p>
+          <button
+            onClick={() => { onClose(); router.push('/video') }}
+            className="ml-3 shrink-0 text-xs font-semibold text-blue-400 hover:text-blue-200 underline underline-offset-2 transition-colors"
+          >
+            Git →
+          </button>
+        </div>
 
         {/* İçerik tipi seçimi */}
         <div>
