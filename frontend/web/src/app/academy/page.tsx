@@ -780,10 +780,9 @@ function UploadTab({ onUploaded }: { onUploaded: () => void }) {
       const result = await sgsService.analyzePdf(file, uploadMeta, forceReanalyze)
       const list = await sgsService.listAnalyses()
       setSavedAnalyses(list)
-      const analysisId = result.analysis_id ?? (result as Record<string, unknown>)['id'] as string
-      if (analysisId) {
+      if (result.analysis_id) {
         try {
-          const pr = await sgsService.parseQuestions({ analysis_id: analysisId })
+          const pr = await sgsService.parseQuestions({ analysis_id: result.analysis_id })
           if (pr.questions_created > 0) {
             toast.success(`${pr.questions_created} soru parse edildi — dashboard güncellendi`)
           } else {
@@ -857,7 +856,7 @@ function UploadTab({ onUploaded }: { onUploaded: () => void }) {
             <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${forceReanalyze ? 'translate-x-4' : ''}`} />
           </div>
           <span className="text-xs text-gray-400">
-            Yeniden Analiz — zaten yüklü PDF'i chunk analizi ile yeniden işle
+            Yeniden Analiz &mdash; zaten yüklü PDF&apos;i chunk analizi ile yeniden işle
           </span>
         </label>
 
