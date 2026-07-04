@@ -381,14 +381,23 @@ def _bg_topic_video(content_id: str, video_plan_item: dict, questions: list):
 
 @router.post("/generate-topic-video")
 def generate_topic_video(req: TopicVideoRequest, bg: BackgroundTasks):
-    """17: Ders + konu için soru topla (aralık öncelikli) ve video üret."""
-    questions = get_questions_by_ranges(lesson_name=req.lesson, year=req.year)
-    if not questions:
-        questions = get_all_questions(lesson_name=req.lesson, year=req.year)
-    topic_questions = [q for q in questions if q.get("topic", "") == req.topic]
+    """17: Ders + konu için soru topla (sgs_questions öncelikli) ve video üret."""
+    # 1. sgs_questions tablosu — en doğru sınıflandırma, tam soru detayı
+    topic_questions = get_questions_for_topic(topic=req.topic, lesson_name=req.lesson, limit=req.max_questions * 3)
 
+    # 2. Case insensitive fallback (konu adı büyük/küçük harf farkı)
     if not topic_questions:
-        topic_questions = [q for q in questions if req.topic.lower() in q.get("topic", "").lower()]
+        topic_questions = get_questions_for_topic(topic=req.topic.lower(), lesson_name=req.lesson, limit=req.max_questions * 3)
+
+    # 3. Aralık tablosu (eski yol)
+    if not topic_questions:
+        questions = get_questions_by_ranges(lesson_name=req.lesson, year=req.year)
+        topic_questions = [q for q in questions if req.topic.lower() in (q.get("topic") or "").lower()]
+
+    # 4. JSONB fallback
+    if not topic_questions:
+        questions = get_all_questions(lesson_name=req.lesson, year=req.year)
+        topic_questions = [q for q in questions if req.topic.lower() in (q.get("topic") or "").lower()]
 
     if not topic_questions:
         raise HTTPException(

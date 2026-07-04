@@ -92,12 +92,12 @@ _CHUNK_QUESTION_EXAMPLE = """\
 # ── Yardımcılar ───────────────────────────────────────────────
 
 def _detect_language_from_filename(pdf_name: str) -> str | None:
-    """Dosya adından dil tespiti: ingilizce/almanca PDF'leri yakalar."""
-    n = pdf_name.lower().replace("İ", "i").replace("ı", "i")
-    if any(k in n for k in ("ingilizce", "inglizce", "english", "_ing", "-ing", "ing_", "ing-")):
-        return "İngilizce"
-    if any(k in n for k in ("almanca", "german", "deutsch", "_alm", "-alm", "alm_", "alm-")):
-        return "Almanca"
+    """Dosya adından dil tespiti.
+
+    SGS sınav kitapçıkları için KULLANILMIYOR — "almanca" ve "ingilizce"
+    sınav GRUBU adını belirtir (tüm dersler içinde sadece bir bölüm o dilde).
+    Bu fonksiyon artık sadece logging amacıyla çağrılır, override yapmaz.
+    """
     return None
 
 
