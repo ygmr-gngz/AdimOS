@@ -1,9 +1,13 @@
 import logging
+import os
+import tempfile
+from datetime import datetime, timezone
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query
 from app.modules.knowledge.service import process_document, list_documents, fetch_document, remove_document, reindex_document
 from app.db.repositories.sgs_repo import list_analyses
 from app.db.repositories.documents_repo import create_document, get_documents as db_get_documents
 from app.db.supabase import get_supabase_client
+from app.db.storage import download_file
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -91,3 +95,120 @@ def delete_document(document_id: str):
         raise HTTPException(status_code=404, detail="Döküman bulunamadı")
     remove_document(document_id, doc["storage_path"])
     return {"message": "Döküman silindi"}
+
+
+# ── GÖREV 6: Kayıp PDF yeniden bağlama ───────────────────────
+
+@router.patch("/{document_id}/relink")
+async def relink_document(document_id: str, bg: BackgroundTasks, file: UploadFile = File(...)):
+    """
+    Kayıp dosyayı yeniden yükle: storage'a yaz, file_status='yeniden_yuklendi',
+    sonra arka planda yeniden indeksle.
+    """
+    doc = fetch_document(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Döküman bulunamadı")
+
+    content = await file.read()
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Dosya 50 MB sınırını aşıyor ({len(content) // (1024 * 1024)} MB).",
+        )
+
+    storage_path = doc.get("storage_path", "")
+    if not storage_path:
+        raise HTTPException(status_code=422, detail="Dökümanın storage yolu kayıt dışı.")
+
+    # Bucket prefix'i çıkar: "documents/{doc_id}/..." → "{doc_id}/..."
+    clean_path = storage_path.replace("documents/", "", 1)
+
+    try:
+        sb = get_supabase_client()
+        sb.storage.from_("documents").upload(
+            clean_path, content,
+            {"content-type": file.content_type or "application/pdf", "upsert": "true"},
+        )
+    except Exception as e:
+        logger.error(f"[documents] relink storage yükleme hatası {document_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Dosya yüklenemedi: {str(e)[:200]}")
+
+    now = datetime.now(timezone.utc).isoformat()
+    sb = get_supabase_client()
+    sb.table("documents").update({
+        "file_status": "yeniden_yuklendi",
+        "file_size": len(content),
+        "storage_verified_at": now,
+        "relinked_at": now,
+        "updated_at": "now()",
+    }).eq("id", document_id).execute()
+
+    bg.add_task(reindex_document, document_id, storage_path, doc["file_name"])
+
+    logger.info(f"[documents] relink tamamlandı: {document_id}")
+    return {
+        "message": "Dosya yeniden bağlandı ve indeksleniyor",
+        "document_id": document_id,
+    }
+
+
+# ── GÖREV 6: Storage toplu doğrulama ─────────────────────────
+
+def _run_storage_verification():
+    """
+    Tüm dokümanların storage'da mevcut olup olmadığını kontrol et.
+    Arka planda çalışır — file_status'ı günceller.
+    """
+    sb = get_supabase_client()
+    docs = (
+        sb.table("documents")
+        .select("id, file_name, storage_path, file_status")
+        .execute().data or []
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    verified, missing, errors = 0, 0, 0
+
+    for doc in docs:
+        doc_id = doc["id"]
+        storage_path = doc.get("storage_path", "")
+        if not storage_path:
+            continue
+        clean_path = storage_path.replace("documents/", "", 1)
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
+                tmp_path = tmp.name
+            download_file("documents", clean_path, tmp_path)
+            sb.table("documents").update({
+                "file_status": "mevcut",
+                "storage_verified_at": now,
+            }).eq("id", doc_id).execute()
+            verified += 1
+        except Exception as e:
+            err = str(e).lower()
+            if "not_found" in err or "404" in err or "object not found" in err:
+                sb.table("documents").update({"file_status": "kayip"}).eq("id", doc_id).execute()
+                missing += 1
+                logger.warning(f"[documents] storage kayıp: {doc_id} — {doc.get('file_name')}")
+            else:
+                errors += 1
+                logger.warning(f"[documents] storage kontrol hatası {doc_id}: {e}")
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+    logger.info(f"[documents] storage doğrulama tamamlandı — "
+                f"mevcut={verified} kayip={missing} hata={errors} toplam={len(docs)}")
+
+
+@router.post("/verify-storage")
+def verify_storage(bg: BackgroundTasks):
+    """
+    Tüm dokümanların storage'da mevcut olup olmadığını arka planda kontrol et.
+    Tamamlandığında documents tablosundaki file_status güncellenir.
+    """
+    bg.add_task(_run_storage_verification)
+    return {"message": "Storage doğrulaması başlatıldı. İşlem tamamlandığında doküman listesini yenileyin."}

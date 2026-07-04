@@ -716,6 +716,91 @@ def regenerate_scene(scene_id: str, background_tasks: BackgroundTasks):
     return {"message": "Sahne yeniden üretiliyor", "scene_id": scene_id}
 
 
+# ── İnfografik üretim (GÖREV 4) ──────────────────────────────
+
+class GenerateInfographicPayload(BaseModel):
+    topic: str
+    template: str = "card_grid"   # card_grid | comparison | process
+    card_count: int = 6
+    step_count: int = 5
+    format: str = "9:16"
+
+@router.post("/generate-infographic")
+def generate_infographic(payload: GenerateInfographicPayload):
+    from app.modules.content.infographic_generator import generate_infographic_storyboard
+    try:
+        storyboard = generate_infographic_storyboard(
+            topic=payload.topic,
+            template=payload.template,
+            card_count=payload.card_count,
+            step_count=payload.step_count,
+            format=payload.format,
+        )
+        return {"ok": True, "storyboard": storyboard}
+    except Exception as e:
+        logger.error(f"[video] infografik üretim hatası: {e}")
+        raise HTTPException(500, f"İnfografik üretilemedi: {str(e)[:300]}")
+
+
+# ── Motivasyon video üretim (GÖREV 5) ────────────────────────
+
+class GenerateMotivationPayload(BaseModel):
+    topic: str
+    platform: str = "reels"        # reels | shorts | carousel | post
+    tone: str = "sıcak ve samimi"
+    format: str = "9:16"
+
+@router.post("/generate-motivation")
+def generate_motivation(payload: GenerateMotivationPayload):
+    from app.modules.content.motivation_generator import generate_motivation_storyboard
+    try:
+        result = generate_motivation_storyboard(
+            topic=payload.topic,
+            platform=payload.platform,
+            tone=payload.tone,
+        )
+        scenes = []
+        for i, scene in enumerate(result.get("scenes", []), 1):
+            narration = scene.get("narration", "")
+            display_lines = scene.get("display_lines", [])
+            scenes.append({
+                "id": i,
+                "component": "MotivationScene",
+                "duration_seconds": 15,
+                "message": narration or " ".join(display_lines),
+                "message_author": "@adimmusavir",
+                "voice_text": narration,
+            })
+        storyboard = {
+            "video_type": "motivation",
+            "title": result.get("title", payload.topic),
+            "format": payload.format,
+            "language": "tr",
+            "brand": {
+                "primary_color": "#0D1B3E",
+                "secondary_color": "#2B7FE0",
+                "background_color": "#08121E",
+                "font_heading": "Playfair Display",
+                "font_body": "Lato",
+            },
+            "scenes": scenes,
+        }
+        return {
+            "ok": True,
+            "storyboard": storyboard,
+            "metadata": {
+                "title": result.get("title"),
+                "description": result.get("description"),
+                "hashtags": result.get("hashtags", []),
+            },
+        }
+    except Exception as e:
+        logger.error(f"[video] motivasyon üretim hatası: {e}")
+        raise HTTPException(500, f"Motivasyon içeriği üretilemedi: {str(e)[:300]}")
+
+
+# ── Render callback ───────────────────────────────────────────
+
 @router.post("/render-callback")
 def render_callback(body: RenderCallback):
     """Remotion render servisi tamamlandığında çağırır."""
