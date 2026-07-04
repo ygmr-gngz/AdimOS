@@ -39,7 +39,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://adim-os-web.vercel.app", "https://adimos-production.up.railway.app"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://adim-os-web.vercel.app",
+        "https://adimos-production.up.railway.app",
+    ],
+    allow_origin_regex=r"https://adim-os-web.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
