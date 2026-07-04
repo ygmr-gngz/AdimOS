@@ -1,7 +1,7 @@
 import { interpolate, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
 import { BrandConfig, Scene } from '../types'
 
-const GOLD = '#C9A96E'
+const ACCENT = '#2B7FE0'
 const BG = '#08121E'
 
 interface Props { scene: Scene; brand: BrandConfig }
@@ -32,7 +32,7 @@ export function QuestionScene({ scene, brand }: Props) {
       <div style={{
         position: 'absolute', top: -60, right: -80,
         width: 360, height: 360, borderRadius: '50%',
-        background: `radial-gradient(circle, ${GOLD}10 0%, transparent 65%)`,
+        background: `radial-gradient(circle, ${ACCENT}10 0%, transparent 65%)`,
         pointerEvents: 'none',
       }} />
 
@@ -42,13 +42,13 @@ export function QuestionScene({ scene, brand }: Props) {
         marginBottom: isVertical ? 36 : 30, opacity: headerOpacity, flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ width: 5, height: 30, borderRadius: 3, background: GOLD }} />
+          <div style={{ width: 5, height: 30, borderRadius: 3, background: ACCENT }} />
           <span style={{ fontSize: 20, fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>
             {scene.title ?? 'Muhasebe'}
           </span>
         </div>
         <div style={{
-          background: GOLD, color: '#08121E',
+          background: ACCENT, color: '#08121E',
           borderRadius: 30, padding: '7px 22px',
           fontSize: 17, fontWeight: 800, letterSpacing: 0.5,
         }}>
@@ -90,7 +90,7 @@ export function QuestionScene({ scene, brand }: Props) {
             }}>
               <div style={{
                 width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
-                background: GOLD, color: '#08121E',
+                background: ACCENT, color: '#08121E',
                 fontWeight: 800, fontSize: 17,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>

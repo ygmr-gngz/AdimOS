@@ -1,7 +1,7 @@
 import { interpolate, spring, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
 import { BrandConfig, Scene } from '../types'
 
-const GOLD = '#C9A96E'
+const ACCENT = '#2B7FE0'
 const BG = '#08121E'
 const GREEN = '#22C55E'
 const RED = '#EF4444'
@@ -48,9 +48,9 @@ export function OptionAnalysisScene({ scene, brand }: Props) {
       {/* Header */}
       <div style={{ opacity: headerOpacity, marginBottom: isVertical ? 32 : 28, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-          <div style={{ width: 5, height: 24, borderRadius: 3, background: GOLD }} />
+          <div style={{ width: 5, height: 24, borderRadius: 3, background: ACCENT }} />
           <p style={{
-            fontSize: 15, fontWeight: 800, color: GOLD,
+            fontSize: 15, fontWeight: 800, color: ACCENT,
             letterSpacing: 3, textTransform: 'uppercase' as const, margin: 0,
           }}>
             {scene.question_number ?? 1}. Soru — Şık Analizi

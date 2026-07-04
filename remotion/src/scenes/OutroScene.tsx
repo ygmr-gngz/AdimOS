@@ -1,7 +1,7 @@
 import { interpolate, spring, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
 import { BrandConfig, Scene } from '../types'
 
-const GOLD = '#C9A96E'
+const ACCENT = '#2B7FE0'
 const BG = '#08121E'
 
 interface Props { scene: Scene; brand: BrandConfig }
@@ -32,30 +32,30 @@ export function OutroScene({ scene, brand }: Props) {
         position: 'absolute', top: -80, left: '50%',
         transform: 'translateX(-50%)',
         width: 700, height: 400, borderRadius: '50%',
-        background: `radial-gradient(ellipse, ${GOLD}15 0%, transparent 65%)`,
+        background: `radial-gradient(ellipse, ${ACCENT}15 0%, transparent 65%)`,
         pointerEvents: 'none',
       }} />
 
       {/* Corner accents */}
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, height: 4,
-        background: `linear-gradient(90deg, transparent 0%, ${GOLD} 40%, ${GOLD} 60%, transparent 100%)`,
+        background: `linear-gradient(90deg, transparent 0%, ${ACCENT} 40%, ${ACCENT} 60%, transparent 100%)`,
         opacity: 0.6,
       }} />
       <div style={{
         position: 'absolute', bottom: 0, left: 0, right: 0, height: 4,
-        background: `linear-gradient(90deg, transparent 0%, ${GOLD} 40%, ${GOLD} 60%, transparent 100%)`,
+        background: `linear-gradient(90deg, transparent 0%, ${ACCENT} 40%, ${ACCENT} 60%, transparent 100%)`,
         opacity: 0.3,
       }} />
 
       {/* Star/Trophy icon */}
       <div style={{
         width: isVertical ? 90 : 80, height: isVertical ? 90 : 80,
-        background: GOLD, borderRadius: '50%',
+        background: ACCENT, borderRadius: '50%',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         transform: `scale(${iconScale})`,
         marginBottom: 32,
-        boxShadow: `0 0 40px ${GOLD}55, 0 8px 28px rgba(0,0,0,0.5)`,
+        boxShadow: `0 0 40px ${ACCENT}55, 0 8px 28px rgba(0,0,0,0.5)`,
       }}>
         <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
           <path d="M22 6L26.5 16.5H38L29 23.5L32.5 34L22 27.5L11.5 34L15 23.5L6 16.5H17.5L22 6Z"
@@ -81,7 +81,7 @@ export function OutroScene({ scene, brand }: Props) {
       {/* Gold line */}
       <div style={{
         width: lineW, height: 3,
-        background: GOLD, borderRadius: 2,
+        background: ACCENT, borderRadius: 2,
         margin: isVertical ? '36px 0 24px' : '32px 0 20px',
       }} />
 
@@ -100,14 +100,14 @@ export function OutroScene({ scene, brand }: Props) {
       <div style={{
         opacity: cardOpacity,
         marginTop: isVertical ? 48 : 40,
-        background: 'rgba(201,169,110,0.10)',
-        border: `1px solid ${GOLD}40`,
+        background: 'rgba(43,127,224,0.10)',
+        border: `1px solid ${ACCENT}40`,
         borderRadius: 16, padding: '18px 40px',
         textAlign: 'center',
       }}>
         <p style={{
           fontSize: isVertical ? 18 : 18,
-          color: GOLD, fontWeight: 700, letterSpacing: 2,
+          color: ACCENT, fontWeight: 700, letterSpacing: 2,
           textTransform: 'uppercase' as const, margin: 0,
         }}>
           Beğendiysen paylaş & takip et

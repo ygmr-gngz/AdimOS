@@ -1,7 +1,7 @@
 import { interpolate, spring, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
 import { BrandConfig, Scene } from '../types'
 
-const GOLD = '#C9A96E'
+const ACCENT = '#2B7FE0'
 const BG = '#08121E'
 
 interface Props { scene: Scene; brand: BrandConfig }
@@ -32,7 +32,7 @@ export function KeyPointScene({ scene, brand }: Props) {
       {/* Gold ambient glow */}
       <div style={{
         position: 'absolute', inset: 0,
-        background: `radial-gradient(ellipse at 50% 40%, ${GOLD}10 0%, transparent 60%)`,
+        background: `radial-gradient(ellipse at 50% 40%, ${ACCENT}10 0%, transparent 60%)`,
         pointerEvents: 'none',
       }} />
 
@@ -40,25 +40,25 @@ export function KeyPointScene({ scene, brand }: Props) {
       <div style={{
         position: 'absolute', top: 0, right: 0,
         width: 200, height: 200,
-        background: `linear-gradient(225deg, ${GOLD}20 0%, transparent 60%)`,
+        background: `linear-gradient(225deg, ${ACCENT}20 0%, transparent 60%)`,
         pointerEvents: 'none',
       }} />
       <div style={{
         position: 'absolute', bottom: 0, left: 0,
         width: 160, height: 160,
-        background: `linear-gradient(45deg, ${GOLD}15 0%, transparent 60%)`,
+        background: `linear-gradient(45deg, ${ACCENT}15 0%, transparent 60%)`,
         pointerEvents: 'none',
       }} />
 
       {/* Warning icon */}
       <div style={{
         width: isVertical ? 88 : 80, height: isVertical ? 88 : 80,
-        background: GOLD,
+        background: ACCENT,
         borderRadius: 22,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         transform: `scale(${iconScale})`,
         marginBottom: 28,
-        boxShadow: `0 0 40px ${GOLD}55, 0 8px 24px rgba(0,0,0,0.4)`,
+        boxShadow: `0 0 40px ${ACCENT}55, 0 8px 24px rgba(0,0,0,0.4)`,
       }}>
         <svg width="42" height="42" viewBox="0 0 42 42" fill="none">
           <path d="M21 7L38 35H4L21 7Z" fill="none" stroke="#08121E" strokeWidth="3.5" strokeLinejoin="round"/>
@@ -70,7 +70,7 @@ export function KeyPointScene({ scene, brand }: Props) {
       {/* Label */}
       <div style={{ opacity: labelOpacity, marginBottom: 22, textAlign: 'center' }}>
         <p style={{
-          fontSize: 13, fontWeight: 800, color: GOLD,
+          fontSize: 13, fontWeight: 800, color: ACCENT,
           letterSpacing: 4, textTransform: 'uppercase' as const, margin: 0,
         }}>
           Dikkat Edilmesi Gereken Nokta
@@ -80,8 +80,8 @@ export function KeyPointScene({ scene, brand }: Props) {
       {/* Main key point */}
       <div style={{
         opacity: cardOpacity,
-        background: 'rgba(201,169,110,0.09)',
-        border: `1px solid ${GOLD}40`,
+        background: 'rgba(43,127,224,0.09)',
+        border: `1px solid ${ACCENT}40`,
         borderRadius: 18, padding: isVertical ? '28px 32px' : '26px 36px',
         marginBottom: scene.bullet_points && scene.bullet_points.length > 0 ? 28 : 0,
         width: '100%',
@@ -109,8 +109,8 @@ export function KeyPointScene({ scene, brand }: Props) {
               }}>
                 <div style={{
                   width: 10, height: 10, borderRadius: '50%',
-                  background: GOLD, marginTop: 11, flexShrink: 0,
-                  boxShadow: `0 0 8px ${GOLD}80`,
+                  background: ACCENT, marginTop: 11, flexShrink: 0,
+                  boxShadow: `0 0 8px ${ACCENT}80`,
                 }} />
                 <p style={{
                   fontSize: isVertical ? 21 : 22,

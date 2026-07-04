@@ -1,7 +1,7 @@
 import { interpolate, spring, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
 import { BrandConfig, Scene } from '../types'
 
-const GOLD = '#C9A96E'
+const ACCENT = '#2B7FE0'
 const BG = '#08121E'
 
 interface Props { scene: Scene; brand: BrandConfig }
@@ -34,7 +34,7 @@ export function ThinkingScene({ scene, brand }: Props) {
       {/* Background radial */}
       <div style={{
         position: 'absolute', inset: 0,
-        background: `radial-gradient(ellipse at 50% 40%, ${GOLD}0C 0%, transparent 65%)`,
+        background: `radial-gradient(ellipse at 50% 40%, ${ACCENT}0C 0%, transparent 65%)`,
         pointerEvents: 'none',
       }} />
 
@@ -47,28 +47,28 @@ export function ThinkingScene({ scene, brand }: Props) {
         {/* Outer ring */}
         <div style={{
           position: 'absolute', inset: 0, borderRadius: '50%',
-          border: `3px solid ${GOLD}35`,
+          border: `3px solid ${ACCENT}35`,
         }} />
         {/* Inner glow ring */}
         <div style={{
           position: 'absolute', inset: 10, borderRadius: '50%',
-          border: `3px solid ${GOLD}`,
+          border: `3px solid ${ACCENT}`,
           opacity: 0.25 + progress * 0.75,
         }} />
         {/* Center */}
         <div style={{
           position: 'absolute', inset: 28, borderRadius: '50%',
-          background: `radial-gradient(circle, ${GOLD}22 0%, transparent 70%)`,
+          background: `radial-gradient(circle, ${ACCENT}22 0%, transparent 70%)`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <span style={{ fontSize: 54, fontWeight: 900, color: GOLD, lineHeight: 1 }}>?</span>
+          <span style={{ fontSize: 54, fontWeight: 900, color: ACCENT, lineHeight: 1 }}>?</span>
         </div>
       </div>
 
       {/* Text */}
       <div style={{ opacity: textOpacity, textAlign: 'center', maxWidth: 720, padding: '0 64px' }}>
         <p style={{
-          fontSize: 26, fontWeight: 800, color: GOLD,
+          fontSize: 26, fontWeight: 800, color: ACCENT,
           letterSpacing: 5, textTransform: 'uppercase' as const, marginBottom: 24,
         }}>
           Düşünelim...
@@ -79,7 +79,7 @@ export function ThinkingScene({ scene, brand }: Props) {
           {[dot1, dot2, dot3].map((d, i) => (
             <div key={i} style={{
               width: 14, height: 14, borderRadius: '50%',
-              background: GOLD, opacity: 0.2 + d * 0.8,
+              background: ACCENT, opacity: 0.2 + d * 0.8,
               transform: `scale(${0.7 + d * 0.5})`,
             }} />
           ))}
@@ -101,7 +101,7 @@ export function ThinkingScene({ scene, brand }: Props) {
         background: 'rgba(255,255,255,0.07)',
       }}>
         <div style={{
-          height: '100%', background: GOLD,
+          height: '100%', background: ACCENT,
           width: `${progress * 100}%`,
           borderRadius: '0 4px 4px 0',
         }} />

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import AssistantWidget from '@/components/assistant/AssistantWidget'
+import ErrorBoundary from '@/components/ui/ErrorBoundary'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [assistantOpen, setAssistantOpen] = useState(false)
@@ -18,7 +19,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           onOpenSidebar={() => setSidebarOpen(true)}
         />
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
-          {children}
+          <ErrorBoundary>
+            {children}
+          </ErrorBoundary>
         </main>
       </div>
       <AssistantWidget

@@ -8,7 +8,7 @@ import Link from 'next/link'
 import {
   FileText, Users, Video, Database, AlertCircle,
   Clock, CheckCircle2, TrendingUp, GraduationCap,
-  Upload, Film, ArrowRight,
+  BookOpen, Film, ArrowRight,
 } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import { useAuth } from '@/hooks/useAuth'
@@ -102,12 +102,17 @@ export default function DashboardPage() {
 
         {/* Hızlı Akışlar */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Bilgi Merkezi özet kartı — PDF yükleme için modüle yönlendir */}
           <Link href="/knowledge" className="group relative bg-surface-50 border border-surface-200 hover:border-blue-500/40 rounded-xl p-4 transition-all duration-150 hover:bg-blue-500/5">
             <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center mb-3">
-              <Upload size={16} />
+              <BookOpen size={16} />
             </div>
-            <p className="text-sm font-semibold text-white">PDF Yükle</p>
-            <p className="text-xs text-gray-500 mt-0.5">Bilgi tabanına doküman ekle</p>
+            <p className="text-sm font-semibold text-white">Bilgi Merkezi</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {s?.indexed_documents
+                ? <><span className="text-blue-400 font-medium">{s.indexed_documents}</span> doküman işlendi</>
+                : 'Doküman yükle ve yönet'}
+            </p>
             <ArrowRight size={13} className="absolute top-4 right-4 text-gray-600 group-hover:text-blue-400 transition-colors" />
           </Link>
 
@@ -120,17 +125,17 @@ export default function DashboardPage() {
             <ArrowRight size={13} className="absolute top-4 right-4 text-gray-600 group-hover:text-brand-400 transition-colors" />
           </Link>
 
-          <Link href="/video" className="group relative bg-surface-50 border border-surface-200 hover:border-orange-500/40 rounded-xl p-4 transition-all duration-150 hover:bg-orange-500/5">
+          <Link href="/video" className="group relative bg-surface-50 border border-surface-200 hover:border-amber-500/40 rounded-xl p-4 transition-all duration-150 hover:bg-amber-500/5">
             {s && s.pending_content > 0 && (
-              <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-orange-400 animate-pulse" />
+              <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
             )}
-            <div className="w-8 h-8 rounded-lg bg-orange-500/10 text-orange-400 flex items-center justify-center mb-3">
+            <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center mb-3">
               <Clock size={16} />
             </div>
             <p className="text-sm font-semibold text-white">Onay Bekleyen</p>
             <p className="text-xs text-gray-500 mt-0.5">
               {s?.pending_content
-                ? <><span className="text-orange-400 font-medium">{s.pending_content}</span> video inceleme bekliyor</>
+                ? <><span className="text-amber-400 font-medium">{s.pending_content}</span> video inceleme bekliyor</>
                 : 'İnceleme bekleyen video yok'}
             </p>
           </Link>

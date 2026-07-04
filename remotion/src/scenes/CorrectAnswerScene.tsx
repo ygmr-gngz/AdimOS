@@ -1,7 +1,7 @@
 import { interpolate, spring, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
 import { BrandConfig, Scene } from '../types'
 
-const GOLD = '#C9A96E'
+const ACCENT = '#2B7FE0'
 const BG = '#08121E'
 const GREEN = '#22C55E'
 const GREEN_DIM = 'rgba(34,197,94,0.13)'
@@ -100,13 +100,13 @@ export function CorrectAnswerScene({ scene, brand }: Props) {
       {scene.explanation && (
         <div style={{
           background: 'rgba(255,255,255,0.06)',
-          border: `1px solid rgba(201,169,110,0.30)`,
-          borderLeft: `4px solid ${GOLD}`,
+          border: `1px solid rgba(43,127,224,0.30)`,
+          borderLeft: `4px solid ${ACCENT}`,
           borderRadius: 14, padding: isVertical ? '20px 26px' : '20px 28px',
           opacity: explOpacity, width: '100%',
         }}>
           <p style={{
-            fontSize: 12, fontWeight: 800, color: GOLD,
+            fontSize: 12, fontWeight: 800, color: ACCENT,
             letterSpacing: 3, textTransform: 'uppercase' as const, marginBottom: 10,
           }}>
             Çözüm Mantığı

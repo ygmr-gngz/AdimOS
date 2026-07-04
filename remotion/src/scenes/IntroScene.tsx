@@ -1,7 +1,7 @@
 import { interpolate, spring, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
 import { BrandConfig, Scene } from '../types'
 
-const GOLD = '#C9A96E'
+const ACCENT = '#2B7FE0'
 const BG_DARK = '#08121E'
 const BG_MID = '#0D2040'
 
@@ -34,7 +34,7 @@ export function IntroScene({ scene, brand }: Props) {
       <div style={{
         position: 'absolute', top: -160, right: -160,
         width: 560, height: 560, borderRadius: '50%',
-        background: `radial-gradient(circle, ${GOLD}18 0%, transparent 60%)`,
+        background: `radial-gradient(circle, ${ACCENT}18 0%, transparent 60%)`,
         pointerEvents: 'none',
       }} />
       {/* Ambient glow bottom-left */}
@@ -48,18 +48,18 @@ export function IntroScene({ scene, brand }: Props) {
       {/* Top accent bar */}
       <div style={{
         position: 'absolute', top: 0, left: '10%', right: '10%', height: 4,
-        background: `linear-gradient(90deg, transparent 0%, ${GOLD} 40%, ${GOLD} 60%, transparent 100%)`,
+        background: `linear-gradient(90deg, transparent 0%, ${ACCENT} 40%, ${ACCENT} 60%, transparent 100%)`,
         opacity: 0.7,
       }} />
 
       {/* Badge */}
       <div style={{ transform: `scale(${badgeScale})`, marginBottom: isVertical ? 48 : 52 }}>
         <div style={{
-          background: GOLD, color: '#08121E',
+          background: ACCENT, color: '#08121E',
           fontWeight: 800, fontSize: isVertical ? 20 : 18,
           letterSpacing: 3.5, textTransform: 'uppercase' as const,
           padding: '11px 38px', borderRadius: 50,
-          boxShadow: `0 0 36px ${GOLD}55`,
+          boxShadow: `0 0 36px ${ACCENT}55`,
         }}>
           {scene.subtitle ?? 'SGS Soru Çözüm Serisi'}
         </div>
@@ -83,7 +83,7 @@ export function IntroScene({ scene, brand }: Props) {
       {/* Gold divider */}
       <div style={{
         width: lineW, height: 3,
-        background: GOLD, borderRadius: 2,
+        background: ACCENT, borderRadius: 2,
         margin: isVertical ? '44px 0 30px' : '48px 0 28px',
       }} />
 
@@ -101,7 +101,7 @@ export function IntroScene({ scene, brand }: Props) {
       {/* Bottom accent bar */}
       <div style={{
         position: 'absolute', bottom: 0, left: '10%', right: '10%', height: 4,
-        background: `linear-gradient(90deg, transparent 0%, ${GOLD} 40%, ${GOLD} 60%, transparent 100%)`,
+        background: `linear-gradient(90deg, transparent 0%, ${ACCENT} 40%, ${ACCENT} 60%, transparent 100%)`,
         opacity: 0.35,
       }} />
 

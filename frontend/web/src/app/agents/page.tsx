@@ -23,8 +23,12 @@ export default function AgentsPage() {
   const [recentRuns, setRecentRuns] = useState<AgentRun[]>([])
 
   useEffect(() => {
-    apiClient.get('/agents').then((r) => setAgents(r.data)).catch(() => {})
-    apiClient.get('/agents/runs?limit=10').then((r) => setRecentRuns(r.data.runs ?? [])).catch(() => {})
+    apiClient.get('/agents')
+      .then((r) => { if (Array.isArray(r.data)) setAgents(r.data) })
+      .catch(() => {})
+    apiClient.get('/agents/runs?limit=10')
+      .then((r) => { if (Array.isArray(r.data?.runs)) setRecentRuns(r.data.runs) })
+      .catch(() => {})
   }, [])
 
   return (
