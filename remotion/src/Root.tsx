@@ -59,6 +59,38 @@ const DEMO_STORYBOARD: StoryboardJSON = {
   ],
 }
 
+// SplitQuizVertical demo — SafeAreaOverlay önizlemesi için
+const DEMO_SPLIT_VERTICAL: StoryboardJSON = {
+  video_type: 'quiz',
+  title: 'SGS Demo — Dikey Soru Çözümü',
+  lesson_name: 'Özel Güvenlik Kanunu',
+  topic: '5188 Sayılı Kanun',
+  format: '9:16',
+  language: 'tr',
+  brand: DEFAULT_BRAND,
+  scenes: [
+    {
+      id: 1, component: 'SplitQuizVerticalScene', duration_seconds: 30,
+      question_number: 1, total_questions: 1,
+      question_text: '5188 sayılı Kanun\'a göre özel güvenlik kimlik kartının geçerlilik süresi kaç yıldır?',
+      options: [
+        { label: 'A', text: '3 yıl' },
+        { label: 'B', text: '4 yıl' },
+        { label: 'C', text: '5 yıl', is_correct: true },
+        { label: 'D', text: '6 yıl' },
+      ],
+      correct_label: 'C',
+      reveal_correct: true,
+      solution_steps: [
+        { type: 'text', text: '5188 sayılı ÖGK md.11 gereği kimlik kartı 5 yıl geçerlidir' },
+        { type: 'text', text: 'Süre dolmadan valilik onayıyla yenilenmesi zorunludur' },
+        { type: 'text', text: 'Yenileme eğitimi sertifikası şartı aranır' },
+      ],
+      show_safe_area: true,  // Remotion Studio'da güvenli alan kılavuzu gösterir
+    },
+  ],
+}
+
 // Motivasyon demo storyboard
 const DEMO_MOTIVATION: StoryboardJSON = {
   video_type: 'motivation',
@@ -103,6 +135,20 @@ export function Root() {
 
   return (
     <>
+      <Composition
+        id="SplitQuizVerticalDemo"
+        component={QuizVideo}
+        durationInFrames={getTotalFrames(DEMO_SPLIT_VERTICAL)}
+        fps={FPS}
+        width={dimV.width}
+        height={dimV.height}
+        defaultProps={{ storyboard: DEMO_SPLIT_VERTICAL }}
+        calculateMetadata={({ props }) => ({
+          durationInFrames: getTotalFrames(props.storyboard),
+          width: DIMENSIONS[props.storyboard.format].width,
+          height: DIMENSIONS[props.storyboard.format].height,
+        })}
+      />
       <Composition
         id="QuizVideo"
         component={QuizVideo}

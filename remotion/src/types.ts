@@ -103,6 +103,7 @@ export interface Scene {
   // Bölünmüş ekran soru çözümü
   solution_steps?: SolutionStep[]
   reveal_correct?: boolean     // çözüm sonunda doğru şık vurgulanır
+  show_safe_area?: boolean     // Remotion preview'da güvenli alan kılavuzu göster
 
   // Yevmiye / T hesabı
   journal_rows?: JournalRow[]

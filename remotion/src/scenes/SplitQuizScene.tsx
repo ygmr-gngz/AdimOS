@@ -1,9 +1,9 @@
 /**
  * SplitQuizScene — 16:9 yatay bölünmüş ekran soru çözümü
- * Sol panel: soru + şıklar (tüm video boyunca sabit)
- * Sağ panel: çözüm adımları seslendirmeyle senkronize açılır
+ * Sol panel: çözüm adımları seslendirmeyle senkronize açılır (55%)
+ * Sağ panel: soru + şıklar (tüm video boyunca sabit) (45%)
  */
-import { interpolate, spring, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
+import { interpolate, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
 import { BrandConfig, Scene, SolutionStep } from '../types'
 import { PALETTE } from '../brand'
 
@@ -34,7 +34,6 @@ function SolutionStepItem({ step, index, frame, totalSteps, fps }: {
           border: `1px solid ${ACCENT}30`,
           borderRadius: 10, overflow: 'hidden', fontSize: 13,
         }}>
-          {/* Başlık */}
           <div style={{
             background: `${ACCENT}20`, padding: '6px 14px',
             display: 'flex', justifyContent: 'space-between',
@@ -43,7 +42,6 @@ function SolutionStepItem({ step, index, frame, totalSteps, fps }: {
           }}>
             <span>BORÇ</span><span>ALACAK</span>
           </div>
-          {/* Debit */}
           {step.debit && (
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 14px', borderBottom: `1px solid ${ACCENT}15` }}>
               <span style={{ color: '#FFFFFF', fontSize: 13 }}>
@@ -55,7 +53,6 @@ function SolutionStepItem({ step, index, frame, totalSteps, fps }: {
               </span>
             </div>
           )}
-          {/* Credits */}
           {step.credits?.map((cr, i) => (
             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 14px 8px 28px', borderBottom: i < (step.credits!.length - 1) ? `1px solid ${ACCENT}10` : 'none' }}>
               <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13 }}>
@@ -127,10 +124,10 @@ export function SplitQuizScene({ scene, brand }: Props) {
   const totalFrames = Math.round(scene.duration_seconds * fps)
   const options = scene.options ?? []
 
-  // Sol panel fade in
-  const leftOpacity = interpolate(frame, [0, 20], [0, 1], { extrapolateRight: 'clamp' })
-  // Sağ panel başlık
-  const rightHeaderOpacity = interpolate(frame, [10, 30], [0, 1], { extrapolateRight: 'clamp' })
+  // Sağ panel (soru) fade in
+  const rightOpacity = interpolate(frame, [0, 20], [0, 1], { extrapolateRight: 'clamp' })
+  // Sol panel başlık
+  const leftHeaderOpacity = interpolate(frame, [10, 30], [0, 1], { extrapolateRight: 'clamp' })
 
   // Doğru şık vurgulama — son %20'de
   const revealStart = Math.round(totalFrames * 0.78)
@@ -145,20 +142,98 @@ export function SplitQuizScene({ scene, brand }: Props) {
     }}>
       {/* Ambient glow */}
       <div style={{
-        position: 'absolute', top: -100, right: -100,
+        position: 'absolute', top: -100, left: -100,
         width: 500, height: 500, borderRadius: '50%',
         background: `radial-gradient(circle, ${ACCENT}0C 0%, transparent 65%)`,
         pointerEvents: 'none',
       }} />
 
-      {/* ── Sol Panel: Soru (45%) ─────────────────────── */}
+      {/* Logo filigran — merkezi, %5 opaklık */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        pointerEvents: 'none', zIndex: 1, overflow: 'hidden',
+      }}>
+        <span style={{
+          fontSize: 96, fontWeight: 900, letterSpacing: '0.06em',
+          textTransform: 'uppercase', color: PALETTE.ACCENT_LT,
+          opacity: 0.05, transform: 'rotate(-15deg)', whiteSpace: 'nowrap',
+          userSelect: 'none',
+        }}>
+          ADIM MÜŞAVİRLİK
+        </span>
+      </div>
+
+      {/* ── Sol Panel: Çözüm (55%) ────────────────────── */}
+      <div style={{
+        width: '55%', height: '100%',
+        background: BG_DARK,
+        borderRight: `1px solid ${ACCENT}20`,
+        display: 'flex', flexDirection: 'column',
+        padding: '40px 36px',
+        position: 'relative', zIndex: 2,
+      }}>
+        {/* Başlık */}
+        <div style={{
+          opacity: leftHeaderOpacity,
+          display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24,
+        }}>
+          <div style={{ width: 4, height: 28, borderRadius: 3, background: ACCENT }} />
+          <span style={{
+            fontSize: 13, fontWeight: 800, color: ACCENT,
+            letterSpacing: 3, textTransform: 'uppercase' as const,
+          }}>
+            Çözüm
+          </span>
+        </div>
+
+        {/* Adımlar */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
+          {steps.map((step, i) => (
+            <SolutionStepItem
+              key={i} step={step} index={i}
+              frame={frame} totalSteps={steps.length} fps={fps}
+            />
+          ))}
+
+          {/* Açıklama — çözüm sonunda */}
+          {scene.explanation && (
+            <div style={{
+              opacity: interpolate(frame, [revealStart - 10, revealStart + 20], [0, 1], { extrapolateRight: 'clamp' }),
+              background: `${ACCENT}0D`,
+              border: `1px solid ${ACCENT}30`,
+              borderLeft: `4px solid ${ACCENT}`,
+              borderRadius: 10, padding: '14px 16px', marginTop: 4,
+            }}>
+              <p style={{ fontSize: 13, color: PALETTE.TEXT_MID, lineHeight: 1.7, margin: 0 }}>
+                {scene.explanation}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Alt: lesson adı */}
+        {scene.title && (
+          <div style={{
+            marginTop: 'auto', paddingTop: 16,
+            borderTop: `1px solid ${ACCENT}15`,
+            opacity: 0.45,
+          }}>
+            <span style={{ fontSize: 11, color: PALETTE.TEXT_DIM, letterSpacing: 1 }}>
+              {scene.title}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Sağ Panel: Soru (45%) ─────────────────────── */}
       <div style={{
         width: '45%', height: '100%',
         background: BG_MID,
-        borderRight: `1px solid ${ACCENT}20`,
         display: 'flex', flexDirection: 'column',
         padding: '40px 32px',
-        opacity: leftOpacity,
+        opacity: rightOpacity,
+        position: 'relative', zIndex: 2,
       }}>
         {/* Soru numarası */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
@@ -225,66 +300,15 @@ export function SplitQuizScene({ scene, brand }: Props) {
             )
           })}
         </div>
-      </div>
 
-      {/* ── Sağ Panel: Çözüm (55%) ───────────────────── */}
-      <div style={{
-        width: '55%', height: '100%',
-        background: BG_DARK,
-        display: 'flex', flexDirection: 'column',
-        padding: '40px 36px',
-      }}>
-        {/* Başlık */}
+        {/* Köşe imzası */}
         <div style={{
-          opacity: rightHeaderOpacity,
-          display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24,
+          position: 'absolute', bottom: 14, right: 18,
+          fontSize: 11, fontWeight: 700, color: PALETTE.ACCENT_LT,
+          opacity: 0.7, letterSpacing: '0.03em',
         }}>
-          <div style={{ width: 4, height: 28, borderRadius: 3, background: ACCENT }} />
-          <span style={{
-            fontSize: 13, fontWeight: 800, color: ACCENT,
-            letterSpacing: 3, textTransform: 'uppercase' as const,
-          }}>
-            Çözüm
-          </span>
+          @adimmusavir
         </div>
-
-        {/* Adımlar */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
-          {steps.map((step, i) => (
-            <SolutionStepItem
-              key={i} step={step} index={i}
-              frame={frame} totalSteps={steps.length} fps={fps}
-            />
-          ))}
-
-          {/* Açıklama — çözüm sonunda */}
-          {scene.explanation && (
-            <div style={{
-              opacity: interpolate(frame, [revealStart - 10, revealStart + 20], [0, 1], { extrapolateRight: 'clamp' }),
-              background: `${ACCENT}0D`,
-              border: `1px solid ${ACCENT}30`,
-              borderLeft: `4px solid ${ACCENT}`,
-              borderRadius: 10, padding: '14px 16px', marginTop: 4,
-            }}>
-              <p style={{ fontSize: 13, color: PALETTE.TEXT_MID, lineHeight: 1.7, margin: 0 }}>
-                {scene.explanation}
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Alt: lesson adı */}
-        {scene.title && (
-          <div style={{
-            marginTop: 'auto', paddingTop: 16,
-            borderTop: `1px solid ${ACCENT}15`,
-            opacity: 0.45,
-          }}>
-            <span style={{ fontSize: 11, color: PALETTE.TEXT_DIM, letterSpacing: 1 }}>
-              {scene.title}
-            </span>
-          </div>
-        )}
       </div>
 
       {scene.tts_url && <Audio src={scene.tts_url} />}

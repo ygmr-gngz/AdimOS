@@ -7,6 +7,7 @@
 import { interpolate, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
 import { BrandConfig, Scene } from '../types'
 import { PALETTE } from '../brand'
+import { SafeAreaOverlay } from '../components/SafeAreaOverlay'
 
 const ACCENT = PALETTE.ACCENT
 const BG_DARK = PALETTE.BG_DARK
@@ -41,6 +42,22 @@ export function SplitQuizVerticalScene({ scene, brand }: Props) {
         background: `radial-gradient(ellipse, ${ACCENT}0A 0%, transparent 65%)`,
         pointerEvents: 'none',
       }} />
+
+      {/* Logo filigran — merkezi, %5 opaklık */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        pointerEvents: 'none', zIndex: 1, overflow: 'hidden',
+      }}>
+        <span style={{
+          fontSize: 72, fontWeight: 900, letterSpacing: '0.06em',
+          textTransform: 'uppercase', color: PALETTE.ACCENT_LT,
+          opacity: 0.05, transform: 'rotate(-15deg)', whiteSpace: 'nowrap',
+          userSelect: 'none',
+        }}>
+          ADIM MÜŞAVİRLİK
+        </span>
+      </div>
 
       {/* Top accent bar */}
       <div style={{ height: 4, background: `linear-gradient(90deg, transparent, ${ACCENT}, transparent)`, opacity: 0.7 }} />
@@ -211,11 +228,14 @@ export function SplitQuizVerticalScene({ scene, brand }: Props) {
           )}
         </div>
 
-        {/* Marka imzası */}
-        <div style={{ marginTop: 'auto', paddingTop: 10, textAlign: 'center' }}>
-          <span style={{ fontSize: 10, color: PALETTE.TEXT_DIM, letterSpacing: 1.5 }}>@adimmusavir</span>
+        {/* Marka imzası — güvenli alan içinde sol alt */}
+        <div style={{ marginTop: 'auto', paddingTop: 10 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: PALETTE.ACCENT_LT, opacity: 0.7, letterSpacing: '0.03em' }}>@adimmusavir</span>
         </div>
       </div>
+
+      {/* SafeArea kılavuzu — sadece scene.show_safe_area=true ise görünür */}
+      <SafeAreaOverlay show={scene.show_safe_area} />
 
       {scene.tts_url && <Audio src={scene.tts_url} />}
     </div>
