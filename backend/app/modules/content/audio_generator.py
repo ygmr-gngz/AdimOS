@@ -7,16 +7,20 @@ _client = OpenAI(api_key=settings.OPENAI_API_KEY)
 _OUTPUT_DIR = "/tmp/audio"
 
 
+def _mp3_duration(path: str) -> float:
+    """MP3 süresini ffmpeg subprocess açmadan okur (Railway process limit sorunu önler)."""
+    try:
+        from mutagen.mp3 import MP3
+        return MP3(path).info.length
+    except Exception:
+        # fallback: 128 kbps MP3 için dosya boyutundan tahmin
+        return max(1.0, os.path.getsize(path) / 16_000)
+
+
 def generate_audio_segment(text: str, voice: str = "nova") -> tuple[str, float]:
-    """
-    TTS üretir ve (dosya_yolu, süre_saniye) döndürür.
-    Her sahne için ayrı çağrılır → mükemmel sync.
-    """
+    """TTS üretir ve (dosya_yolu, süre_saniye) döndürür."""
     path = generate_audio(text, voice)
-    from moviepy.editor import AudioFileClip
-    c = AudioFileClip(path)
-    dur = c.duration
-    c.close()
+    dur = _mp3_duration(path)
     return path, dur
 
 

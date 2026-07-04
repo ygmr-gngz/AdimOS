@@ -23,6 +23,7 @@ tiktoken==0.8.0
 moviepy==1.0.3
 Pillow==11.1.0
 numpy==1.26.4
+mutagen==1.47.0
 
 # ── Ortam & Config ────────────────────────────────────────────
 python-dotenv==1.0.1
