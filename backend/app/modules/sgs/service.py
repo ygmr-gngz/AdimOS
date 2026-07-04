@@ -1,6 +1,7 @@
 """SGS servis katmanı — PDF analiz + video üretim."""
 import logging
 import os
+import threading
 from moviepy.editor import AudioFileClip
 
 from app.modules.knowledge.pdf_loader import load_pdf
@@ -12,6 +13,10 @@ from app.modules.content.video_assembler import assemble_video
 from app.modules.voice.tts import synthesize
 
 logger = logging.getLogger(__name__)
+
+# Railway container'da eşzamanlı moviepy/ffmpeg kullanımı process limitini aşar.
+# Aynı anda yalnızca 1 video render işlemi çalışabilir.
+_RENDER_LOCK = threading.Semaphore(1)
 
 
 def analyze_pdf_bytes(pdf_bytes: bytes, pdf_name: str) -> dict:
@@ -45,6 +50,19 @@ def build_sgs_topic_video(
         raise ValueError(f"Video için soru bulunamadı: {q_ids}")
 
     logger.info(f"[sgs] video üretimi başladı: '{title}' — {len(questions)} soru")
+
+    # Render lock: eşzamanlı moviepy/ffmpeg Railway process limitini aşar
+    acquired = _RENDER_LOCK.acquire(timeout=600)  # 10 dk bekle
+    if not acquired:
+        raise RuntimeError("Başka bir video render işlemi devam ediyor. 10 dakika içinde tamamlanmadı.")
+    try:
+        return _build_sgs_topic_video_inner(title, topic, subject, questions)
+    finally:
+        _RENDER_LOCK.release()
+
+
+def _build_sgs_topic_video_inner(title: str, topic: str, subject: str, questions: list) -> dict:
+    """Gerçek render işlemi — yalnızca _RENDER_LOCK tutulduğunda çağrılır."""
 
     # Storyboard üret
     storyboard = generate_sgs_topic_storyboard(title, topic, subject, questions)

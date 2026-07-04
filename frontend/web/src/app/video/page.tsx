@@ -694,6 +694,15 @@ export default function VideoPage() {
     } catch { toast.error('Reddetme başarısız') }
   }
 
+  const handleRegenerate = async (job: VideoJob, e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await videoService.regenerateJob(job.id)
+      toast.success('Yeniden üretim başlatıldı')
+      loadJobs()
+    } catch { toast.error('Yeniden üretim başlatılamadı') }
+  }
+
   const pendingReview = jobs.filter(j => j.status === 'ready_for_review')
   const activeJobs = jobs.filter(j => ['scripting', 'tts_generating', 'rendering'].includes(j.status))
 
@@ -858,7 +867,7 @@ export default function VideoPage() {
                   )}
                   {job.status === 'failed' && (
                     <button
-                      onClick={e => { e.stopPropagation(); setShowCreate(true) }}
+                      onClick={e => handleRegenerate(job, e)}
                       style={{
                         marginTop: 10, padding: '5px 14px', borderRadius: 8,
                         border: '1.5px solid #ef4444', background: '#fff',
