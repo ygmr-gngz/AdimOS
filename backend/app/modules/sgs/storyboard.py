@@ -194,5 +194,12 @@ JSON FORMATI:
         logger.info(f"[sgs-storyboard] tamamlandı: {scene_count} sahne (beklenen ~{expected})")
         return result
     except Exception as e:
+        err_str = str(e)
         logger.error(f"[sgs-storyboard] hata: {e}", exc_info=True)
+        if "429" in err_str or "quota" in err_str.lower() or "insufficient_quota" in err_str:
+            raise RuntimeError(
+                "OpenAI API kredisi tükendi (429 insufficient_quota). "
+                "platform.openai.com/account/billing adresinden kredi ekleyin, "
+                "ardından videoyu yeniden deneyin."
+            ) from e
         raise RuntimeError(f"SGS storyboard üretimi başarısız: {e}") from e
