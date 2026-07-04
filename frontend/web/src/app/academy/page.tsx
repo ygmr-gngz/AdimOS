@@ -750,6 +750,7 @@ function UploadTab({ onUploaded }: { onUploaded: () => void }) {
   const [phase, setPhase] = useState<'idle' | 'uploading'>('idle')
   const [savedAnalyses, setSavedAnalyses] = useState<SgsAnalysisMeta[]>([])
   const [loadingList, setLoadingList] = useState(true)
+  const [forceReanalyze, setForceReanalyze] = useState(false)
   const [uploadMeta, setUploadMeta] = useState({
     document_type: SGS_DOCUMENT_TYPES[0] as string,
     year: '',
@@ -765,21 +766,24 @@ function UploadTab({ onUploaded }: { onUploaded: () => void }) {
     const file = e.target.files?.[0]
     if (!file) return
 
-    // Aynı dosya adı zaten yüklüyse kullanıcıyı bilgilendir
-    if (savedAnalyses.some(a => a.pdf_name === file.name)) {
-      toast('Bu PDF zaten yüklü. Yeniden yüklemenize gerek yok.', { icon: 'ℹ️' })
+    const alreadyExists = savedAnalyses.some(a => a.pdf_name === file.name)
+
+    // Yeniden analiz modu değilse ve PDF zaten yüklüyse bilgilendir
+    if (alreadyExists && !forceReanalyze) {
+      toast('Bu PDF zaten yüklü. "Yeniden Analiz" modunu etkinleştirip tekrar yükleyin.', { icon: 'ℹ️' })
       e.target.value = ''
       return
     }
 
     setPhase('uploading')
     try {
-      const result = await sgsService.analyzePdf(file, uploadMeta)
+      const result = await sgsService.analyzePdf(file, uploadMeta, forceReanalyze)
       const list = await sgsService.listAnalyses()
       setSavedAnalyses(list)
-      if (result.analysis_id) {
+      const analysisId = result.analysis_id ?? (result as Record<string, unknown>)['id'] as string
+      if (analysisId) {
         try {
-          const pr = await sgsService.parseQuestions({ analysis_id: result.analysis_id })
+          const pr = await sgsService.parseQuestions({ analysis_id: analysisId })
           if (pr.questions_created > 0) {
             toast.success(`${pr.questions_created} soru parse edildi — dashboard güncellendi`)
           } else {
@@ -798,7 +802,7 @@ function UploadTab({ onUploaded }: { onUploaded: () => void }) {
       setPhase('idle')
       e.target.value = ''
     }
-  }, [uploadMeta, onUploaded])
+  }, [uploadMeta, forceReanalyze, onUploaded])
 
   const handleDelete = async (id: string) => {
     try {
@@ -844,12 +848,27 @@ function UploadTab({ onUploaded }: { onUploaded: () => void }) {
           </div>
         </div>
 
+        {/* Yeniden Analiz toggle */}
+        <label className="flex items-center gap-2.5 cursor-pointer select-none w-fit">
+          <div
+            onClick={() => setForceReanalyze(v => !v)}
+            className={`relative w-9 h-5 rounded-full transition-colors ${forceReanalyze ? 'bg-orange-500' : 'bg-surface-200'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${forceReanalyze ? 'translate-x-4' : ''}`} />
+          </div>
+          <span className="text-xs text-gray-400">
+            Yeniden Analiz — zaten yüklü PDF'i chunk analizi ile yeniden işle
+          </span>
+        </label>
+
         <label
           htmlFor="sgs-pdf-input"
           className={`block border-2 border-dashed rounded-2xl p-10 text-center transition-all ${
             phase === 'uploading'
               ? 'border-brand-500/30 cursor-not-allowed'
-              : 'border-surface-300 cursor-pointer hover:border-brand-500/50 hover:bg-brand-500/5'
+              : forceReanalyze
+                ? 'border-orange-500/50 cursor-pointer hover:border-orange-500/80 hover:bg-orange-500/5'
+                : 'border-surface-300 cursor-pointer hover:border-brand-500/50 hover:bg-brand-500/5'
           }`}
         >
           <input
@@ -859,7 +878,9 @@ function UploadTab({ onUploaded }: { onUploaded: () => void }) {
           {phase === 'uploading' ? (
             <div className="flex flex-col items-center gap-3">
               <Spinner size={10} />
-              <p className="text-sm text-brand-300 font-medium">PDF işleniyor...</p>
+              <p className="text-sm text-brand-300 font-medium">
+                {forceReanalyze ? 'Yeniden analiz ediliyor (chunk modu)...' : 'PDF işleniyor...'}
+              </p>
               <p className="text-xs text-gray-500">Sorular çıkarılıyor ve kaydediliyor</p>
             </div>
           ) : (

@@ -247,16 +247,18 @@ export const sgsService = {
   },
   async analyzePdf(
     file: File,
-    meta?: { document_type?: string; year?: string; semester?: string }
+    meta?: { document_type?: string; year?: string; semester?: string },
+    force = false,
   ): Promise<SgsAnalysis> {
     const form = new FormData()
     form.append('file', file)
     if (meta?.document_type) form.append('document_type', meta.document_type)
     if (meta?.year) form.append('year', meta.year)
     if (meta?.semester) form.append('semester', meta.semester)
+    if (force) form.append('force', 'true')
     const { data } = await apiClient.post('/sgs/analyze', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 120_000,
+      timeout: 300_000,
     })
     return data
   },
