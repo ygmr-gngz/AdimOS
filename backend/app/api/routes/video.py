@@ -24,7 +24,7 @@ _pipeline_semaphore = threading.Semaphore(_MAX_CONCURRENT)
 # ── Remotion devre kesici ─────────────────────────────────────
 _remotion_lock = threading.Lock()
 _remotion_consecutive_failures = 0
-_CIRCUIT_OPEN_THRESHOLD = 3
+_CIRCUIT_OPEN_THRESHOLD = 5
 
 
 # ── Pydantic modeller ─────────────────────────────────────────

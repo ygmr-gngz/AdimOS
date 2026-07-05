@@ -685,7 +685,9 @@ def get_areas_from_sgs_questions(year: str | None = None) -> list[dict]:
     from collections import Counter
     supabase = get_supabase_client()
 
-    query = supabase.table("sgs_questions").select("lesson_name", count="exact")
+    # Supabase default 1000 satır sınırı — büyük tablolarda kesilebilir.
+    # limit(50000) ile tüm satırları al.
+    query = supabase.table("sgs_questions").select("lesson_name", count="exact").limit(50000)
     if year:
         query = query.eq("year", year)
     resp = query.execute()
@@ -728,7 +730,7 @@ def get_lesson_topics_from_sgs_questions(lesson_name: str, year: str | None = No
     from collections import Counter
     supabase = get_supabase_client()
 
-    query = supabase.table("sgs_questions").select("topic, year").eq("lesson_name", lesson_name)
+    query = supabase.table("sgs_questions").select("topic, year").eq("lesson_name", lesson_name).limit(50000)
     if year:
         query = query.eq("year", year)
     resp = query.execute()
@@ -770,7 +772,7 @@ def reclassify_all_questions() -> dict:
     _log = _logging.getLogger(__name__)
     supabase = get_supabase_client()
 
-    resp = supabase.table("sgs_questions").select("id, lesson_name, topic").execute()
+    resp = supabase.table("sgs_questions").select("id, lesson_name, topic").limit(50000).execute()
     rows = resp.data or []
 
     # (topic_lower, current_lesson) → {topic, from, to, ids}
