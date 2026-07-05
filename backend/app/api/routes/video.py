@@ -194,9 +194,14 @@ def _build_quiz_storyboard(
     questions: List[QuizQuestion], format: str, brand: dict,
     description: str = "",
 ) -> dict:
+    """
+    Her soru için bir SplitQuizScene (16:9) veya SplitQuizVerticalScene (9:16) üretir.
+    Sol panel = soru + şıklar, Sağ panel = çözüm adımları animasyonlu açılır.
+    """
     total = len(questions)
     scenes = []
     sid = 1
+    scene_component = "SplitQuizVerticalScene" if format == "9:16" else "SplitQuizScene"
 
     intro_voice = (
         f"Merhaba. Bu videoda {lesson_name} dersinden {topic} konusuna ait "
@@ -215,73 +220,40 @@ def _build_quiz_storyboard(
 
     for i, q in enumerate(questions):
         qno = i + 1
-        wrong_labels = [o.label for o in q.options if o.label != q.correct_label]
         correct_opt = next((o for o in q.options if o.label == q.correct_label), None)
+        explanation = q.explanation or (f"{correct_opt.text}" if correct_opt else "")
+
+        solution_steps = []
+        solution_steps.append({
+            "type": "text",
+            "text": f"Doğru cevap: {q.correct_label} — {correct_opt.text if correct_opt else ''}",
+        })
+        if explanation:
+            solution_steps.append({"type": "text", "text": explanation})
+
+        voice_text = (
+            f"{qno}. soru: {q.text}. "
+            "Seçenekler: "
+            + " ".join(f"{o.label} şıkkı: {o.text}" for o in q.options)
+            + f". Doğru cevap {q.correct_label} şıkkıdır. {explanation}"
+        )
 
         scenes.append({
-            "id": sid, "component": "QuestionScene", "duration_seconds": 20,
-            "question_number": qno, "total_questions": total,
-            "title": lesson_name,
+            "id": sid,
+            "component": scene_component,
+            "duration_seconds": 35,
+            "question_number": qno,
+            "total_questions": total,
             "question_text": q.text,
             "options": [{"label": o.label, "text": o.text} for o in q.options],
-            "voice_text": (
-                f"{qno}. soru. {q.text}. Seçenekler: "
-                + " ".join(f"{o.label} şıkkı: {o.text}" for o in q.options)
-            ),
-        })
-        sid += 1
-
-        scenes.append({
-            "id": sid, "component": "ThinkingScene", "duration_seconds": 5,
-            "question_text": q.text[:80],
-            "voice_text": "Cevabı düşünelim...",
-        })
-        sid += 1
-
-        for wl in wrong_labels:
-            wrong_opt = next((o for o in q.options if o.label == wl), None)
-            if not wrong_opt:
-                continue
-            scenes.append({
-                "id": sid, "component": "OptionAnalysisScene", "duration_seconds": 15,
-                "question_number": qno, "total_questions": total,
-                "question_text": q.text,
-                "options": [{"label": o.label, "text": o.text} for o in q.options],
-                "correct_label": q.correct_label,
-                "highlight_option": wl,
-                "explanation": f"{wl} şıkkı doğru değildir.",
-                "voice_text": f"{wl} şıkkı yanlış. {wrong_opt.text} ifadesi bu konuyu tam karşılamamaktadır.",
-            })
-            sid += 1
-
-        explanation = q.explanation or (f"{correct_opt.text}" if correct_opt else "")
-        scenes.append({
-            "id": sid, "component": "CorrectAnswerScene", "duration_seconds": 20,
-            "question_number": qno,
             "correct_label": q.correct_label,
-            "options": [{"label": o.label, "text": o.text} for o in q.options],
+            "reveal_correct": True,
+            "solution_steps": solution_steps,
             "explanation": explanation,
-            "voice_text": f"Doğru cevap {q.correct_label} şıkkıdır. {explanation}",
+            "title": lesson_name,
+            "voice_text": voice_text,
         })
         sid += 1
-
-        key = q.explanation or f"Doğru cevap {q.correct_label} şıkkıdır."
-        scenes.append({
-            "id": sid, "component": "KeyPointScene", "duration_seconds": 12,
-            "question_number": qno,
-            "key_point": key,
-            "voice_text": f"Bu soruda dikkat edilmesi gereken nokta: {key}",
-        })
-        sid += 1
-
-        if i < total - 1:
-            scenes.append({
-                "id": sid, "component": "IntroScene", "duration_seconds": 4,
-                "title": f"{qno + 1}. Soru",
-                "subtitle": f"Toplam {total} sorudan {qno + 1}. soru",
-                "voice_text": f"Şimdi {qno + 1}. sorumuza geçiyoruz.",
-            })
-            sid += 1
 
     scenes.append({
         "id": sid, "component": "OutroScene", "duration_seconds": 8,
