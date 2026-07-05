@@ -34,6 +34,22 @@ def get_documents(source_module: str | None = None):
     return response.data if response.data else []
 
 
+def get_latest_document(source_module: str | None = "knowledge_center") -> dict | None:
+    """En son yüklenen dokümanı döndür (created_at DESC)."""
+    supabase = get_supabase_client()
+    query = supabase.table("documents").select("*").order("created_at", desc=True).limit(1)
+    if source_module:
+        query = query.eq("source_module", source_module)
+    response = query.execute()
+    if response.data:
+        return response.data[0]
+    # source_module filtresi sonuç vermediyse tüm modüllere bak
+    if source_module:
+        response = supabase.table("documents").select("*").order("created_at", desc=True).limit(1).execute()
+        return response.data[0] if response.data else None
+    return None
+
+
 def get_document(document_id: str):
     supabase = get_supabase_client()
     response = supabase.table("documents").select("*").eq("id", document_id).execute()

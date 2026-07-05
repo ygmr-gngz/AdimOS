@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.modules.knowledge.retriever import retrieve
 from app.db.repositories.documents_repo import get_document
 from app.db.repositories.chunks_repo import get_total_chunks
+from app.modules.knowledge.summarizer import is_summarization_intent, resolve_document, summarize_document
 
 _client = OpenAI(api_key=settings.OPENAI_API_KEY)
 logger = logging.getLogger(__name__)
@@ -254,7 +255,97 @@ Belgelerdeki alıntıları tırnak içinde göster ve kaynak dosyayı belirt.
 - Mevzuat maddesi uydurma
 - Olmayan bilgiyi varmış gibi gösterme
 - API key, stack trace veya sistem bilgisi döndürme
-- Belge adından domain çıkarsamak"""
+- Belge adından domain çıkarsamak
+
+━━━━━━━━━━━━━━━━━━━━━━
+# DOKÜMAN ÖZETİ KURALI
+━━━━━━━━━━━━━━━━━━━━━━
+Bir dokümanın özetini istediğinde YALNIZCA sana verilen bölümlere dayanabilirsin.
+Dokümanın sadece bir kısmını özetleyip tüm dokümanın özeti gibi sunma.
+Her zaman hangi dokümanın özetlendiğini ve kaç bölümün işlendiğini açıkça belirt."""
+
+
+def _summarize_route(
+    user_message: str,
+    conversation_history: list[dict] | None,
+    user_id: str | None,
+) -> dict:
+    """
+    Doküman özetleme yolu — map-reduce ile TÜM chunk'lar işlenir.
+    Soru-cevap RAG yolundan tamamen bağımsız.
+    Log etiketi: [rag:ÖZETLEME]
+    """
+    logger.info(f"[rag:ÖZETLEME] başladı — user={user_id}, mesaj='{user_message[:60]}'")
+
+    doc = resolve_document(user_message)
+    if not doc:
+        return {
+            "success": True,
+            "answer": (
+                "Bilgi Merkezinde henüz yüklü bir doküman bulunamadı. "
+                "Lütfen önce Bilgi Merkezi sayfasından bir doküman yükleyin."
+            ),
+            "sources": [],
+            "used_rag": False,
+            "intent": "summarize",
+        }
+
+    doc_name = doc.get("file_name", "Bilinmeyen")
+    doc_id = doc["id"]
+    doc_status = doc.get("status", "")
+
+    if doc_status not in ("indexed",):
+        return {
+            "success": True,
+            "answer": (
+                f"**{doc_name}** dokümanı henüz indekslenmemiş (durum: {doc_status}). "
+                "İndeksleme tamamlandıktan sonra özetleyebilirim."
+            ),
+            "sources": [],
+            "used_rag": False,
+            "intent": "summarize",
+        }
+
+    result = summarize_document(doc_id)
+
+    if result.get("error"):
+        logger.error(f"[rag:ÖZETLEME] hata: {result['error']}")
+        return {
+            "success": True,
+            "answer": f"**{doc_name}** özetlenirken hata oluştu: {result['error']}",
+            "sources": [],
+            "used_rag": False,
+            "intent": "summarize",
+        }
+
+    total_chunks = result["total_chunks"]
+    from_cache = result["from_cache"]
+    large_doc = result.get("large_doc", False)
+    summary = result["summary"]
+
+    cache_tag = " _(önbellekten)_" if from_cache else ""
+    size_note = f"\n> ⚠️ Büyük doküman ({total_chunks} bölüm) — özet ~10-15 saniye sürdü." if large_doc and not from_cache else ""
+
+    answer = (
+        f"**{doc_name}**{cache_tag} — {total_chunks} bölümün tamamı işlendi.\n"
+        f"{size_note}\n\n"
+        f"{summary}"
+    )
+
+    logger.info(f"[rag:ÖZETLEME] tamamlandı — '{doc_name}' {total_chunks} chunk, cache={from_cache}")
+
+    return {
+        "success": True,
+        "answer": answer,
+        "sources": [{
+            "document_id": doc_id,
+            "filename": doc_name,
+            "content_preview": f"Tam doküman özeti — {total_chunks} bölüm map-reduce ile işlendi",
+            "similarity": 1.0,
+        }],
+        "used_rag": True,
+        "intent": "summarize",
+    }
 
 
 def query(
@@ -267,7 +358,12 @@ def query(
 
     logger.info(f"[rag] sorgu — user={user_id}, len={len(user_message)}")
 
-    # 1. İlk arama — orijinal sorgu
+    # ── Niyet ayrımı: doküman özetleme yolu ─────────────────────
+    if is_summarization_intent(user_message):
+        return _summarize_route(user_message, conversation_history, user_id)
+    # ─────────────────────────────────────────────────────────────
+
+    # 1. İlk arama — orijinal sorgu (soru-cevap yolu, değişmedi)
     chunks = retrieve(user_message, match_count=10, match_threshold=SIMILARITY_THRESHOLD)
     chunk_count = len(chunks)
     logger.info(f"[rag] 1. arama: {chunk_count} chunk (threshold={SIMILARITY_THRESHOLD})")

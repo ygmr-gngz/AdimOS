@@ -71,10 +71,12 @@ def reindex_document(document_id: str, storage_path: str, file_name: str):
     logger.info(f"[knowledge] yeniden indeksleme başladı: {document_id}")
     import tempfile, os
     from app.db.storage import download_file
+    from app.modules.knowledge.summarizer import invalidate_summary_cache
     tmp_path = None
     try:
         update_document_status(document_id, DocumentStatus.PROCESSING)
         delete_chunks_by_document_id(document_id)
+        invalidate_summary_cache(document_id)
 
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             tmp_path = tmp.name
