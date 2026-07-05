@@ -886,6 +886,9 @@ export default function VideoPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [previewJob, setPreviewJob] = useState<VideoJob | null>(null)
   const [pollTimedOut, setPollTimedOut] = useState(false)
+  const [circuitOpen, setCircuitOpen] = useState(false)
+  const [circuitInfo, setCircuitInfo] = useState<{ consecutive_failures: number; threshold: number } | null>(null)
+  const [resettingCircuit, setResettingCircuit] = useState(false)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
   const pollStartRef = useRef<number>(0)
   const jobsRef = useRef<VideoJob[]>([]) // closure-safe ref
@@ -905,7 +908,32 @@ export default function VideoPage() {
     }
   }
 
+  const checkCircuit = async () => {
+    try {
+      const health = await videoService.renderHealth()
+      setCircuitOpen(health.circuit_open)
+      setCircuitInfo({ consecutive_failures: health.consecutive_failures, threshold: health.threshold })
+    } catch {
+      // render health endpoint yoksa sessizce geç
+    }
+  }
+
+  const handleResetCircuit = async () => {
+    setResettingCircuit(true)
+    try {
+      await videoService.resetCircuit()
+      setCircuitOpen(false)
+      setCircuitInfo(null)
+      toast.success('Render devresi sıfırlandı — yeni iş başlatabilirsiniz')
+    } catch {
+      toast.error('Devre sıfırlanamadı')
+    } finally {
+      setResettingCircuit(false)
+    }
+  }
+
   useEffect(() => {
+    checkCircuit()
     loadJobs()
     setPollTimedOut(false)
     pollStartRef.current = Date.now()
@@ -1017,6 +1045,43 @@ export default function VideoPage() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Circuit breaker uyarısı */}
+        {circuitOpen && (
+          <div style={{
+            marginBottom: 16, padding: '12px 16px', borderRadius: 12,
+            background: '#fff1f2', border: '1.5px solid #fca5a5',
+            display: 'flex', alignItems: 'center', gap: 10,
+          }}>
+            <XCircle size={16} color="#ef4444" style={{ flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#b91c1c' }}>
+                Render devresi açık — yeni video işleri başlatılamaz
+              </p>
+              {circuitInfo && (
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#ef4444' }}>
+                  {circuitInfo.consecutive_failures}/{circuitInfo.threshold} ardışık hata. Railway render servisini kontrol edin.
+                </p>
+              )}
+            </div>
+            <button
+              onClick={handleResetCircuit}
+              disabled={resettingCircuit}
+              style={{
+                padding: '5px 14px', borderRadius: 8, flexShrink: 0,
+                border: '1.5px solid #ef4444', background: '#fff',
+                color: '#ef4444', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 6,
+                opacity: resettingCircuit ? 0.6 : 1,
+              }}
+            >
+              {resettingCircuit
+                ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                : <RefreshCw size={12} />}
+              Devreyi Sıfırla
+            </button>
           </div>
         )}
 

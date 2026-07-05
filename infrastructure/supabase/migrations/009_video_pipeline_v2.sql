@@ -9,10 +9,17 @@
 --   warmup_pinging  : Remotion Railway App Sleeping'den uyanıyor, geçici durum
 --   archived        : Temizlik tarafından arşivlendi, artık aktif değil
 
--- ── 2. archived_at sütunu ────────────────────────────────────
+-- ── 2. archived_at + infographic_template sütunları ─────────
 ALTER TABLE video_jobs
-  ADD COLUMN IF NOT EXISTS archived_at      TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS archived_at          TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS infographic_template TEXT;
+
+-- ── 2b. type constraint — infographic ve motivation eklenir ──
+-- Mevcut constraint'i kaldır, genişletilmişini ekle
+ALTER TABLE video_jobs DROP CONSTRAINT IF EXISTS video_jobs_type_check;
+ALTER TABLE video_jobs
+  ADD CONSTRAINT video_jobs_type_check
+  CHECK (type IN ('quiz', 'lesson', 'shorts', 'motivation', 'infographic'));
 
 -- ── 3. İnfografik kısayolu için yeni indeks ──────────────────
 CREATE INDEX IF NOT EXISTS idx_video_jobs_type_status
