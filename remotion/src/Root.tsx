@@ -137,59 +137,59 @@ export function Root() {
     <>
       <Composition
         id="SplitQuizVerticalDemo"
-        component={QuizVideo}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={QuizVideo as any}
         durationInFrames={getTotalFrames(DEMO_SPLIT_VERTICAL)}
         fps={FPS}
         width={dimV.width}
         height={dimV.height}
         defaultProps={{ storyboard: DEMO_SPLIT_VERTICAL }}
-        calculateMetadata={({ props }) => ({
-          durationInFrames: getTotalFrames(props.storyboard),
-          width: DIMENSIONS[props.storyboard.format].width,
-          height: DIMENSIONS[props.storyboard.format].height,
-        })}
+        calculateMetadata={({ props }) => {
+          const sb = (props as { storyboard: StoryboardJSON }).storyboard
+          return { durationInFrames: getTotalFrames(sb), width: DIMENSIONS[sb.format].width, height: DIMENSIONS[sb.format].height }
+        }}
       />
       <Composition
         id="QuizVideo"
-        component={QuizVideo}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={QuizVideo as any}
         durationInFrames={getTotalFrames(DEMO_STORYBOARD)}
         fps={FPS}
         width={dim.width}
         height={dim.height}
         defaultProps={{ storyboard: DEMO_STORYBOARD }}
-        calculateMetadata={({ props }) => ({
-          durationInFrames: getTotalFrames(props.storyboard),
-          width: DIMENSIONS[props.storyboard.format].width,
-          height: DIMENSIONS[props.storyboard.format].height,
-        })}
+        calculateMetadata={({ props }) => {
+          const sb = (props as { storyboard: StoryboardJSON }).storyboard
+          return { durationInFrames: getTotalFrames(sb), width: DIMENSIONS[sb.format].width, height: DIMENSIONS[sb.format].height }
+        }}
       />
       <Composition
         id="MotivationVideo"
-        component={MotivationVideo}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={MotivationVideo as any}
         durationInFrames={getMotivationTotalFrames(DEMO_MOTIVATION)}
         fps={FPS}
         width={dimV.width}
         height={dimV.height}
         defaultProps={{ storyboard: DEMO_MOTIVATION }}
-        calculateMetadata={({ props }) => ({
-          durationInFrames: getMotivationTotalFrames(props.storyboard),
-          width: DIMENSIONS[props.storyboard.format].width,
-          height: DIMENSIONS[props.storyboard.format].height,
-        })}
+        calculateMetadata={({ props }) => {
+          const sb = (props as { storyboard: StoryboardJSON }).storyboard
+          return { durationInFrames: getMotivationTotalFrames(sb), width: DIMENSIONS[sb.format].width, height: DIMENSIONS[sb.format].height }
+        }}
       />
       <Composition
         id="InfographicVideo"
-        component={InfographicVideo}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={InfographicVideo as any}
         durationInFrames={getInfographicTotalFrames(DEMO_INFOGRAPHIC)}
         fps={FPS}
         width={dimV.width}
         height={dimV.height}
         defaultProps={{ storyboard: DEMO_INFOGRAPHIC }}
-        calculateMetadata={({ props }) => ({
-          durationInFrames: getInfographicTotalFrames(props.storyboard),
-          width: DIMENSIONS[props.storyboard.format].width,
-          height: DIMENSIONS[props.storyboard.format].height,
-        })}
+        calculateMetadata={({ props }) => {
+          const sb = (props as { storyboard: StoryboardJSON }).storyboard
+          return { durationInFrames: getInfographicTotalFrames(sb), width: DIMENSIONS[sb.format].width, height: DIMENSIONS[sb.format].height }
+        }}
       />
     </>
   )

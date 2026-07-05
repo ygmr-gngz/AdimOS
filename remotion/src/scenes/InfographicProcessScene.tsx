@@ -84,13 +84,9 @@ export function InfographicProcessScene({ scene, brand }: Props) {
                 <div style={{
                   position: 'absolute' as const,
                   top: isVertical ? 14 : -14,
-                  left: isVertical ? 'auto' : '50%',
-                  right: isVertical ? 'auto' : 'auto',
                   transform: isVertical ? 'none' : 'translateX(-50%)',
                   left: isVertical ? undefined : '50%',
                   right: isVertical ? 16 : undefined,
-                  // Override for vertical
-                  ...(isVertical ? { top: 14, right: 16, left: 'auto', transform: 'none' } : {}),
                   width: 28, height: 28, borderRadius: '50%',
                   background: ACCENT, color: '#fff',
                   fontWeight: 800, fontSize: 13,
