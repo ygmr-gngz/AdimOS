@@ -305,6 +305,91 @@ def _build_quiz_storyboard(
     }
 
 
+# ── Remotion render yardımcısı ───────────────────────────────
+
+def _run_remotion_render(job_id: str, storyboard: dict, has_audio: bool = True) -> None:
+    """Devre kesici → warm-up → /render POST → status güncelleme."""
+    import httpx
+    global _remotion_consecutive_failures
+
+    remotion_url = settings.REMOTION_URL
+    is_configured = bool(
+        remotion_url
+        and "localhost" not in remotion_url
+        and "127.0.0.1" not in remotion_url
+    )
+    if not is_configured:
+        logger.info(f"[video] {job_id[:8]} Remotion yapılandırılmamış → hazır")
+        _set_status(job_id, "ready_for_review", {
+            "error_message": (
+                ("Render sunucusu bağlı değil — ses sahneleri hazır. " if has_audio
+                 else "Render sunucusu bağlı değil — storyboard hazır. ")
+                + "REMOTION_URL ortam değişkenini yapılandırın."
+            )
+        })
+        return
+
+    with _remotion_lock:
+        circuit_open = _remotion_consecutive_failures >= _CIRCUIT_OPEN_THRESHOLD
+        fail_count = _remotion_consecutive_failures
+
+    if circuit_open:
+        logger.warning(f"[video] {job_id[:8]} devre kesici açık ({fail_count} ardışık hata)")
+        _set_status(job_id, "ready_for_review", {
+            "error_message": (
+                f"Render servisi yanıt vermiyor (devre kesici: {fail_count} ardışık hata). "
+                + ("Ses sahneleri hazır — servis düzelince 'Yeniden Dene' ile render başlatın."
+                   if has_audio else
+                   "Storyboard hazır — servis düzelince 'Yeniden Dene' ile render başlatın.")
+            )
+        })
+        return
+
+    _set_status(job_id, "warmup_pinging")
+    logger.info(f"[video] {job_id[:8]} Remotion warm-up başlıyor ({remotion_url})")
+    service_up = _remotion_warm_up(remotion_url, job_id)
+
+    if not service_up:
+        with _remotion_lock:
+            _remotion_consecutive_failures += 1
+            fail_count = _remotion_consecutive_failures
+        logger.error(f"[video] {job_id[:8]} Remotion 90s içinde yanıt vermedi (ardışık: {fail_count})")
+        _set_status(job_id, "failed", {
+            "error_message": (
+                "Render servisi 90 saniye boyunca yanıt vermedi. "
+                "Railway servisinin ayakta olduğundan emin olup 'Yeniden Dene' ile tekrar başlatın."
+            )
+        })
+        return
+
+    with _remotion_lock:
+        _remotion_consecutive_failures = 0
+
+    _set_status(job_id, "rendering")
+    logger.info(f"[video] {job_id[:8]} Remotion render tetikleniyor")
+    try:
+        resp = httpx.post(
+            f"{remotion_url}/render",
+            json={"job_id": job_id, "storyboard": storyboard},
+            timeout=60,
+        )
+        if resp.status_code != 200:
+            raise Exception(f"Render başarısız (HTTP {resp.status_code}): {resp.text[:200]}")
+        logger.info(f"[video] {job_id[:8]} Remotion render başlatıldı: {resp.json()}")
+    except Exception as e:
+        with _remotion_lock:
+            _remotion_consecutive_failures += 1
+        logger.error(f"[video] {job_id[:8]} Remotion render hatası: {e}")
+        _set_status(job_id, "failed", {
+            "error_message": (
+                f"Render başarısız: {str(e)[:300]} — "
+                + ("Ses sahneleri hazır. Railway servisini kontrol edip 'Yeniden Dene' ile tekrar başlatın."
+                   if has_audio else
+                   "Railway servisini kontrol edip 'Yeniden Dene' ile tekrar başlatın.")
+            )
+        })
+
+
 # ── Arkaplan pipeline ─────────────────────────────────────────
 
 def _run_pipeline(job_id: str, payload: CreateVideoPayload):
@@ -334,19 +419,18 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
     total_tts_chars = 0
 
     try:
-        # ── 0. İnfografik kısayolu (TTS/Render yok) ───────────────
+        # ── 0. İnfografik (TTS yok, Remotion ile render) ──────────
         if payload.type == "infographic":
+            _set_status(job_id, "scripting")
             storyboard = payload.pre_storyboard or {}
             if not storyboard:
-                # Bilgi Merkezi RAG + LLM ile otomatik üret
                 from app.modules.content.infographic_generator import generate_infographic_storyboard
                 topic = payload.topic or payload.title or "Genel Muhasebe"
                 template = payload.infographic_template or "card_grid"
                 storyboard = generate_infographic_storyboard(topic, template=template)
                 logger.info(f"[video] {job_id[:8]} infografik storyboard üretildi topic='{topic}'")
-            sb.table("video_jobs").update({"storyboard": storyboard}).eq("id", job_id).execute()
-            _set_status(job_id, "ready_for_review")
-            logger.info(f"[video] {job_id[:8]} infografik hazır (render yok)")
+            sb.table("video_jobs").update({"storyboard": storyboard, "updated_at": "now()"}).eq("id", job_id).execute()
+            _run_remotion_render(job_id, storyboard, has_audio=False)
             return
 
         # ── 1. Senaryo ──────────────────────────────────────────
@@ -494,82 +578,7 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
         }).eq("id", job_id).execute()
 
         # ── 3. Remotion render ─────────────────────────────────
-        remotion_url = settings.REMOTION_URL
-        is_remotion_configured = bool(
-            remotion_url
-            and "localhost" not in remotion_url
-            and "127.0.0.1" not in remotion_url
-        )
-
-        if not is_remotion_configured:
-            logger.info(f"[video] {job_id} Remotion yapılandırılmamış → ses-hazır")
-            _set_status(job_id, "ready_for_review", {
-                "error_message": (
-                    "Render sunucusu bağlı değil — ses sahneleri hazır. "
-                    "REMOTION_URL ortam değişkenini yapılandırın."
-                )
-            })
-            return
-
-        global _remotion_consecutive_failures
-        with _remotion_lock:
-            circuit_open = _remotion_consecutive_failures >= _CIRCUIT_OPEN_THRESHOLD
-            fail_count = _remotion_consecutive_failures
-
-        if circuit_open:
-            logger.warning(f"[video] {job_id[:8]} devre kesici açık ({fail_count} ardışık hata)")
-            _set_status(job_id, "ready_for_review", {
-                "error_message": (
-                    f"Render servisi yanıt vermiyor (devre kesici: {fail_count} ardışık hata). "
-                    "Ses sahneleri hazır — servis düzelince 'Yeniden Dene' ile render başlatın."
-                )
-            })
-            return
-
-        # Warm-up
-        _set_status(job_id, "warmup_pinging")
-        logger.info(f"[video] {job_id[:8]} Remotion warm-up başlıyor ({remotion_url})")
-        service_up = _remotion_warm_up(remotion_url, job_id)
-
-        if not service_up:
-            with _remotion_lock:
-                _remotion_consecutive_failures += 1
-                fail_count = _remotion_consecutive_failures
-            logger.error(f"[video] {job_id[:8]} Remotion 90s içinde yanıt vermedi (ardışık: {fail_count})")
-            _set_status(job_id, "failed", {
-                "error_message": (
-                    "Render servisi 90 saniye boyunca yanıt vermedi. "
-                    "Railway servisinin ayakta olduğundan emin olup 'Yeniden Dene' ile tekrar başlatın."
-                )
-            })
-            return
-
-        with _remotion_lock:
-            _remotion_consecutive_failures = 0
-
-        _set_status(job_id, "rendering")
-        logger.info(f"[video] {job_id[:8]} Remotion render tetikleniyor")
-
-        try:
-            resp = httpx.post(
-                f"{remotion_url}/render",
-                json={"job_id": job_id, "storyboard": storyboard},
-                timeout=60,
-            )
-            if resp.status_code != 200:
-                raise Exception(f"Render başarısız (HTTP {resp.status_code}): {resp.text[:200]}")
-            logger.info(f"[video] {job_id[:8]} Remotion render başlatıldı: {resp.json()}")
-
-        except Exception as e:
-            with _remotion_lock:
-                _remotion_consecutive_failures += 1
-            logger.error(f"[video] {job_id[:8]} Remotion render hatası: {e}")
-            _set_status(job_id, "failed", {
-                "error_message": (
-                    f"Render başarısız: {str(e)[:300]} — "
-                    "Ses sahneleri hazır. Railway servisini kontrol edip 'Yeniden Dene' ile tekrar başlatın."
-                )
-            })
+        _run_remotion_render(job_id, storyboard)
 
     except Exception as e:
         logger.exception(f"[video] {job_id} pipeline hatası")
@@ -588,7 +597,7 @@ def _watchdog_sweep(sb=None) -> None:
         sb = get_supabase_client()
     cutoff = (datetime.now(timezone.utc) - timedelta(minutes=_WATCHDOG_MINUTES)).isoformat()
     stuck = sb.table("video_jobs").select("id, status, updated_at").in_(
-        "status", ["rendering", "tts_generating", "scripting", "pending"]
+        "status", ["rendering", "tts_generating", "scripting", "warmup_pinging", "pending"]
     ).lt("updated_at", cutoff).execute()
     for j in (stuck.data or []):
         logger.warning(f"[video] watchdog: {j['id'][:8]} {j['status']} → failed")

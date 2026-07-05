@@ -71,9 +71,14 @@ app.post('/render', async (req, res) => {
       console.log(`[remotion] browser: ${browserExecutable}`)
     }
 
+    const compositionId =
+      storyboard.video_type === 'motivation' ? 'MotivationVideo' :
+      storyboard.video_type === 'lesson' ? 'InfographicVideo' :
+      'QuizVideo'
+
     const comp = await selectComposition({
       serveUrl: bundlePath,
-      id: 'QuizVideo',
+      id: compositionId,
       inputProps: { storyboard },
       browserExecutable,
     })

@@ -52,7 +52,7 @@ export default function AgentsPage() {
               {recentRuns.map((run) => (
                 <div key={run.id} className="flex items-center gap-4 p-3 bg-surface-50 rounded-lg border border-surface-200">
                   <Clock size={14} className="text-gray-500 flex-shrink-0" />
-                  <span className="text-xs text-gray-400 flex-1">{run.agent_type.replace('_', ' ')}</span>
+                  <span className="text-xs text-gray-400 flex-1">{(run.agent_type ?? '').replace(/_/g, ' ')}</span>
                   <span className="text-xs text-gray-600">{new Date(run.started_at).toLocaleString('tr-TR')}</span>
                   {run.duration_ms && (
                     <span className="text-xs text-gray-600">{(run.duration_ms / 1000).toFixed(1)}s</span>
