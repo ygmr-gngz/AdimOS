@@ -11,6 +11,7 @@ router.include_router(health.router,        prefix="/health",   tags=["health"])
 router.include_router(webhooks.router,      prefix="/webhooks", tags=["webhooks"])
 router.include_router(meta_router,          prefix="/meta",     tags=["meta"])
 router.include_router(oauth.router,         prefix="/oauth",    tags=["oauth"])
+router.include_router(video.public_router,  prefix="/video",    tags=["video"])
 
 # Protected — auth zorunlu
 _protected = APIRouter(dependencies=[Depends(get_current_user)])

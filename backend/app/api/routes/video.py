@@ -12,6 +12,7 @@ from app.modules.content.pronunciation_dict import apply_pronunciation_dict
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+public_router = APIRouter()  # auth gerektirmeyen internal callback'ler
 
 VIDEO_BUCKET = "video-tts"
 _TTS_BACKOFF = (2, 8, 20)       # saniye — 3 deneme
@@ -887,7 +888,7 @@ def generate_motivation(payload: GenerateMotivationPayload):
 
 # ── Render callback ───────────────────────────────────────────
 
-@router.post("/render-callback")
+@public_router.post("/render-callback")
 def render_callback(body: RenderCallback):
     """Remotion render servisi tamamlandığında çağırır."""
     if body.status == "done":
