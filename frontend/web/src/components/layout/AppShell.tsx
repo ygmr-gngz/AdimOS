@@ -12,23 +12,29 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen bg-surface overflow-hidden">
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <ErrorBoundary label="Kenar çubuğu yüklenemedi">
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      </ErrorBoundary>
       <div className="flex-1 flex flex-col min-w-0">
-        <Header
-          onOpenAssistant={() => setAssistantOpen(true)}
-          onOpenSidebar={() => setSidebarOpen(true)}
-        />
+        <ErrorBoundary label="Başlık çubuğu yüklenemedi">
+          <Header
+            onOpenAssistant={() => setAssistantOpen(true)}
+            onOpenSidebar={() => setSidebarOpen(true)}
+          />
+        </ErrorBoundary>
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
           <ErrorBoundary>
             {children}
           </ErrorBoundary>
         </main>
       </div>
-      <AssistantWidget
-        isOpen={assistantOpen}
-        onOpen={() => setAssistantOpen(true)}
-        onClose={() => setAssistantOpen(false)}
-      />
+      <ErrorBoundary label="Asistan yüklenemedi">
+        <AssistantWidget
+          isOpen={assistantOpen}
+          onOpen={() => setAssistantOpen(true)}
+          onClose={() => setAssistantOpen(false)}
+        />
+      </ErrorBoundary>
     </div>
   )
 }

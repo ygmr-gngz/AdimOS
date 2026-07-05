@@ -139,17 +139,25 @@ function PreviewModal({ job, onClose, onApprove, onReject }: {
 
         {/* İçerik */}
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-          {/* Video player */}
+          {/* Video / görsel player */}
           <div style={{
             flex: 3, background: '#0B2A4A', display: 'flex', alignItems: 'center', justifyContent: 'center',
             padding: 24, minHeight: 360,
           }}>
             {job.video_url ? (
-              <video
-                src={job.video_url}
-                controls
-                style={{ maxWidth: '100%', maxHeight: 400, borderRadius: 12 }}
-              />
+              job.type === 'infographic' ? (
+                <img
+                  src={job.video_url}
+                  alt={job.title}
+                  style={{ maxWidth: '100%', maxHeight: 500, borderRadius: 12, objectFit: 'contain' }}
+                />
+              ) : (
+                <video
+                  src={job.video_url}
+                  controls
+                  style={{ maxWidth: '100%', maxHeight: 400, borderRadius: 12 }}
+                />
+              )
             ) : (
               <div style={{ textAlign: 'center', color: '#94a3b8' }}>
                 {['rendering', 'tts_generating', 'scripting', 'warmup_pinging'].includes(job.status) ? (
