@@ -801,7 +801,7 @@ function UploadTab({ onUploaded }: { onUploaded: () => void }) {
       setPhase('idle')
       e.target.value = ''
     }
-  }, [uploadMeta, forceReanalyze, onUploaded])
+  }, [uploadMeta, forceReanalyze, onUploaded, savedAnalyses])
 
   const handleDelete = async (id: string) => {
     try {

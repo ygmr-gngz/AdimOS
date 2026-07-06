@@ -30,7 +30,7 @@ export default function KnowledgePage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const sourceModule = activeTab === 'all' ? undefined : activeTab as DocumentSourceModule
-  const { documents, isLoading, isUploading, uploadingCount, uploadDocument, deleteDocument, reindexDocument, refetch } = useDocuments(sourceModule)
+  const { documents, isLoading, uploadingCount, uploadDocument, deleteDocument, reindexDocument, refetch } = useDocuments(sourceModule)
 
   const handleSyncSgs = useCallback(async () => {
     setSyncing(true)
