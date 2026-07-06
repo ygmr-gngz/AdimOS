@@ -40,7 +40,7 @@ export function useDocuments(sourceModule?: DocumentSourceModule) {
     setDocuments(prev => [tempDoc, ...prev])
     setUploadingCount(c => c + 1)
     try {
-      const doc = await documentService.upload(file)
+      const doc = await documentService.upload(file, sourceModule)
       setDocuments(prev => prev.map(d => d.id === tempId ? doc : d))
       toast.success(`${file.name} yüklendi`)
       return doc

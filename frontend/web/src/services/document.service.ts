@@ -9,9 +9,10 @@ export interface SyncSgsResult {
 }
 
 export const documentService = {
-  async upload(file: File): Promise<Document> {
+  async upload(file: File, sourceModule?: DocumentSourceModule): Promise<Document> {
     const formData = new FormData()
     formData.append('file', file)
+    if (sourceModule) formData.append('source_module', sourceModule)
     const { data } = await apiClient.post('/documents', formData)
     return data
   },

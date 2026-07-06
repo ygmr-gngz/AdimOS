@@ -2,7 +2,7 @@ import logging
 import os
 import tempfile
 from datetime import datetime, timezone
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Query
 from app.modules.knowledge.service import process_document, list_documents, fetch_document, remove_document, reindex_document
 from app.db.repositories.sgs_repo import list_analyses
 from app.db.repositories.documents_repo import create_document, get_documents as db_get_documents
@@ -16,7 +16,10 @@ _MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
 @router.post("")
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(
+    file: UploadFile = File(...),
+    source_module: str = Form(default="knowledge_center"),
+):
     content = await file.read()
     if len(content) > _MAX_UPLOAD_BYTES:
         raise HTTPException(
@@ -24,7 +27,7 @@ async def upload_document(file: UploadFile = File(...)):
             detail=f"Dosya boyutu 50 MB sınırını aşıyor ({len(content) // (1024 * 1024)} MB).",
         )
     mime_type = file.content_type or "application/pdf"
-    return process_document(file.filename or "upload", content, mime_type)
+    return process_document(file.filename or "upload", content, mime_type, source_module=source_module)
 
 
 @router.get("")

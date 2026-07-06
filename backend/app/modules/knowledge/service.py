@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 BUCKET = "documents"
 
 
-def process_document(file_name: str, file_bytes: bytes, mime_type: str = "application/pdf") -> dict:
-    logger.info(f"[knowledge] döküman işleniyor: {file_name} ({len(file_bytes)} byte)")
-    doc = create_document(file_name, f"{BUCKET}/{file_name}", len(file_bytes), mime_type)
+def process_document(file_name: str, file_bytes: bytes, mime_type: str = "application/pdf", source_module: str = "knowledge_center") -> dict:
+    logger.info(f"[knowledge] döküman işleniyor: {file_name} ({len(file_bytes)} byte) module={source_module}")
+    doc = create_document(file_name, f"{BUCKET}/{file_name}", len(file_bytes), mime_type, source_module=source_module)
     document_id = doc["id"]
 
     try:
