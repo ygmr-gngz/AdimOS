@@ -38,7 +38,7 @@ let bundleLocation: string | null = null
 async function getBundle(): Promise<string> {
   if (bundleLocation) return bundleLocation
   console.log('[remotion] bundle oluşturuluyor...')
-  bundleLocation = await bundle({ entryPoint: path.join(__dirname, '../index.ts') })
+  bundleLocation = await bundle({ entryPoint: path.join(process.cwd(), 'src/index.ts') })
   console.log('[remotion] bundle hazır:', bundleLocation)
   return bundleLocation
 }
