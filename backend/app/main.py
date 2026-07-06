@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 
 from app.core.config import settings
@@ -51,6 +52,16 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api/v1")
+
+
+# Supabase HTTP/2 protokol hatası — container crash'i önle
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    exc_type = type(exc).__name__
+    if "LocalProtocolError" in exc_type or "ConnectionTerminated" in exc_type:
+        _startup_logger.warning(f"[http2] Supabase bağlantı hatası yakalandı ({exc_type}): {exc}")
+        return JSONResponse(status_code=503, content={"detail": "Geçici bağlantı hatası, yeniden deneyin."})
+    raise exc
 
 
 @app.get("/health")

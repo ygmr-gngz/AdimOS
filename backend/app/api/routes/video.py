@@ -672,14 +672,15 @@ def create_video_job(payload: CreateVideoPayload, background_tasks: BackgroundTa
     return job
 
 
+_LIST_FIELDS = (
+    "id,type,status,title,format,video_url,error_message,"
+    "created_at,updated_at,cost_tts_chars,cost_tts_usd"
+)
+
 @router.get("/jobs")
 def list_jobs(type: Optional[str] = None):
     sb = get_supabase_client()
-    try:
-        _watchdog_sweep(sb)
-    except Exception as e:
-        logger.warning(f"[video] watchdog hatası: {e}")
-    q = sb.table("video_jobs").select("*").order("created_at", desc=True)
+    q = sb.table("video_jobs").select(_LIST_FIELDS).order("created_at", desc=True).limit(50)
     if type:
         q = q.eq("type", type)
     return q.execute().data or []

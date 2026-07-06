@@ -271,7 +271,7 @@ async def validate_content(content_id: str):
         }
 
     try:
-        async with httpx.AsyncClient(timeout=8) as client:
+        async with httpx.AsyncClient(timeout=8, http2=False) as client:
             resp = await client.head(video_url)
             ok = resp.status_code < 400
             size = int(resp.headers.get("content-length", 0))

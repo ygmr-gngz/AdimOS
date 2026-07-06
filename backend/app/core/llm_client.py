@@ -105,7 +105,11 @@ def embed(text: str) -> list[float]:
     return resp.data[0].embedding
 
 
-def embed_batch(texts: list[str]) -> list[list[float]]:
-    """Toplu embedding."""
-    resp = _client.embeddings.create(model="text-embedding-3-small", input=texts)
-    return [item.embedding for item in resp.data]
+def embed_batch(texts: list[str], batch_size: int = 100) -> list[list[float]]:
+    """Toplu embedding — büyük listeleri batch_size'lık dilimlerle gönderir."""
+    results: list[list[float]] = []
+    for i in range(0, len(texts), batch_size):
+        chunk = texts[i:i + batch_size]
+        resp = _client.embeddings.create(model="text-embedding-3-small", input=chunk)
+        results.extend(item.embedding for item in resp.data)
+    return results

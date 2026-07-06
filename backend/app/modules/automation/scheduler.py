@@ -45,6 +45,15 @@ def _task_video_cleanup():
         logger.error(f"[scheduler] video_cleanup hatası: {e}", exc_info=True)
 
 
+def _task_video_watchdog():
+    """30 dakikayı aşan işleri failed'a taşı — her 15 dakikada bir."""
+    try:
+        from app.api.routes.video import _watchdog_sweep
+        _watchdog_sweep()
+    except Exception as e:
+        logger.error(f"[scheduler] video_watchdog hatası: {e}")
+
+
 def start_scheduler():
     _scheduler.add_job(task_daily_brief, CronTrigger(hour=8, minute=0), id="daily_brief", replace_existing=True)
     _scheduler.add_job(task_followup_check, CronTrigger(hour=9, minute=0), id="followup_check", replace_existing=True)
@@ -53,6 +62,14 @@ def start_scheduler():
         _task_video_cleanup,
         CronTrigger(day_of_week="mon", hour=3, minute=0),
         id="video_cleanup_weekly",
+        replace_existing=True,
+    )
+    # Video watchdog — her 15 dakikada bir (list_jobs'tan kaldırıldı)
+    _scheduler.add_job(
+        _task_video_watchdog,
+        "interval",
+        minutes=15,
+        id="video_watchdog",
         replace_existing=True,
     )
     if not _scheduler.running:
