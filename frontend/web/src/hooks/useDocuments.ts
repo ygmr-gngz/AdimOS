@@ -8,7 +8,7 @@ import toast from 'react-hot-toast'
 export function useDocuments(sourceModule?: DocumentSourceModule) {
   const [documents, setDocuments] = useState<Document[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [isUploading, setIsUploading] = useState(false)
+  const [uploadingCount, setUploadingCount] = useState(0)
 
   const fetchDocuments = useCallback(async () => {
     setIsLoading(true)
@@ -23,19 +23,35 @@ export function useDocuments(sourceModule?: DocumentSourceModule) {
   }, [sourceModule])
 
   const uploadDocument = useCallback(async (file: File) => {
-    setIsUploading(true)
+    const tempId = `temp-${Date.now()}-${Math.random()}`
+    const tempDoc: Document = {
+      id: tempId,
+      user_id: '',
+      file_name: file.name,
+      file_path: '',
+      file_size: file.size,
+      mime_type: file.type || 'application/pdf',
+      status: 'processing',
+      chunk_count: 0,
+      source_module: sourceModule ?? 'knowledge_center',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    setDocuments(prev => [tempDoc, ...prev])
+    setUploadingCount(c => c + 1)
     try {
       const doc = await documentService.upload(file)
-      setDocuments((prev) => [doc, ...prev])
+      setDocuments(prev => prev.map(d => d.id === tempId ? doc : d))
       toast.success(`${file.name} yüklendi`)
       return doc
     } catch {
-      toast.error('Dosya yüklenemedi')
+      setDocuments(prev => prev.filter(d => d.id !== tempId))
+      toast.error(`${file.name} yüklenemedi`)
       return null
     } finally {
-      setIsUploading(false)
+      setUploadingCount(c => c - 1)
     }
-  }, [])
+  }, [sourceModule])
 
   const deleteDocument = useCallback(async (id: string) => {
     try {
@@ -60,5 +76,6 @@ export function useDocuments(sourceModule?: DocumentSourceModule) {
     }
   }, [fetchDocuments])
 
-  return { documents, isLoading, isUploading, uploadDocument, deleteDocument, reindexDocument, refetch: fetchDocuments }
+  const isUploading = uploadingCount > 0
+  return { documents, isLoading, isUploading, uploadingCount, uploadDocument, deleteDocument, reindexDocument, refetch: fetchDocuments }
 }

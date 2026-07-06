@@ -30,7 +30,7 @@ export default function KnowledgePage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const sourceModule = activeTab === 'all' ? undefined : activeTab as DocumentSourceModule
-  const { documents, isLoading, isUploading, uploadDocument, deleteDocument, reindexDocument, refetch } = useDocuments(sourceModule)
+  const { documents, isLoading, isUploading, uploadingCount, uploadDocument, deleteDocument, reindexDocument, refetch } = useDocuments(sourceModule)
 
   const handleSyncSgs = useCallback(async () => {
     setSyncing(true)
@@ -123,7 +123,7 @@ export default function KnowledgePage() {
           </div>
         </div>
 
-        <DocumentUpload onUpload={uploadDocument} isUploading={isUploading} />
+        <DocumentUpload onUpload={uploadDocument} uploadingCount={uploadingCount} />
 
         {/* Filtre sekmeleri */}
         <div className="flex gap-1 p-1 bg-surface-100 rounded-lg w-fit">

@@ -8,15 +8,14 @@ import { MAX_FILE_SIZE_MB } from '@/lib/constants'
 
 interface DocumentUploadProps {
   onUpload: (file: File) => Promise<unknown>
-  isUploading: boolean
+  uploadingCount?: number
 }
 
-export default function DocumentUpload({ onUpload, isUploading }: DocumentUploadProps) {
+export default function DocumentUpload({ onUpload, uploadingCount = 0 }: DocumentUploadProps) {
+  const isUploading = uploadingCount > 0
   const onDrop = useCallback(
-    async (acceptedFiles: File[]) => {
-      for (const file of acceptedFiles) {
-        await onUpload(file)
-      }
+    (acceptedFiles: File[]) => {
+      acceptedFiles.forEach(file => onUpload(file))
     },
     [onUpload]
   )
@@ -30,7 +29,6 @@ export default function DocumentUpload({ onUpload, isUploading }: DocumentUpload
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
     },
     maxSize: MAX_FILE_SIZE_MB * 1024 * 1024,
-    disabled: isUploading,
     multiple: true,
   })
 
@@ -62,7 +60,7 @@ export default function DocumentUpload({ onUpload, isUploading }: DocumentUpload
         <div>
           <p className="text-sm font-medium text-gray-300">
             {isUploading
-              ? 'Yükleniyor...'
+              ? `${uploadingCount} dosya işleniyor — yeni dosya ekleyebilirsiniz`
               : isDragActive
               ? 'Dosyaları bırakın'
               : 'Dosyaları sürükleyin veya tıklayın'}
