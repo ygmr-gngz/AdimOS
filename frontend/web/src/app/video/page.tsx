@@ -7,7 +7,7 @@ import Button from '@/components/ui/Button'
 import toast from 'react-hot-toast'
 import {
   Film, Plus, X, ChevronRight, CheckCircle, XCircle,
-  Clock, RefreshCw, AlertTriangle, Loader2, Image, Zap,
+  Clock, RefreshCw, AlertTriangle, Loader2, Image as ImageIcon, Zap,
   LayoutGrid, ArrowLeftRight, ListOrdered,
 } from 'lucide-react'
 import videoService, {
@@ -146,6 +146,7 @@ function PreviewModal({ job, onClose, onApprove, onReject }: {
           }}>
             {job.video_url ? (
               job.type === 'infographic' ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={job.video_url}
                   alt={job.title}
@@ -852,7 +853,7 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
                   setStep('format')
                 }
               }}>
-                {type === 'infographic' ? <><Image size={14} /> Özeti Gör</> : <>Format Seç <ChevronRight size={15} /></>}
+                {type === 'infographic' ? <><ImageIcon size={14} /> Özeti Gör</> : <>Format Seç <ChevronRight size={15} /></>}
               </Button>
             )}
             {step === 'format' && (
@@ -865,7 +866,7 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
                 {loading
                   ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Başlatılıyor...</>
                   : type === 'infographic'
-                    ? <><Image size={14} /> Görsel Post Oluştur</>
+                    ? <><ImageIcon size={14} /> Görsel Post Oluştur</>
                     : <><Film size={14} /> Video Görevi Başlat</>}
               </Button>
             )}
@@ -1167,7 +1168,7 @@ export default function VideoPage() {
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   {job.type === 'infographic'
-                    ? <Image size={22} color={job.status === 'failed' ? '#ef4444' : '#0284c7'} />
+                    ? <ImageIcon size={22} color={job.status === 'failed' ? '#ef4444' : '#0284c7'} />
                     : <Film size={22} color={job.status === 'failed' ? '#ef4444' : '#0B2A4A'} />}
                 </div>
 
