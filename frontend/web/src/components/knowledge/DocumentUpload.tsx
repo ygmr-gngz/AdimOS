@@ -14,8 +14,17 @@ interface DocumentUploadProps {
 export default function DocumentUpload({ onUpload, uploadingCount = 0 }: DocumentUploadProps) {
   const isUploading = uploadingCount > 0
   const onDrop = useCallback(
-    (acceptedFiles: File[]) => {
-      acceptedFiles.forEach(file => onUpload(file))
+    async (acceptedFiles: File[]) => {
+      // Max 2 eş zamanlı yükleme — embedding rate limit koruması
+      const CONCURRENCY = 2
+      const queue = [...acceptedFiles]
+      const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+        while (queue.length > 0) {
+          const file = queue.shift()
+          if (file) await onUpload(file)
+        }
+      })
+      await Promise.all(workers)
     },
     [onUpload]
   )

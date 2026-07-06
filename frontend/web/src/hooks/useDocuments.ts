@@ -44,9 +44,13 @@ export function useDocuments(sourceModule?: DocumentSourceModule) {
       setDocuments(prev => prev.map(d => d.id === tempId ? doc : d))
       toast.success(`${file.name} yüklendi`)
       return doc
-    } catch {
+    } catch (err: unknown) {
       setDocuments(prev => prev.filter(d => d.id !== tempId))
-      toast.error(`${file.name} yüklenemedi`)
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        ?? (err as { message?: string })?.message
+        ?? 'Sunucu hatası'
+      toast.error(`${file.name}: ${detail}`, { duration: 6000 })
       return null
     } finally {
       setUploadingCount(c => c - 1)
