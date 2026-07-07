@@ -34,25 +34,44 @@ export default function AutomationPage() {
   }>(null)
   const [filter, setFilter] = useState('')
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const generationRef = useRef(0)
 
   const fetchContent = useCallback(async () => {
+    // Mevcut timer'ı iptal et — paralel zincir birikimini önler
+    if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null }
+    const gen = ++generationRef.current
     try {
       const data = await automationService.listContent(filter || undefined)
+      if (gen !== generationRef.current) return  // başka bir çağrı başladı, bu yanıtı yok say
       setContent(data)
       const hasGenerating = data.some((c) => c.status === 'generating')
       if (hasGenerating) {
-        pollRef.current = setTimeout(fetchContent, 12000)
+        pollRef.current = setTimeout(fetchContent, 30000)
       }
     } catch {
+      if (gen !== generationRef.current) return
       toast.error('İçerikler yüklenemedi')
     } finally {
-      setIsLoading(false)
+      if (gen === generationRef.current) setIsLoading(false)
     }
   }, [filter])
 
   useEffect(() => {
     fetchContent()
     return () => { if (pollRef.current) clearTimeout(pollRef.current) }
+  }, [fetchContent])
+
+  // Sekme arka plandayken polling'i durdur, öne gelince devam ettir
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) {
+        if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null }
+      } else {
+        fetchContent()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
   }, [fetchContent])
 
   const handleApprove = async (id: string) => {

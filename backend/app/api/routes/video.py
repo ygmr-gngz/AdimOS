@@ -392,7 +392,7 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
     total_tts_chars = 0
 
     try:
-        # ── 0. İnfografik (TTS yok, Remotion ile render) ──────────
+        # ── 0. İnfografik (TTS yok, Remotion olmadan doğrudan hazır) ──
         if payload.type == "infographic":
             _set_status(job_id, "scripting")
             storyboard = payload.pre_storyboard or {}
@@ -403,7 +403,8 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 storyboard = generate_infographic_storyboard(topic, template=template)
                 logger.info(f"[video] {job_id[:8]} infografik storyboard üretildi topic='{topic}'")
             sb.table("video_jobs").update({"storyboard": storyboard, "updated_at": "now()"}).eq("id", job_id).execute()
-            _run_remotion_render(job_id, storyboard, has_audio=False)
+            _set_status(job_id, "ready_for_review")
+            logger.info(f"[video] {job_id[:8]} infografik bağımsız yol — Remotion atlandı, storyboard hazır")
             return
 
         # ── 1. Senaryo ──────────────────────────────────────────
@@ -573,12 +574,23 @@ def _watchdog_sweep(sb=None) -> None:
         "status", ["rendering", "tts_generating", "scripting", "warmup_pinging", "pending"]
     ).lt("updated_at", cutoff).execute()
     for j in (stuck.data or []):
-        logger.warning(f"[video] watchdog: {j['id'][:8]} {j['status']} → failed")
+        status = j["status"]
+        logger.warning(f"[video] watchdog: {j['id'][:8]} {status} → failed")
+        if status == "rendering":
+            detail = "Render worker geri dönüş yapmadı — büyük olasılıkla OOM (bellek baskısı). Railway RAM metriklerini ve Remotion loglarını kontrol edin."
+        elif status == "tts_generating":
+            detail = "OpenAI TTS yanıt vermedi — API zaman aşımı veya ağ kopması."
+        elif status == "warmup_pinging":
+            detail = "Render servisi warm-up'ta yanıt vermedi — Railway App Sleeping kapalı değil veya servis down."
+        elif status == "scripting":
+            detail = "Senaryo üretimi zaman aşımı — OpenAI API yanıt vermedi veya semaphore doldu."
+        else:
+            detail = f"'{status}' aşamasında zaman aşımı — sessiz hata olmuş olabilir."
         sb.table("video_jobs").update({
             "status": "failed",
             "error_message": (
-                f"İş {_WATCHDOG_MINUTES}+ dakika boyunca '{j['status']}' durumunda kaldı. "
-                "TTS veya render adımında sessiz hata oluşmuş olabilir."
+                f"Watchdog: {_WATCHDOG_MINUTES} dk boyunca '{status}' durumunda kaldı. "
+                f"{detail}"
             ),
         }).eq("id", j["id"]).execute()
 

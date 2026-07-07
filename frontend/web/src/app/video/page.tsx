@@ -81,6 +81,88 @@ function PipelineBar({ status }: { status: VideoStatus }) {
   )
 }
 
+// ── İnfografik Önizleme ───────────────────────────────────────
+
+function InfographicPreview({ storyboard }: { storyboard: Record<string, unknown> }) {
+  const scenes = storyboard.scenes as Record<string, unknown>[] | undefined
+  const scene = scenes?.[0]
+  if (!scene) {
+    return <p style={{ color: '#94a3b8', textAlign: 'center' }}>Storyboard verisi bulunamadı</p>
+  }
+  const component = scene.component as string
+  const title = (scene.infographic_title ?? storyboard.title) as string | undefined
+  const subtitle = scene.infographic_subtitle as string | undefined
+  const footer = scene.footer_note as string | undefined
+  const cards = scene.cards as { title: string; category: string; content: string; icon: string }[] | undefined
+  const left = scene.comparison_left as { title: string; items: string[] } | undefined
+  const right = scene.comparison_right as { title: string; items: string[] } | undefined
+  const steps = scene.process_steps as { title: string; description: string }[] | undefined
+
+  return (
+    <div style={{ color: '#e2e8f0', overflow: 'auto', maxHeight: '100%', padding: 4, width: '100%' }}>
+      {title && <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: '#fff' }}>{title}</h3>}
+      {subtitle && <p style={{ margin: '0 0 12px', fontSize: 12, color: '#94a3b8' }}>{subtitle}</p>}
+
+      {component === 'InfographicCardGridScene' && cards && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+          {cards.map((card, i) => (
+            <div key={i} style={{
+              background: 'rgba(255,255,255,0.06)', borderRadius: 8, padding: '10px 12px',
+              border: '1px solid rgba(255,255,255,0.1)',
+            }}>
+              <p style={{ margin: '0 0 2px', fontSize: 12, fontWeight: 700, color: '#fff' }}>
+                {card.icon} {card.title}
+              </p>
+              <p style={{ margin: '0 0 3px', fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                {card.category}
+              </p>
+              <p style={{ margin: 0, fontSize: 11, color: '#94a3b8', lineHeight: 1.5 }}>{card.content}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {component === 'InfographicComparisonScene' && left && right && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          {[left, right].map((side, si) => (
+            <div key={si} style={{ background: 'rgba(255,255,255,0.06)', borderRadius: 8, padding: 12 }}>
+              <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: '#fff' }}>{side.title}</p>
+              {side.items.map((item, i) => (
+                <p key={i} style={{ margin: '0 0 4px', fontSize: 11, color: '#94a3b8' }}>• {item}</p>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {component === 'InfographicProcessScene' && steps && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {steps.map((step, i) => (
+            <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <div style={{
+                width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                background: '#2B7FE0', color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 11, fontWeight: 700,
+              }}>{i + 1}</div>
+              <div>
+                <p style={{ margin: '0 0 2px', fontSize: 12, fontWeight: 700, color: '#fff' }}>{step.title}</p>
+                <p style={{ margin: 0, fontSize: 11, color: '#94a3b8', lineHeight: 1.5 }}>{step.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {footer && (
+        <p style={{ marginTop: 10, fontSize: 10, color: '#64748b', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 8 }}>
+          {footer}
+        </p>
+      )}
+    </div>
+  )
+}
+
 // ── Video Önizleme Modalı ─────────────────────────────────────
 
 function PreviewModal({ job, onClose, onApprove, onReject }: {
@@ -141,10 +223,22 @@ function PreviewModal({ job, onClose, onApprove, onReject }: {
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           {/* Video / görsel player */}
           <div style={{
-            flex: 3, background: '#0B2A4A', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: 24, minHeight: 360,
+            flex: 3, background: '#0B2A4A',
+            display: 'flex',
+            alignItems: job.type === 'infographic' ? 'flex-start' : 'center',
+            justifyContent: 'center',
+            padding: 24, minHeight: 360, overflow: 'auto',
           }}>
-            {job.video_url ? (
+            {job.type === 'infographic' ? (
+              job.storyboard
+                ? <InfographicPreview storyboard={job.storyboard} />
+                : (
+                  <div style={{ textAlign: 'center', color: '#94a3b8' }}>
+                    <ImageIcon size={48} style={{ marginBottom: 12, opacity: 0.4 }} />
+                    <p style={{ fontSize: 15, margin: 0, opacity: 0.6 }}>İnfografik oluşturuluyor...</p>
+                  </div>
+                )
+            ) : job.video_url ? (
               <video
                 src={job.video_url}
                 controls
@@ -884,6 +978,8 @@ export default function VideoPage() {
   const pollRef = useRef<NodeJS.Timeout | null>(null)
   const pollStartRef = useRef<number>(0)
   const jobsRef = useRef<VideoJob[]>([]) // closure-safe ref
+  const prevJobStatusRef = useRef<Record<string, VideoStatus>>({})
+  const retryCountRef = useRef<Record<string, number>>({})
   const POLL_MAX_MS = 20 * 60 * 1000 // 20 dakika
 
   const ACTIVE_STATUSES = ['scripting', 'tts_generating', 'warmup_pinging', 'rendering']
@@ -893,6 +989,8 @@ export default function VideoPage() {
       const data = await videoService.listJobs(filter === 'all' ? undefined : filter)
       setJobs(data)
       jobsRef.current = data
+      // Mevcut durumu kaydet — polling'in yanlış "yeni failed" tespiti yapmaması için
+      prevJobStatusRef.current = Object.fromEntries(data.map(j => [j.id, j.status]))
     } catch {
       // sessiz
     } finally {
@@ -945,6 +1043,26 @@ export default function VideoPage() {
         const data = await videoService.listJobs(filter === 'all' ? undefined : filter)
         setJobs(data)
         jobsRef.current = data
+
+        // Sorun 3: max 2 otomatik yeniden deneme
+        for (const job of data) {
+          const prev = prevJobStatusRef.current[job.id]
+          if (prev && prev !== 'failed' && job.status === 'failed') {
+            const retries = retryCountRef.current[job.id] ?? 0
+            if (retries < 2) {
+              retryCountRef.current[job.id] = retries + 1
+              toast(`"${job.title}" başarısız — otomatik yeniden deneniyor (${retries + 1}/2)`, { icon: '🔄' })
+              setTimeout(async () => {
+                try {
+                  await videoService.regenerateJob(job.id)
+                  loadJobs()
+                } catch { /* sessiz */ }
+              }, 5000)
+            }
+          }
+        }
+        prevJobStatusRef.current = Object.fromEntries(data.map(j => [j.id, j.status]))
+
         const stillActive = data.some(j => ACTIVE_STATUSES.includes(j.status))
         if (!stillActive && pollRef.current) clearInterval(pollRef.current)
       } catch { /* sessiz */ }
@@ -977,6 +1095,7 @@ export default function VideoPage() {
     e.stopPropagation()
     try {
       await videoService.regenerateJob(job.id)
+      retryCountRef.current[job.id] = 0  // manuel retry → sayacı sıfırla
       toast.success('Yeniden üretim başlatıldı')
       loadJobs()
     } catch { toast.error('Yeniden üretim başlatılamadı') }
