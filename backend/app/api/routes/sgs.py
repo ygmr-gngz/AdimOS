@@ -539,6 +539,173 @@ def parse_all_analyses():
     return result
 
 
+# ── Konu Yönetimi (Sorun 1) ───────────────────────────────────
+
+@router.get("/topics")
+def list_topics(lesson: str | None = Q(None, description="Ders filtresi")):
+    """Tüm benzersiz konu adlarını soru sayısıyla döndür (sgs_questions tablosu)."""
+    from collections import Counter
+    from app.db.supabase import get_supabase_client as _sb
+    supabase = _sb()
+    query = supabase.table("sgs_questions").select("topic, lesson_name").limit(50000)
+    if lesson:
+        query = query.eq("lesson_name", lesson)
+    rows = query.execute().data or []
+    topic_counts: Counter = Counter()
+    lesson_for_topic: dict = {}
+    for r in rows:
+        t = r.get("topic") or "?"
+        topic_counts[t] += 1
+        if t not in lesson_for_topic:
+            lesson_for_topic[t] = r.get("lesson_name", "")
+    return [
+        {"topic": t, "count": c, "lesson": lesson_for_topic.get(t, "")}
+        for t, c in sorted(topic_counts.items(), key=lambda x: x[1], reverse=True)
+    ]
+
+
+@router.get("/questions/unclassified")
+def list_unclassified(limit: int = 100):
+    """Belirsiz konu veya ders ataması olan soruları listele."""
+    from app.db.supabase import get_supabase_client as _sb
+    supabase = _sb()
+    resp = (
+        supabase.table("sgs_questions")
+        .select("id, question_number, topic, lesson_name, lesson_group, year, pdf_name")
+        .or_("lesson_name.eq.Belirsiz,topic.eq.Belirsiz,lesson_name.is.null,topic.is.null,topic.eq.?")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    rows = resp.data or []
+    return {"total": len(rows), "questions": rows}
+
+
+@router.get("/topics/dry-run-merge")
+def dry_run_topic_merge():
+    """Mükerrer/varyant konu başlıklarını tespit et — birleştirme öncesi önizleme.
+    Onaysız veri değişikliği OLMAZ; sadece rapor döner.
+    """
+    from collections import Counter
+    from difflib import SequenceMatcher
+    from app.db.supabase import get_supabase_client as _sb
+    supabase = _sb()
+    rows = supabase.table("sgs_questions").select("topic, lesson_name").limit(50000).execute().data or []
+
+    # (lesson, topic) → count
+    counts: Counter = Counter()
+    for r in rows:
+        t = (r.get("topic") or "?").strip()
+        l = r.get("lesson_name", "")
+        counts[(l, t)] += 1
+
+    # Aynı ders içinde benzer konu adlarını bul
+    by_lesson: dict[str, list[str]] = {}
+    for (lesson, topic), _ in counts.items():
+        if lesson not in by_lesson:
+            by_lesson[lesson] = []
+        if topic not in by_lesson[lesson]:
+            by_lesson[lesson].append(topic)
+
+    merge_candidates = []
+    for lesson, topics in by_lesson.items():
+        topics_sorted = sorted(topics)
+        for i, t1 in enumerate(topics_sorted):
+            for t2 in topics_sorted[i+1:]:
+                if t1 == t2:
+                    continue
+                ratio = SequenceMatcher(None, t1.lower(), t2.lower()).ratio()
+                if ratio >= 0.75:
+                    c1, c2 = counts.get((lesson, t1), 0), counts.get((lesson, t2), 0)
+                    winner = t1 if c1 >= c2 else t2
+                    merge_candidates.append({
+                        "lesson": lesson,
+                        "variant_a": t1, "count_a": c1,
+                        "variant_b": t2, "count_b": c2,
+                        "similarity": round(ratio, 2),
+                        "suggested_canonical": winner,
+                        "questions_affected": c1 + c2,
+                    })
+
+    # _TOPIC_CANONICAL_MAP eşleşmelerini de ekle
+    from app.db.repositories.sgs_repo import _TOPIC_CANONICAL_MAP
+    canonical_hits = []
+    for (lesson, topic), cnt in counts.items():
+        normalized = topic.lower()
+        if normalized in _TOPIC_CANONICAL_MAP:
+            target = _TOPIC_CANONICAL_MAP[normalized]
+            canonical_hits.append({
+                "lesson": lesson,
+                "current_topic": topic,
+                "canonical": target or "Belirsiz",
+                "count": cnt,
+            })
+
+    return {
+        "summary": {
+            "total_topics": len(counts),
+            "fuzzy_merge_candidates": len(merge_candidates),
+            "canonical_map_hits": len(canonical_hits),
+        },
+        "fuzzy_merge_candidates": sorted(merge_candidates, key=lambda x: x["questions_affected"], reverse=True),
+        "canonical_map_hits": sorted(canonical_hits, key=lambda x: x["count"], reverse=True),
+        "note": "Bu bir önizlemedir. Birleştirme için POST /sgs/questions/reclassify çalıştırın (canonical_map uygulanır). Fuzzy birleştirme onayımla uygulanır.",
+    }
+
+
+@router.get("/documents/sgs-status")
+def documents_sgs_status():
+    """Her dokümanın SGS işleme durumunu raporla — 0-soru ve taranmış PDF tespiti için."""
+    from app.db.supabase import get_supabase_client as _sb
+    supabase = _sb()
+    docs = (
+        supabase.table("documents")
+        .select("id, file_name, source_module, sgs_analysis_id, status, created_at")
+        .order("created_at", desc=True)
+        .limit(200)
+        .execute().data or []
+    )
+    analysis_ids = [d["sgs_analysis_id"] for d in docs if d.get("sgs_analysis_id")]
+    analysis_q_counts: dict[str, int] = {}
+    if analysis_ids:
+        for aid in analysis_ids:
+            r = supabase.table("sgs_questions").select("id", count="exact").eq("document_id", aid).execute()
+            analysis_q_counts[aid] = r.count or 0
+
+    result = []
+    for doc in docs:
+        aid = doc.get("sgs_analysis_id")
+        q_count = analysis_q_counts.get(aid, 0) if aid else 0
+        result.append({
+            "id": doc["id"],
+            "file_name": doc.get("file_name"),
+            "source_module": doc.get("source_module"),
+            "status": doc.get("status"),
+            "has_analysis": bool(aid),
+            "analysis_id": aid,
+            "question_count": q_count,
+            "sgs_diagnosis": (
+                "ok" if q_count > 0 else
+                "no_analysis" if not aid else
+                "zero_questions"
+            ),
+        })
+
+    zero_q = [r for r in result if r["sgs_diagnosis"] == "zero_questions"]
+    no_analysis = [r for r in result if r["sgs_diagnosis"] == "no_analysis"]
+    return {
+        "summary": {
+            "total_documents": len(result),
+            "with_questions": len([r for r in result if r["sgs_diagnosis"] == "ok"]),
+            "zero_questions": len(zero_q),
+            "no_analysis": len(no_analysis),
+        },
+        "zero_question_docs": zero_q,
+        "no_analysis_docs": no_analysis,
+        "all": result,
+    }
+
+
 # ── Veritabanı Durum Analizi ──────────────────────────────────
 
 @router.get("/admin/db-stats")

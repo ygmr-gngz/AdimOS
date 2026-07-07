@@ -19,7 +19,7 @@ const TABS: { value: FilterTab; label: string }[] = [
 ]
 
 export default function KnowledgePage() {
-  const [activeTab, setActiveTab] = useState<FilterTab>('knowledge_center')
+  const [activeTab, setActiveTab] = useState<FilterTab>('all')
   const [syncing, setSyncing] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [excludeFromSgs, setExcludeFromSgs] = useState(false)

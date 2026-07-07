@@ -24,37 +24,58 @@ def _sgs_pipeline_background(doc_id: str, file_bytes: bytes, pdf_name: str) -> N
     from app.modules.knowledge.pdf_loader import load_pdf
     from app.modules.sgs.analyzer import analyze_sgs_pdf
     from app.db.repositories.sgs_repo import (
-        create_analysis, find_analysis_by_pdf_name, parse_questions_by_ranges,
+        create_analysis, find_analysis_by_pdf_name, update_analysis, parse_questions_by_ranges,
     )
-    logger.info(f"[documents] SGS pipeline başladı: {doc_id}")
+    logger.info(f"[documents] SGS pipeline başladı: {doc_id} — {pdf_name}")
     try:
-        if find_analysis_by_pdf_name(pdf_name):
-            logger.info(f"[documents] SGS analizi zaten mevcut, atlanıyor: {pdf_name}")
-            return
+        existing = find_analysis_by_pdf_name(pdf_name)
+        if existing:
+            existing_q = existing.get("total_questions") or 0
+            if existing_q > 0:
+                logger.info(f"[documents] SGS analizi zaten mevcut ({existing_q} soru), atlanıyor: {pdf_name}")
+                return
+            logger.info(f"[documents] SGS analizi mevcut ama 0 soru — yeniden analiz deneniyor: {pdf_name}")
 
         text = load_pdf(file_bytes)
         if not text or len(text.strip()) < 100:
-            logger.info(f"[documents] SGS pipeline: PDF metni yetersiz, atlanıyor: {doc_id}")
+            logger.warning(
+                f"[documents] SGS pipeline: PDF metni çıkarılamadı — "
+                f"taranmış/görüntü PDF olabilir (OCR desteklenmiyor): {pdf_name} doc={doc_id}"
+            )
             return
 
         result = analyze_sgs_pdf(text, pdf_name)
         if not result.get("total_questions"):
-            logger.info(f"[documents] SGS pipeline: soru bulunamadı, atlanıyor: {pdf_name}")
+            logger.info(f"[documents] SGS pipeline: LLM soru bulamadı (format tanınmadı?): {pdf_name}")
             return
 
-        saved = create_analysis(
-            pdf_name=result.get("pdf_name", pdf_name),
-            total_questions=result["total_questions"],
-            subjects=result.get("subjects", []),
-            questions=result.get("questions", []),
-            video_plan=result.get("video_plan", []),
-        )
-        if saved:
+        sb = get_supabase_client()
+        if existing:
+            analysis_id = existing["id"]
+            update_analysis(
+                analysis_id,
+                total_questions=result["total_questions"],
+                subjects=result.get("subjects", []),
+                questions=result.get("questions", []),
+                video_plan=result.get("video_plan", []),
+            )
+            logger.info(f"[documents] SGS analizi güncellendi: analysis_id={analysis_id}")
+        else:
+            saved = create_analysis(
+                pdf_name=result.get("pdf_name", pdf_name),
+                total_questions=result["total_questions"],
+                subjects=result.get("subjects", []),
+                questions=result.get("questions", []),
+                video_plan=result.get("video_plan", []),
+            )
+            if not saved:
+                logger.error(f"[documents] SGS create_analysis başarısız: {pdf_name}")
+                return
             analysis_id = saved["id"]
-            sb = get_supabase_client()
-            sb.table("documents").update({"sgs_analysis_id": analysis_id}).eq("id", doc_id).execute()
-            parse_questions_by_ranges(analysis_id=analysis_id)
-            logger.info(f"[documents] SGS pipeline tamamlandı: {doc_id} — {result['total_questions']} soru")
+
+        sb.table("documents").update({"sgs_analysis_id": analysis_id}).eq("id", doc_id).execute()
+        parse_questions_by_ranges(analysis_id=analysis_id)
+        logger.info(f"[documents] SGS pipeline tamamlandı: {doc_id} — {result['total_questions']} soru")
     except Exception as e:
         logger.error(f"[documents] SGS pipeline hatası {doc_id}: {e}", exc_info=True)
 

@@ -128,6 +128,66 @@ _TOPIC_LESSON_MAP: dict[str, str] = {
 }
 
 
+# Konu adı (lowercase) → kanonik konu adı.
+# LLM'nin ürettiği varyantları/çoğulları tekil kanonik forma çevirir.
+# None: bu kelime bir DERS adı, konu olarak kullanılmamalı → "Belirsiz" atanır.
+_TOPIC_CANONICAL_MAP: dict[str, str | None] = {
+    # Çoğul → tekil
+    "denklemler": "Denklem",
+    "fonksiyonlar": "Fonksiyon",
+    "problemler": "Problem",
+    "diziler": "Dizi",
+    "matrisler": "Matris",
+    "vektörler": "Vektör",
+    "polinomlar": "Polinom",
+    "logaritmalar": "Logaritma",
+    "eşitsizlikler": "Eşitsizlik",
+    "permütasyonlar": "Permütasyon",
+    # Türkçe
+    "anlatım bozuklukları": "Anlatım Bozukluğu",
+    "kelime türleri": "Sözcük Türleri",
+    "sözcük anlamları": "Sözcükte Anlam",
+    "cümle anlamları": "Cümlede Anlam",
+    "cümle öğeleri": "Cümle Bilgisi",
+    # Oran varyantları
+    "oran": "Oran-Orantı",
+    "oran ve orantı": "Oran-Orantı",
+    "oran orantı": "Oran-Orantı",
+    # Muhasebe
+    "yevmiye kayıtları": "Yevmiye",
+    "bilanço tablosu": "Bilanço",
+    "gelir tabloları": "Gelir Tablosu",
+    # İş hukuku
+    "iş sözleşmeleri": "İş Sözleşmesi",
+    "kıdem tazminatları": "Kıdem Tazminatı",
+    "ihbar tazminatları": "İhbar Tazminatı",
+    # Ders adları konu alanında gelirse → konu değil, Belirsiz
+    "matematik": None, "türkçe": None,
+    "almanca": None, "ingilizce": None, "i̇ngilizce": None,
+    "finansal muhasebe": None, "maliyet muhasebesi": None,
+    "muhasebe standartları": None, "muhasebe bilgi sistemi": None,
+    "mali tablolar analizi": None, "muhasebe denetimi": None,
+    "ticaret hukuku": None, "borçlar hukuku": None,
+    "vergi hukuku": None, "maliye": None, "i̇ktisat": None, "iktisat": None,
+    "meslek hukuku": None, "tarih - genel kültür": None,
+    "iş ve sosyal güvenlik hukuku": None,
+    "i̇ş ve sosyal güvenlik hukuku": None,
+}
+
+
+def _canonical_topic(topic: str) -> str:
+    """Konu adını kanonik forma dönüştür. Ders adı gelirse 'Belirsiz' döner."""
+    t = (topic or "").strip()
+    if not t:
+        return t
+    normalized = t.lower()
+    if normalized in _TOPIC_CANONICAL_MAP:
+        canonical = _TOPIC_CANONICAL_MAP[normalized]
+        return "Belirsiz" if canonical is None else canonical
+    # Başlık harfi normalizasyonu (oran → Oran)
+    return t[0].upper() + t[1:]
+
+
 def _resolve_lesson_for_topic(topic: str, range_lesson: str) -> str:
     """Topic adına bakarak doğru dersi döndür. Kural yoksa range_lesson döner.
     Önce exact match, sonra substring match (min 5 karakter — kısa token false positive'i önler).
@@ -764,8 +824,8 @@ def get_lesson_topics_from_sgs_questions(lesson_name: str, year: str | None = No
 
 
 def reclassify_all_questions() -> dict:
-    """sgs_questions tablosundaki tüm sorulara _TOPIC_LESSON_MAP uygula.
-    Yanlış ders atamalı satırları bulk update eder ve rapor döner.
+    """sgs_questions tablosundaki tüm sorulara _TOPIC_LESSON_MAP + _TOPIC_CANONICAL_MAP uygula.
+    Yanlış ders atamalı + varyant konu adlı satırları bulk update eder ve rapor döner.
     """
     import logging as _logging
     from app.config.sgs_groups import get_group_for_lesson
@@ -775,22 +835,36 @@ def reclassify_all_questions() -> dict:
     resp = supabase.table("sgs_questions").select("id, lesson_name, topic").limit(50000).execute()
     rows = resp.data or []
 
-    # (topic_lower, current_lesson) → {topic, from, to, ids}
-    moves: dict[tuple, dict] = {}
+    # Ders taşımaları: (topic_lower, current_lesson) → {topic, from, to, ids}
+    lesson_moves: dict[tuple, dict] = {}
+    # Konu normalizasyonları: canonical_topic → {from_variants: [], ids: []}
+    topic_normalizations: dict[str, dict] = {}
+
     for row in rows:
         topic = (row.get("topic") or "").strip()
         current_lesson = row.get("lesson_name", "")
-        # _resolve_lesson_for_topic: exact match + substring match (tutarlı parse ile)
+        row_id = row["id"]
+
+        # 1. Ders düzeltmesi
         correct_lesson = _resolve_lesson_for_topic(topic, current_lesson)
         if correct_lesson != current_lesson:
             key = (topic.lower(), current_lesson)
-            if key not in moves:
-                moves[key] = {"topic": topic, "from": current_lesson, "to": correct_lesson, "ids": []}
-            moves[key]["ids"].append(row["id"])
+            if key not in lesson_moves:
+                lesson_moves[key] = {"topic": topic, "from": current_lesson, "to": correct_lesson, "ids": []}
+            lesson_moves[key]["ids"].append(row_id)
 
-    updated_total = 0
+        # 2. Konu adı normalizasyonu
+        canonical = _canonical_topic(topic)
+        if canonical != topic and topic:
+            if canonical not in topic_normalizations:
+                topic_normalizations[canonical] = {"canonical": canonical, "variants": set(), "ids": []}
+            topic_normalizations[canonical]["variants"].add(topic)
+            topic_normalizations[canonical]["ids"].append(row_id)
+
+    # Ders güncellemeleri
+    updated_lessons = 0
     moved_summary = []
-    for move in moves.values():
+    for move in lesson_moves.values():
         correct_lesson = move["to"]
         group = get_group_for_lesson(correct_lesson) or "Genel Dersler"
         ids = move["ids"]
@@ -798,15 +872,28 @@ def reclassify_all_questions() -> dict:
             "lesson_name": correct_lesson,
             "lesson_group": group,
         }).in_("id", ids).execute()
-        updated_total += len(ids)
+        updated_lessons += len(ids)
         moved_summary.append({"topic": move["topic"], "from": move["from"], "to": correct_lesson, "count": len(ids)})
-        _log.info(f"[reclassify] {move['topic']!r}: {move['from']} → {correct_lesson} ({len(ids)} soru)")
+        _log.info(f"[reclassify] ders: {move['topic']!r}: {move['from']} → {correct_lesson} ({len(ids)} soru)")
+
+    # Konu adı güncellemeleri
+    updated_topics = 0
+    topic_summary = []
+    for canonical, data in topic_normalizations.items():
+        ids = data["ids"]
+        supabase.table("sgs_questions").update({"topic": canonical}).in_("id", ids).execute()
+        updated_topics += len(ids)
+        variants = sorted(data["variants"])
+        topic_summary.append({"canonical": canonical, "variants": variants, "count": len(ids)})
+        _log.info(f"[reclassify] konu: {variants} → {canonical!r} ({len(ids)} soru)")
 
     return {
         "success": True,
         "total_rows": len(rows),
-        "updated": updated_total,
-        "moved": sorted(moved_summary, key=lambda x: x["count"], reverse=True),
+        "updated_lessons": updated_lessons,
+        "updated_topics": updated_topics,
+        "lesson_moves": sorted(moved_summary, key=lambda x: x["count"], reverse=True),
+        "topic_normalizations": sorted(topic_summary, key=lambda x: x["count"], reverse=True),
     }
 
 

@@ -711,10 +711,37 @@ def get_job(job_id: str):
     return job
 
 
+def _bridge_to_content_automation(job: dict) -> None:
+    """Video job onaylanınca generated_contents'a köprü kaydı ekle — İçerik Otomasyonu'nda görünsün."""
+    job_id = job.get("id", "")
+    sentinel = f"video_job:{job_id}"
+    sb = get_supabase_client()
+    existing = sb.table("generated_contents").select("id", count="exact").eq("topic", sentinel).execute()
+    if (existing.count or 0) > 0:
+        return
+    content_type = job.get("type") or "video"
+    title = job.get("title") or content_type.replace("_", " ").capitalize()
+    row: dict = {
+        "topic": sentinel,
+        "type": content_type,
+        "title": title,
+        "status": "approved",
+        "generated_by": "ai",
+    }
+    if job.get("video_url"):
+        row["video_url"] = job["video_url"]
+    try:
+        sb.table("generated_contents").insert(row).execute()
+        logger.info(f"[video] approve bridge: job={job_id[:8]} → generated_contents")
+    except Exception as e:
+        logger.warning(f"[video] approve bridge hatası job={job_id[:8]}: {e}")
+
+
 @router.post("/jobs/{job_id}/approve")
 def approve_job(job_id: str):
-    _get_job(job_id)
+    job = _get_job(job_id)
     _set_status(job_id, "approved")
+    _bridge_to_content_automation(job)
     return {"message": "Video onaylandı"}
 
 
