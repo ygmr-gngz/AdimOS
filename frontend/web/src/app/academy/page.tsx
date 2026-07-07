@@ -6,7 +6,7 @@ import AppShell from '@/components/layout/AppShell'
 import Button from '@/components/ui/Button'
 import {
   GraduationCap, Upload, FileText, Video, Trash2, RefreshCw,
-  BarChart2, BookOpen, ChevronDown, Clock,
+  BarChart2, BookOpen, ChevronDown, Clock, BookMarked, AlertTriangle,
 } from 'lucide-react'
 import {
   sgsService, SGS_DOCUMENT_TYPES, SGS_LESSONS, TOPIC_LESSON_MAP,
@@ -173,7 +173,9 @@ function QuestionCard({ question, onMoved }: {
 }
 
 // ── Topic Row ─────────────────────────────────────────────────
-function TopicRow({ topic, count, maxCount, lessonName, rank, generatingTopic, onGenerate }: {
+type TopicTab = 'sorular' | 'kaynak'
+
+function TopicRow({ topic, count, maxCount, lessonName, rank, generatingTopic, onGenerate, onGenerateKonuAnlatimi }: {
   topic: string
   count: number
   maxCount: number
@@ -181,15 +183,20 @@ function TopicRow({ topic, count, maxCount, lessonName, rank, generatingTopic, o
   rank: number
   generatingTopic: string | null
   onGenerate: (lesson: string, topic: string) => void
+  onGenerateKonuAnlatimi: (lesson: string, topic: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<TopicTab>('sorular')
   const [detail, setDetail] = useState<SgsTopicDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [questions, setQuestions] = useState<SgsQuestion[]>([])
   const [loadingQuestions, setLoadingQuestions] = useState(false)
   const [questionsLoaded, setQuestionsLoaded] = useState(false)
+  const [sourceContent, setSourceContent] = useState<{ source_available: boolean; chunk_count: number; documents: { id: string; name: string }[]; warning?: string } | null>(null)
+  const [loadingSource, setLoadingSource] = useState(false)
   const barPct = Math.round((count / (maxCount || 1)) * 100)
   const isGen = generatingTopic === topic
+  const isGenKonu = generatingTopic === `konu:${topic}`
 
   const handleExpand = () => {
     const next = !open
@@ -207,6 +214,17 @@ function TopicRow({ topic, count, maxCount, lessonName, rank, generatingTopic, o
         .then(qs => { setQuestions(qs); setQuestionsLoaded(true) })
         .catch(() => { setQuestionsLoaded(true) })
         .finally(() => setLoadingQuestions(false))
+    }
+  }
+
+  const handleTabChange = (tab: TopicTab) => {
+    setActiveTab(tab)
+    if (tab === 'kaynak' && !sourceContent && !loadingSource) {
+      setLoadingSource(true)
+      sgsService.getTopicSourceContent(topic, lessonName)
+        .then(d => setSourceContent(d))
+        .catch(() => setSourceContent({ source_available: false, chunk_count: 0, documents: [], warning: 'Kaynak içerik alınamadı.' }))
+        .finally(() => setLoadingSource(false))
     }
   }
 
@@ -234,10 +252,20 @@ function TopicRow({ topic, count, maxCount, lessonName, rank, generatingTopic, o
           <button
             onClick={() => onGenerate(lessonName, topic)}
             disabled={!!generatingTopic}
+            title="Soru çözümü videosu üret"
             className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-brand-600/10 border border-brand-500/20 text-brand-400 hover:bg-brand-600/20 disabled:opacity-40 transition-colors"
           >
             {isGen ? <Spinner size={3} /> : <Video size={11} />}
-            Video Üret
+            Soru Çöz
+          </button>
+          <button
+            onClick={() => onGenerateKonuAnlatimi(lessonName, topic)}
+            disabled={!!generatingTopic}
+            title="Konu anlatımı videosu üret (kaynak içerikten)"
+            className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-emerald-600/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-600/20 disabled:opacity-40 transition-colors"
+          >
+            {isGenKonu ? <Spinner size={3} /> : <BookMarked size={11} />}
+            Konu Anlat
           </button>
         </div>
         <ChevronDown size={13} className={`text-gray-600 transition-transform shrink-0 ${open ? 'rotate-180' : ''}`} />
@@ -277,11 +305,30 @@ function TopicRow({ topic, count, maxCount, lessonName, rank, generatingTopic, o
             </div>
           )}
 
-          {/* Questions */}
-          <div className="pt-3 border-t border-surface-200/40">
-            <p className="text-[10px] uppercase tracking-wide text-gray-600 font-semibold mb-2">
-              Sorular {questions.length > 0 && <span className="text-gray-700">({questions.length})</span>}
-            </p>
+          {/* Sekmeler: Sorular | Kaynak İçerik */}
+          <div className="flex gap-3 border-t border-surface-200/40 pt-3">
+            <button
+              onClick={() => handleTabChange('sorular')}
+              className={`text-[11px] font-medium pb-1.5 border-b-2 transition-colors ${activeTab === 'sorular' ? 'border-brand-500 text-brand-300' : 'border-transparent text-gray-600 hover:text-gray-400'}`}
+            >
+              Sorular ({count})
+            </button>
+            <button
+              onClick={() => handleTabChange('kaynak')}
+              className={`text-[11px] font-medium pb-1.5 border-b-2 transition-colors ${activeTab === 'kaynak' ? 'border-emerald-500 text-emerald-300' : 'border-transparent text-gray-600 hover:text-gray-400'}`}
+            >
+              Kaynak İçerik
+              {sourceContent && (
+                <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] ${sourceContent.source_available ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
+                  {sourceContent.source_available ? `${sourceContent.chunk_count} parça` : 'Yok'}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Sorular sekmesi */}
+          {activeTab === 'sorular' && (
+            <div>
             {loadingQuestions ? (
               <div className="flex items-center gap-2">
                 <Spinner size={3} />
@@ -300,7 +347,42 @@ function TopicRow({ topic, count, maxCount, lessonName, rank, generatingTopic, o
                 ))}
               </div>
             )}
-          </div>
+            </div>
+          )}
+
+          {/* Kaynak İçerik sekmesi */}
+          {activeTab === 'kaynak' && (
+            <div>
+              {loadingSource ? (
+                <div className="flex items-center gap-2 py-2"><Spinner size={3} /><span className="text-xs text-gray-500">Kaynak içerik aranıyor...</span></div>
+              ) : sourceContent ? (
+                sourceContent.source_available ? (
+                  <div className="space-y-2">
+                    <p className="text-[11px] text-gray-500">
+                      {sourceContent.chunk_count} metin parçası — {sourceContent.documents.length} doküman
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {sourceContent.documents.map(d => (
+                        <span key={d.id} className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                          {d.name}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-emerald-400 mt-1">
+                      ✓ Konu anlatımı üretimi için kaynak mevcut
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 py-1">
+                    <AlertTriangle size={13} className="text-amber-400 shrink-0" />
+                    <p className="text-xs text-amber-400">{sourceContent.warning ?? 'Bu konu için kaynak içerik bulunamadı. İlgili PDF\'i yükleyin.'}</p>
+                  </div>
+                )
+              ) : (
+                <p className="text-xs text-gray-600">Kaynak sekmesine tıklayın.</p>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -308,11 +390,12 @@ function TopicRow({ topic, count, maxCount, lessonName, rank, generatingTopic, o
 }
 
 // ── Topic Dashboard ────────────────────────────────────────────
-function TopicDashboard({ lessonName, yearFilter, generatingTopic, onGenerate }: {
+function TopicDashboard({ lessonName, yearFilter, generatingTopic, onGenerate, onGenerateKonuAnlatimi }: {
   lessonName: string
   yearFilter: string
   generatingTopic: string | null
   onGenerate: (lesson: string, topic: string) => void
+  onGenerateKonuAnlatimi: (lesson: string, topic: string) => void
 }) {
   const [data, setData] = useState<SgsTopicAnalysis | null>(null)
   const [loading, setLoading] = useState(true)
@@ -397,6 +480,7 @@ function TopicDashboard({ lessonName, yearFilter, generatingTopic, onGenerate }:
             rank={i + 1}
             generatingTopic={generatingTopic}
             onGenerate={onGenerate}
+            onGenerateKonuAnlatimi={onGenerateKonuAnlatimi}
           />
         ))}
       </div>
@@ -405,11 +489,12 @@ function TopicDashboard({ lessonName, yearFilter, generatingTopic, onGenerate }:
 }
 
 // ── Lesson Panel ───────────────────────────────────────────────
-function LessonPanel({ area, yearFilter, generatingTopic, onGenerate, onAreaAnalyze }: {
+function LessonPanel({ area, yearFilter, generatingTopic, onGenerate, onGenerateKonuAnlatimi, onAreaAnalyze }: {
   area: SgsArea
   yearFilter: string
   generatingTopic: string | null
   onGenerate: (lesson: string, topic: string) => void
+  onGenerateKonuAnlatimi: (lesson: string, topic: string) => void
   onAreaAnalyze: () => void
 }) {
   const [selectedLesson, setSelectedLesson] = useState<string | null>(null)
@@ -458,6 +543,7 @@ function LessonPanel({ area, yearFilter, generatingTopic, onGenerate, onAreaAnal
                     yearFilter={yearFilter}
                     generatingTopic={generatingTopic}
                     onGenerate={onGenerate}
+                    onGenerateKonuAnlatimi={onGenerateKonuAnlatimi}
                   />
                 </div>
               )}
@@ -470,12 +556,13 @@ function LessonPanel({ area, yearFilter, generatingTopic, onGenerate, onAreaAnal
 }
 
 // ── Area-level Analysis Panel ─────────────────────────────────
-function AreaAnalysisPanel({ areaName, data, onBack, generatingTopic, onGenerate }: {
+function AreaAnalysisPanel({ areaName, data, onBack, generatingTopic, onGenerate, onGenerateKonuAnlatimi }: {
   areaName: string
   data: SgsTopicAnalysis
   onBack: () => void
   generatingTopic: string | null
   onGenerate: (lesson: string, topic: string) => void
+  onGenerateKonuAnlatimi: (lesson: string, topic: string) => void
 }) {
   const firstLesson = data.lesson_breakdown?.[0]?.lesson ?? ''
 
@@ -538,6 +625,7 @@ function AreaAnalysisPanel({ areaName, data, onBack, generatingTopic, onGenerate
               rank={i + 1}
               generatingTopic={generatingTopic}
               onGenerate={onGenerate}
+              onGenerateKonuAnlatimi={onGenerateKonuAnlatimi}
             />
           ))}
         </div>
@@ -636,9 +724,22 @@ function DashboardTab({ reloadKey }: { reloadKey: number }) {
     setGeneratingTopic(topic)
     try {
       await sgsService.generateTopicVideo({ lesson, topic, year: yearFilter || undefined, max_questions: 5 })
-      toast.success(`"${topic}" video üretimi başlatıldı`)
+      toast.success(`"${topic}" soru çözümü videosu başlatıldı`)
       router.push('/video')
     } catch { toast.error('Video üretimi başlatılamadı') }
+    finally { setGeneratingTopic(null) }
+  }
+
+  const handleGenerateKonuAnlatimi = async (lesson: string, topic: string) => {
+    setGeneratingTopic(`konu:${topic}`)
+    try {
+      const result = await sgsService.generateKonuAnlatimi(topic, lesson)
+      toast.success(`"${topic}" konu anlatımı işi oluşturuldu (${result.chunk_count} kaynak parça)`)
+      router.push('/video')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Konu anlatımı başlatılamadı')
+    }
     finally { setGeneratingTopic(null) }
   }
 
@@ -716,6 +817,7 @@ function DashboardTab({ reloadKey }: { reloadKey: number }) {
           yearFilter={yearFilter}
           generatingTopic={generatingTopic}
           onGenerate={handleGenerate}
+          onGenerateKonuAnlatimi={handleGenerateKonuAnlatimi}
           onAreaAnalyze={handleAreaAnalyze}
         />
       )}
@@ -731,6 +833,7 @@ function DashboardTab({ reloadKey }: { reloadKey: number }) {
             onBack={() => { setShowAreaAnalysis(false); setAreaAnalysis(null) }}
             generatingTopic={generatingTopic}
             onGenerate={handleGenerate}
+            onGenerateKonuAnlatimi={handleGenerateKonuAnlatimi}
           />
         ) : null
       )}

@@ -392,4 +392,42 @@ export const sgsService = {
     const { data } = await apiClient.post('/sgs/questions/reclassify')
     return data
   },
+
+  // GET /sgs/topics/{topic}/source-content — konu anlatımı için kaynak içerik
+  async getTopicSourceContent(topic: string, lessonName?: string): Promise<{
+    topic: string
+    lesson_name: string
+    source_available: boolean
+    chunk_count: number
+    document_count?: number
+    chunks: { id: string; document_name: string; text: string }[]
+    documents: { id: string; name: string }[]
+    warning?: string
+  }> {
+    const params: Record<string, string> = {}
+    if (lessonName) params.lesson_name = lessonName
+    const { data } = await apiClient.get(`/sgs/topics/${encodeURIComponent(topic)}/source-content`, { params })
+    return data
+  },
+
+  // POST /sgs/topics/{topic}/generate-konu-anlatimi
+  async generateKonuAnlatimi(topic: string, lessonName?: string, durationVariant: 'long' | 'short' = 'long'): Promise<{
+    job_id: string
+    title: string
+    topic: string
+    lesson_name: string
+    source_documents: string[]
+    chunk_count: number
+    duration_variant: string
+    status: string
+  }> {
+    const params: Record<string, string> = { duration_variant: durationVariant }
+    if (lessonName) params.lesson_name = lessonName
+    const { data } = await apiClient.post(
+      `/sgs/topics/${encodeURIComponent(topic)}/generate-konu-anlatimi`,
+      null,
+      { params }
+    )
+    return data
+  },
 }

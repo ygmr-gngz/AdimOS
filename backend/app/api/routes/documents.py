@@ -19,6 +19,37 @@ _BUCKET = "documents"
 _SAFE_NAME_RE = re.compile(r'[^\w\-.]')
 
 
+def _log_upload_attempt(
+    file_name: str,
+    file_size: int,
+    phase: str,
+    error: str | None = None,
+    doc_id: str | None = None,
+) -> None:
+    """Her yükleme denemesini notifications tablosuna yazar — başarısız denemeler de iz bırakır."""
+    try:
+        sb = get_supabase_client()
+        status = "error" if error else "success"
+        body = f"Aşama: {phase}" + (f" — Hata: {error[:200]}" if error else " — Başarılı")
+        sb.table("notifications").insert({
+            "type": "upload_attempt",
+            "title": f"Yükleme: {file_name}",
+            "body": body,
+            "is_read": False,
+            "status": status,
+            "priority": "high" if error else "low",
+            "details": {
+                "file_name": file_name,
+                "file_size": file_size,
+                "phase": phase,
+                "error": error,
+                "doc_id": doc_id,
+            },
+        }).execute()
+    except Exception as e:
+        logger.debug(f"[documents] upload log yazılamadı: {e}")
+
+
 def _sgs_pipeline_background(doc_id: str, file_bytes: bytes, pdf_name: str) -> None:
     """Bilgi Merkezi PDF'ini SGS soru çıkarım hattına besler (arka planda)."""
     from app.modules.knowledge.pdf_loader import load_pdf
@@ -116,27 +147,39 @@ async def upload_document(
     bg: BackgroundTasks = BackgroundTasks(),
 ):
     content = await file.read()
-    if len(content) > _MAX_UPLOAD_BYTES:
+    file_name = file.filename or "upload.pdf"
+    file_size = len(content)
+
+    if file_size > _MAX_UPLOAD_BYTES:
+        _log_upload_attempt(file_name, file_size, "boyut_kontrolu",
+                            error=f"50 MB sınırı aşıldı ({file_size // (1024 * 1024)} MB)")
         raise HTTPException(
             status_code=413,
-            detail=f"Dosya boyutu 50 MB sınırını aşıyor ({len(content) // (1024 * 1024)} MB).",
+            detail=f"Dosya boyutu 50 MB sınırını aşıyor ({file_size // (1024 * 1024)} MB).",
         )
     mime_type = file.content_type or "application/pdf"
 
     # Türkçe karakter ve boşluk içeren dosya adlarını sanitize et
-    safe_name = _SAFE_NAME_RE.sub('_', file.filename or "upload.pdf")
+    safe_name = _SAFE_NAME_RE.sub('_', file_name)
 
-    # AŞAMA 1 (hızlı — HTTP yanıtı bu kadarda biter):
-    # Kayıt oluştur → doc_id al → doğru storage path hesapla → storage'a yükle → hemen dön
-    doc = create_document(safe_name, "", len(content), mime_type, source_module=source_module, exclude_from_sgs=exclude_from_sgs)
-    doc_id = doc["id"]
-    storage_path = f"{_BUCKET}/{doc_id}/{safe_name}"
+    doc_id = None
+    try:
+        # AŞAMA 1 (hızlı — HTTP yanıtı bu kadarda biter):
+        doc = create_document(safe_name, "", file_size, mime_type, source_module=source_module, exclude_from_sgs=exclude_from_sgs)
+        doc_id = doc["id"]
+        storage_path = f"{_BUCKET}/{doc_id}/{safe_name}"
 
-    sb = get_supabase_client()
-    sb.table("documents").update({"storage_path": storage_path}).eq("id", doc_id).execute()
-    doc["storage_path"] = storage_path
+        sb = get_supabase_client()
+        sb.table("documents").update({"storage_path": storage_path}).eq("id", doc_id).execute()
+        doc["storage_path"] = storage_path
 
-    upload_file(_BUCKET, f"{doc_id}/{safe_name}", content)
+        upload_file(_BUCKET, f"{doc_id}/{safe_name}", content)
+    except Exception as e:
+        _log_upload_attempt(file_name, file_size, "storage_yukleme", error=str(e), doc_id=doc_id)
+        logger.error(f"[documents] yükleme hatası {file_name}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Dosya yüklenemedi: {str(e)[:200]}")
+
+    _log_upload_attempt(file_name, file_size, "tamamlandi", doc_id=doc_id)
 
     # AŞAMA 2 (arka plan): metin çıkarma / embedding / indexleme
     bg.add_task(_index_background, doc_id, content)
@@ -258,14 +301,9 @@ async def relink_document(document_id: str, bg: BackgroundTasks, file: UploadFil
         logger.error(f"[documents] relink storage yükleme hatası {document_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Dosya yüklenemedi: {str(e)[:200]}")
 
-    now = datetime.now(timezone.utc).isoformat()
     sb = get_supabase_client()
     sb.table("documents").update({
-        "file_status": "yeniden_yuklendi",
         "file_size": len(content),
-        "storage_verified_at": now,
-        "relinked_at": now,
-        "updated_at": "now()",
     }).eq("id", document_id).execute()
 
     bg.add_task(reindex_document, document_id, storage_path, doc["file_name"])
@@ -287,7 +325,7 @@ def _run_storage_verification():
     sb = get_supabase_client()
     docs = (
         sb.table("documents")
-        .select("id, file_name, storage_path, file_status")
+        .select("id, file_name, storage_path")
         .execute().data or []
     )
     now = datetime.now(timezone.utc).isoformat()
@@ -304,15 +342,10 @@ def _run_storage_verification():
             with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
                 tmp_path = tmp.name
             download_file("documents", clean_path, tmp_path)
-            sb.table("documents").update({
-                "file_status": "mevcut",
-                "storage_verified_at": now,
-            }).eq("id", doc_id).execute()
             verified += 1
         except Exception as e:
             err = str(e).lower()
             if "not_found" in err or "404" in err or "object not found" in err:
-                sb.table("documents").update({"file_status": "kayip"}).eq("id", doc_id).execute()
                 missing += 1
                 logger.warning(f"[documents] storage kayıp: {doc_id} — {doc.get('file_name')}")
             else:
@@ -331,9 +364,21 @@ def _run_storage_verification():
 
 @router.post("/verify-storage")
 def verify_storage(bg: BackgroundTasks):
-    """
-    Tüm dokümanların storage'da mevcut olup olmadığını arka planda kontrol et.
-    Tamamlandığında documents tablosundaki file_status güncellenir.
-    """
+    """Tüm dokümanların storage'da mevcut olup olmadığını arka planda kontrol et."""
     bg.add_task(_run_storage_verification)
     return {"message": "Storage doğrulaması başlatıldı. İşlem tamamlandığında doküman listesini yenileyin."}
+
+
+@router.get("/upload-log")
+def upload_log(limit: int = 50):
+    """Son yükleme denemelerini göster (başarılı ve başarısız)."""
+    sb = get_supabase_client()
+    r = (
+        sb.table("notifications")
+        .select("id,title,body,status,priority,details,created_at")
+        .eq("type", "upload_attempt")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return r.data or []

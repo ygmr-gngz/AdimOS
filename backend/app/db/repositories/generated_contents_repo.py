@@ -2,12 +2,12 @@ from app.db.supabase import get_supabase_client
 
 _TABLE = "generated_contents"
 
-# Liste endpoint'i için ince sütun seti — audio_base64 (büyük binary) hariç
+# Liste endpoint'i için ince sütun seti — audio_base64 hariç, yalnızca mevcut kolonlar
 _LIST_FIELDS = (
-    "id,title,description,type,status,platform,"
-    "thumbnail_url,video_url,image_url,audio_url,"
-    "script,error_detail,approval_notes,generated_by,"
-    "created_at,updated_at"
+    "id,title,caption,type,status,topic,"
+    "video_url,image_url,audio_url,"
+    "script,error_detail,approval_notes,"
+    "created_at"
 )
 
 

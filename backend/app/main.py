@@ -27,6 +27,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         _startup_logger.error(f"[startup] Video job recovery hatası: {e}")
 
+    # Kritik kolon varlığını doğrula — şema/kod uyumsuzluklarını erken yakala
+    try:
+        from app.db.supabase import get_supabase_client
+        _sb = get_supabase_client()
+        _checks = [
+            ("generated_contents", ["id", "title", "type", "status", "topic", "created_at"]),
+            ("documents", ["id", "file_name", "storage_path", "status", "source_module"]),
+            ("sgs_questions", ["id", "lesson_name", "topic", "document_id"]),
+        ]
+        for table, cols in _checks:
+            r = _sb.table(table).select(",".join(cols)).limit(0).execute()
+            _startup_logger.info(f"[startup] şema kontrol OK: {table} ({','.join(cols)})")
+    except Exception as e:
+        _startup_logger.error(f"[startup] ŞEMA UYUMSUZLUĞU — bazı kolonlar eksik: {e}")
+
     yield
     stop_scheduler()
     _startup_logger.info("AdimOS API kapatılıyor")

@@ -7,11 +7,15 @@ from app.db.repositories.generated_contents_repo import list_contents
 logger = logging.getLogger(__name__)
 
 
-def _safe(fn, default=None):
+_dashboard_errors: list[str] = []
+
+def _safe(fn, default=None, label: str = ""):
     try:
         return fn()
     except Exception as e:
-        logger.warning(f"[dashboard] veri alınamadı: {e}")
+        msg = f"{label}: {e}" if label else str(e)
+        logger.warning(f"[dashboard] veri alınamadı: {msg}")
+        _dashboard_errors.append(msg)
         return default if default is not None else []
 
 
@@ -35,10 +39,11 @@ def _get_agent_statuses() -> list[dict]:
 
 
 def get_dashboard_data() -> dict:
-    leads     = _safe(get_leads)
-    students  = _safe(get_students)
-    documents = _safe(get_documents)
-    contents  = _safe(list_contents)
+    _dashboard_errors.clear()
+    leads     = _safe(get_leads,     label="leads")
+    students  = _safe(get_students,  label="students")
+    documents = _safe(get_documents, label="documents")
+    contents  = _safe(list_contents, label="contents")
 
     indexed        = [d for d in documents if d.get("status") == "indexed"]
     failed_docs    = [d for d in documents if d.get("status") == "failed"]
@@ -106,6 +111,7 @@ def get_dashboard_data() -> dict:
             for c in recent_contents
         ],
         "agent_statuses": _get_agent_statuses(),
+        "data_errors": list(_dashboard_errors) if _dashboard_errors else None,
     }
 
 

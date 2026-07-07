@@ -780,3 +780,187 @@ def get_db_stats():
         },
         "suspicious_topic_lesson_mismatches": suspicious,
     }
+
+
+# ── Çift Üretim: Konu Anlatımı ──────────────────────────────────
+
+@router.get("/topics/{topic}/source-content")
+def topic_source_content(topic: str, lesson_name: str | None = None):
+    """
+    Bir konuya ait kaynak içerik parçalarını döndürür.
+    Konu anlatımı videosu üretimi bu parçalara dayanır (halüsinasyon koruması).
+    """
+    supabase = get_supabase_client()
+
+    # 1. Konuya ait soru kayıtlarından document_id'leri topla
+    q = supabase.table("sgs_questions").select("document_id, lesson_name").eq("topic", topic)
+    if lesson_name:
+        q = q.eq("lesson_name", lesson_name)
+    q_resp = q.limit(200).execute()
+    rows = q_resp.data or []
+
+    doc_ids = list({r["document_id"] for r in rows if r.get("document_id")})
+    actual_lesson = rows[0]["lesson_name"] if rows else (lesson_name or "Belirsiz")
+
+    if not doc_ids:
+        return {
+            "topic": topic,
+            "lesson_name": actual_lesson,
+            "source_available": False,
+            "chunk_count": 0,
+            "chunks": [],
+            "documents": [],
+            "warning": "Bu konuya ait soru bağlantılı doküman bulunamadı. Konu anlatımı üretilemez.",
+        }
+
+    # 2. Bu dokümanların chunk'larını getir
+    chunks_resp = (
+        supabase.table("chunks")
+        .select("id, document_id, chunk_index, chunk_data")
+        .in_("document_id", doc_ids)
+        .order("chunk_index")
+        .limit(30)
+        .execute()
+    )
+    chunks = chunks_resp.data or []
+
+    # 3. Doküman adlarını getir
+    docs_resp = (
+        supabase.table("documents")
+        .select("id, file_name")
+        .in_("id", doc_ids)
+        .execute()
+    )
+    docs = {d["id"]: d["file_name"] for d in (docs_resp.data or [])}
+
+    chunk_list = [
+        {
+            "id": c["id"],
+            "document_id": c["document_id"],
+            "document_name": docs.get(c["document_id"], "?"),
+            "chunk_index": c["chunk_index"],
+            "text": (c.get("chunk_data") or "")[:500],
+        }
+        for c in chunks
+    ]
+
+    return {
+        "topic": topic,
+        "lesson_name": actual_lesson,
+        "source_available": len(chunks) > 0,
+        "chunk_count": len(chunks),
+        "document_count": len(doc_ids),
+        "chunks": chunk_list,
+        "documents": [{"id": did, "name": docs.get(did, "?")} for did in doc_ids],
+    }
+
+
+@router.post("/topics/{topic}/generate-konu-anlatimi")
+def generate_konu_anlatimi(
+    topic: str,
+    lesson_name: str | None = None,
+    duration_variant: str = "long",
+    user=Depends(get_current_user),
+):
+    """
+    Bir konu için "konu anlatımı" video işi oluşturur.
+    Yalnızca bağlı kaynak parçalarından beslenir — kaynak yoksa üretmez.
+    duration_variant: 'long' (8-15 dk) | 'short' (≤60 sn)
+    """
+    supabase = get_supabase_client()
+
+    # Kaynak içerik kontrolü
+    q = supabase.table("sgs_questions").select("document_id, lesson_name").eq("topic", topic)
+    if lesson_name:
+        q = q.eq("lesson_name", lesson_name)
+    q_resp = q.limit(100).execute()
+    rows = q_resp.data or []
+    doc_ids = list({r["document_id"] for r in rows if r.get("document_id")})
+    actual_lesson = rows[0]["lesson_name"] if rows else (lesson_name or "Belirsiz")
+
+    if not doc_ids:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=422,
+            detail=f"'{topic}' konusuna ait kaynak içerik bulunamadı. Önce bu konuya ait PDF yükleyin.",
+        )
+
+    # Chunk'ları çek
+    chunks_resp = (
+        supabase.table("chunks")
+        .select("chunk_data, document_id")
+        .in_("document_id", doc_ids)
+        .order("chunk_index")
+        .limit(20)
+        .execute()
+    )
+    chunks = chunks_resp.data or []
+
+    if not chunks:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=422,
+            detail=f"Dokümanlar yüklü ama henüz indexlenmemiş. Lütfen birkaç dakika bekleyin.",
+        )
+
+    # Doküman adları
+    docs_resp = (
+        supabase.table("documents")
+        .select("id, file_name")
+        .in_("id", doc_ids)
+        .execute()
+    )
+    doc_names = [d["file_name"] for d in (docs_resp.data or [])]
+
+    source_text = "\n\n---\n\n".join(
+        c.get("chunk_data", "") or "" for c in chunks[:10]
+    )
+
+    target_minutes = 12 if duration_variant == "long" else 1
+    video_type = "lesson"
+
+    # Video job oluştur
+    payload_json = {
+        "production_type": "konu_anlatimi",
+        "source_doc_ids": doc_ids,
+        "source_doc_names": doc_names,
+        "source_chunk_count": len(chunks),
+        "duration_variant": duration_variant,
+        "source_text_preview": source_text[:300],
+    }
+
+    title = f"{topic} — Konu Anlatımı"
+    if duration_variant == "short":
+        title += " (Kısa)"
+
+    job_row = {
+        "type": video_type,
+        "title": title,
+        "lesson_name": actual_lesson,
+        "topic": topic,
+        "description": f"Konu anlatımı — Kaynak: {', '.join(doc_names[:3])}",
+        "target_duration_minutes": target_minutes,
+        "status": "pending",
+        "payload_json": payload_json,
+        "storyboard": {
+            "production_type": "konu_anlatimi",
+            "source_text": source_text,
+            "structure": ["tanim", "kural", "sayisal_ornek", "sinav_notu", "ozet"],
+        },
+    }
+
+    result = supabase.table("video_jobs").insert(job_row).execute()
+    if not result.data:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail="Video işi oluşturulamadı")
+
+    return {
+        "job_id": result.data[0]["id"],
+        "title": title,
+        "topic": topic,
+        "lesson_name": actual_lesson,
+        "source_documents": doc_names,
+        "chunk_count": len(chunks),
+        "duration_variant": duration_variant,
+        "status": "pending",
+    }
