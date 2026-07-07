@@ -1029,6 +1029,9 @@ export default function VideoPage() {
     pollStartRef.current = Date.now()
 
     pollRef.current = setInterval(async () => {
+      // Sekme arka plandayken polling'i atla
+      if (document.hidden) return
+
       // jobsRef her zaman güncel — closure bug yok
       const hasActive = jobsRef.current.some(j => ACTIVE_STATUSES.includes(j.status))
       if (!hasActive) return
@@ -1071,6 +1074,16 @@ export default function VideoPage() {
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter])
+
+  // Sekme öne gelince hemen bir poll yap (gizliyken kaçırılan güncellemeleri yakala)
+  useEffect(() => {
+    const onVisibility = () => {
+      if (!document.hidden) loadJobs()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleApprove = async (job: VideoJob) => {
     try {
