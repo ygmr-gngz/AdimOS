@@ -1,24 +1,57 @@
 import logging
 import os
+import re
 import tempfile
 from datetime import datetime, timezone
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Query
-from app.modules.knowledge.service import process_document, list_documents, fetch_document, remove_document, reindex_document
+from app.modules.knowledge.service import list_documents, fetch_document, remove_document, reindex_document
 from app.db.repositories.sgs_repo import list_analyses
-from app.db.repositories.documents_repo import create_document, get_documents as db_get_documents
+from app.db.repositories.documents_repo import create_document, update_document_status, get_documents as db_get_documents
 from app.db.supabase import get_supabase_client
-from app.db.storage import download_file
+from app.db.storage import upload_file, download_file
+from app.schemas.document import DocumentStatus
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+_BUCKET = "documents"
+_SAFE_NAME_RE = re.compile(r'[^\w\-.]')
+
+
+def _index_background(doc_id: str, file_bytes: bytes) -> None:
+    """
+    Arka planda çalışır — HTTP zaman aşımından bağımsız.
+    PDF metin çıkarma → chunking → embedding → Supabase yazma.
+    """
+    from app.modules.knowledge.pdf_loader import load_pdf
+    from app.modules.knowledge.chunker import split_into_chunks
+    from app.modules.knowledge.embeddings import embed_texts
+    from app.db.repositories.chunks_repo import insert_chunks
+    logger.info(f"[documents] arka plan indexleme başladı: {doc_id}")
+    try:
+        update_document_status(doc_id, DocumentStatus.PROCESSING)
+        text = load_pdf(file_bytes)
+        raw_chunks = split_into_chunks(text)
+        texts = [c["text"] for c in raw_chunks]
+        embeddings = embed_texts(texts)
+        chunks_with_emb = [
+            {"text": c["text"], "embedding": embeddings[i]}
+            for i, c in enumerate(raw_chunks)
+        ]
+        insert_chunks(doc_id, chunks_with_emb)
+        update_document_status(doc_id, DocumentStatus.INDEXED)
+        logger.info(f"[documents] indexleme tamamlandı: {doc_id} ({len(raw_chunks)} chunk)")
+    except Exception as e:
+        logger.error(f"[documents] indexleme hatası {doc_id}: {e}", exc_info=True)
+        update_document_status(doc_id, DocumentStatus.FAILED)
 
 
 @router.post("")
 async def upload_document(
     file: UploadFile = File(...),
     source_module: str = Form(default="knowledge_center"),
+    bg: BackgroundTasks = BackgroundTasks(),
 ):
     content = await file.read()
     if len(content) > _MAX_UPLOAD_BYTES:
@@ -27,7 +60,25 @@ async def upload_document(
             detail=f"Dosya boyutu 50 MB sınırını aşıyor ({len(content) // (1024 * 1024)} MB).",
         )
     mime_type = file.content_type or "application/pdf"
-    return process_document(file.filename or "upload", content, mime_type, source_module=source_module)
+
+    # Türkçe karakter ve boşluk içeren dosya adlarını sanitize et
+    safe_name = _SAFE_NAME_RE.sub('_', file.filename or "upload.pdf")
+
+    # AŞAMA 1 (hızlı — HTTP yanıtı bu kadarda biter):
+    # Kayıt oluştur → doc_id al → doğru storage path hesapla → storage'a yükle → hemen dön
+    doc = create_document(safe_name, "", len(content), mime_type, source_module=source_module)
+    doc_id = doc["id"]
+    storage_path = f"{_BUCKET}/{doc_id}/{safe_name}"
+
+    sb = get_supabase_client()
+    sb.table("documents").update({"storage_path": storage_path}).eq("id", doc_id).execute()
+    doc["storage_path"] = storage_path
+
+    upload_file(_BUCKET, f"{doc_id}/{safe_name}", content)
+
+    # AŞAMA 2 (arka plan): metin çıkarma / embedding / indexleme
+    bg.add_task(_index_background, doc_id, content)
+    return doc
 
 
 @router.get("")
