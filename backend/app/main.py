@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+import httpx
 
 from app.core.config import settings
 from app.api.router import router
@@ -54,13 +55,16 @@ app.add_middleware(
 app.include_router(router, prefix="/api/v1")
 
 
-# Supabase HTTP/2 protokol hatası — container crash'i önle
+# Supabase HTTP/2 protokol ve zaman aşımı hatalarını yakala — container crash'i önle
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     exc_type = type(exc).__name__
     if "LocalProtocolError" in exc_type or "ConnectionTerminated" in exc_type:
-        _startup_logger.warning(f"[http2] Supabase bağlantı hatası yakalandı ({exc_type}): {exc}")
+        _startup_logger.warning(f"[http2] Supabase bağlantı hatası ({exc_type}): {exc}")
         return JSONResponse(status_code=503, content={"detail": "Geçici bağlantı hatası, yeniden deneyin."})
+    if isinstance(exc, httpx.TimeoutException):
+        _startup_logger.warning(f"[timeout] Sorgu zaman aşımı ({exc_type}) path={request.url.path}")
+        return JSONResponse(status_code=504, content={"detail": "Veritabanı sorgusu zaman aşımına uğradı. Yeniden deneyin."})
     raise exc
 
 

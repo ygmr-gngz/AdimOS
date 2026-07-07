@@ -179,8 +179,8 @@ def generate_motivation(req: MotivationRequest, bg: BackgroundTasks):
 # ── List / Get
 
 @router.get("")
-def list_content():
-    return list_contents()
+def list_content(page: int = 0, limit: int = 50):
+    return list_contents(page=page, limit=limit)
 
 
 @router.get("/{content_id}")

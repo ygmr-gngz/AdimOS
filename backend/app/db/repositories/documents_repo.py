@@ -27,9 +27,9 @@ def create_document(
     return response.data[0] if response.data else None
 
 
-def get_documents(source_module: str | None = None):
+def get_documents(source_module: str | None = None, limit: int = 200):
     supabase = get_supabase_client()
-    query = supabase.table("documents").select("*").order("created_at", desc=True)
+    query = supabase.table("documents").select("*").order("created_at", desc=True).limit(limit)
     if source_module:
         query = query.eq("source_module", source_module)
     response = query.execute()

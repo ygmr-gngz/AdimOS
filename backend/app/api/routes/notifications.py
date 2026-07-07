@@ -79,8 +79,8 @@ def list_notifications(
 def unread_count(user=Depends(get_current_user)):
     try:
         sb = get_supabase_client()
-        resp = sb.table(_TABLE).select("id").eq("is_read", False).execute()
-        return {"unread_count": len(resp.data or [])}
+        resp = sb.table(_TABLE).select("id", count="exact").eq("is_read", False).execute()
+        return {"unread_count": resp.count or 0}
     except Exception:
         return {"unread_count": 0}
 

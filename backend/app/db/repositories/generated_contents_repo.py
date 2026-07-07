@@ -2,6 +2,14 @@ from app.db.supabase import get_supabase_client
 
 _TABLE = "generated_contents"
 
+# Liste endpoint'i için ince sütun seti — audio_base64 (büyük binary) hariç
+_LIST_FIELDS = (
+    "id,title,description,type,status,platform,"
+    "thumbnail_url,video_url,image_url,audio_url,"
+    "script,error_detail,approval_notes,generated_by,"
+    "created_at,updated_at"
+)
+
 
 def create_content(topic: str, content_type: str) -> dict:
     supabase = get_supabase_client()
@@ -25,9 +33,16 @@ def get_content(content_id: str) -> dict | None:
     return r.data[0] if r.data else None
 
 
-def list_contents() -> list[dict]:
+def list_contents(page: int = 0, limit: int = 50) -> list[dict]:
     supabase = get_supabase_client()
-    r = supabase.table(_TABLE).select("*").order("created_at", desc=True).execute()
+    offset = page * limit
+    r = (
+        supabase.table(_TABLE)
+        .select(_LIST_FIELDS)
+        .order("created_at", desc=True)
+        .range(offset, offset + limit - 1)
+        .execute()
+    )
     return r.data if r.data else []
 
 
