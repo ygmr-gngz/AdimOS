@@ -22,7 +22,7 @@ export function useDocuments(sourceModule?: DocumentSourceModule) {
     }
   }, [sourceModule])
 
-  const uploadDocument = useCallback(async (file: File) => {
+  const uploadDocument = useCallback(async (file: File, excludeFromSgs = false) => {
     const tempId = `temp-${Date.now()}-${Math.random()}`
     const tempDoc: Document = {
       id: tempId,
@@ -40,7 +40,7 @@ export function useDocuments(sourceModule?: DocumentSourceModule) {
     setDocuments(prev => [tempDoc, ...prev])
     setUploadingCount(c => c + 1)
     try {
-      const doc = await documentService.upload(file, sourceModule)
+      const doc = await documentService.upload(file, sourceModule, excludeFromSgs)
       setDocuments(prev => prev.map(d => d.id === tempId ? doc : d))
       toast.success(`${file.name} yüklendi`)
       return doc

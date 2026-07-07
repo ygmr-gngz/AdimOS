@@ -9,6 +9,7 @@ def create_document(
     mime_type: str = "application/pdf",
     source_module: str = "knowledge_center",
     sgs_analysis_id: str | None = None,
+    exclude_from_sgs: bool = False,
 ):
     supabase = get_supabase_client()
     payload: dict = {
@@ -18,6 +19,7 @@ def create_document(
         "file_size": file_size,
         "mime_type": mime_type,
         "source_module": source_module,
+        "exclude_from_sgs": exclude_from_sgs,
     }
     if sgs_analysis_id:
         payload["sgs_analysis_id"] = sgs_analysis_id

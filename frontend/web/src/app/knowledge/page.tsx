@@ -5,7 +5,7 @@ import AppShell from '@/components/layout/AppShell'
 import DocumentUpload from '@/components/knowledge/DocumentUpload'
 import DocumentCard from '@/components/knowledge/DocumentCard'
 import { useDocuments } from '@/hooks/useDocuments'
-import { FileSearch, RefreshCw, Upload, X, AlertCircle, Loader2, ShieldCheck } from 'lucide-react'
+import { FileSearch, RefreshCw, Upload, X, AlertCircle, Loader2, ShieldCheck, GraduationCap } from 'lucide-react'
 import { documentService } from '@/services/document.service'
 import type { Document, DocumentSourceModule } from '@/types/document'
 import toast from 'react-hot-toast'
@@ -22,6 +22,7 @@ export default function KnowledgePage() {
   const [activeTab, setActiveTab] = useState<FilterTab>('knowledge_center')
   const [syncing, setSyncing] = useState(false)
   const [verifying, setVerifying] = useState(false)
+  const [excludeFromSgs, setExcludeFromSgs] = useState(false)
 
   // Relink modal state
   const [relinkTarget, setRelinkTarget] = useState<Document | null>(null)
@@ -31,6 +32,10 @@ export default function KnowledgePage() {
 
   const sourceModule = activeTab === 'all' ? undefined : activeTab as DocumentSourceModule
   const { documents, isLoading, uploadingCount, uploadDocument, deleteDocument, reindexDocument, refetch } = useDocuments(sourceModule)
+
+  const handleUpload = useCallback(async (file: File) => {
+    return uploadDocument(file, excludeFromSgs)
+  }, [uploadDocument, excludeFromSgs])
 
   const handleSyncSgs = useCallback(async () => {
     setSyncing(true)
@@ -123,7 +128,24 @@ export default function KnowledgePage() {
           </div>
         </div>
 
-        <DocumentUpload onUpload={uploadDocument} uploadingCount={uploadingCount} />
+        {/* SGS dışında tut toggle */}
+        <div className="flex items-center justify-between p-3 rounded-xl bg-surface-100 border border-surface-200">
+          <div className="flex items-center gap-2.5">
+            <GraduationCap size={14} className={excludeFromSgs ? 'text-gray-600' : 'text-brand-400'} />
+            <div>
+              <p className="text-xs font-medium text-gray-300">SGS Akademi'ye otomatik besle</p>
+              <p className="text-[11px] text-gray-600">PDF soru çıkarımı yapılarak SGS kartlarına eklenir</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setExcludeFromSgs(v => !v)}
+            className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${excludeFromSgs ? 'bg-surface-300' : 'bg-brand-600'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${excludeFromSgs ? '' : 'translate-x-5'}`} />
+          </button>
+        </div>
+
+        <DocumentUpload onUpload={handleUpload} uploadingCount={uploadingCount} />
 
         {/* Filtre sekmeleri */}
         <div className="flex gap-1 p-1 bg-surface-100 rounded-lg w-fit">

@@ -9,10 +9,11 @@ export interface SyncSgsResult {
 }
 
 export const documentService = {
-  async upload(file: File, sourceModule?: DocumentSourceModule): Promise<Document> {
+  async upload(file: File, sourceModule?: DocumentSourceModule, excludeFromSgs?: boolean): Promise<Document> {
     const formData = new FormData()
     formData.append('file', file)
     if (sourceModule) formData.append('source_module', sourceModule)
+    if (excludeFromSgs) formData.append('exclude_from_sgs', 'true')
     const { data } = await apiClient.post('/documents', formData)
     return data
   },

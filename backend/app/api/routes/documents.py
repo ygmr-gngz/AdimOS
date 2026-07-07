@@ -19,6 +19,46 @@ _BUCKET = "documents"
 _SAFE_NAME_RE = re.compile(r'[^\w\-.]')
 
 
+def _sgs_pipeline_background(doc_id: str, file_bytes: bytes, pdf_name: str) -> None:
+    """Bilgi Merkezi PDF'ini SGS soru çıkarım hattına besler (arka planda)."""
+    from app.modules.knowledge.pdf_loader import load_pdf
+    from app.modules.sgs.analyzer import analyze_sgs_pdf
+    from app.db.repositories.sgs_repo import (
+        create_analysis, find_analysis_by_pdf_name, parse_questions_by_ranges,
+    )
+    logger.info(f"[documents] SGS pipeline başladı: {doc_id}")
+    try:
+        if find_analysis_by_pdf_name(pdf_name):
+            logger.info(f"[documents] SGS analizi zaten mevcut, atlanıyor: {pdf_name}")
+            return
+
+        text = load_pdf(file_bytes)
+        if not text or len(text.strip()) < 100:
+            logger.info(f"[documents] SGS pipeline: PDF metni yetersiz, atlanıyor: {doc_id}")
+            return
+
+        result = analyze_sgs_pdf(text, pdf_name)
+        if not result.get("total_questions"):
+            logger.info(f"[documents] SGS pipeline: soru bulunamadı, atlanıyor: {pdf_name}")
+            return
+
+        saved = create_analysis(
+            pdf_name=result.get("pdf_name", pdf_name),
+            total_questions=result["total_questions"],
+            subjects=result.get("subjects", []),
+            questions=result.get("questions", []),
+            video_plan=result.get("video_plan", []),
+        )
+        if saved:
+            analysis_id = saved["id"]
+            sb = get_supabase_client()
+            sb.table("documents").update({"sgs_analysis_id": analysis_id}).eq("id", doc_id).execute()
+            parse_questions_by_ranges(analysis_id=analysis_id)
+            logger.info(f"[documents] SGS pipeline tamamlandı: {doc_id} — {result['total_questions']} soru")
+    except Exception as e:
+        logger.error(f"[documents] SGS pipeline hatası {doc_id}: {e}", exc_info=True)
+
+
 def _index_background(doc_id: str, file_bytes: bytes) -> None:
     """
     Arka planda çalışır — HTTP zaman aşımından bağımsız.
@@ -51,6 +91,7 @@ def _index_background(doc_id: str, file_bytes: bytes) -> None:
 async def upload_document(
     file: UploadFile = File(...),
     source_module: str = Form(default="knowledge_center"),
+    exclude_from_sgs: bool = Form(default=False),
     bg: BackgroundTasks = BackgroundTasks(),
 ):
     content = await file.read()
@@ -66,7 +107,7 @@ async def upload_document(
 
     # AŞAMA 1 (hızlı — HTTP yanıtı bu kadarda biter):
     # Kayıt oluştur → doc_id al → doğru storage path hesapla → storage'a yükle → hemen dön
-    doc = create_document(safe_name, "", len(content), mime_type, source_module=source_module)
+    doc = create_document(safe_name, "", len(content), mime_type, source_module=source_module, exclude_from_sgs=exclude_from_sgs)
     doc_id = doc["id"]
     storage_path = f"{_BUCKET}/{doc_id}/{safe_name}"
 
@@ -78,6 +119,15 @@ async def upload_document(
 
     # AŞAMA 2 (arka plan): metin çıkarma / embedding / indexleme
     bg.add_task(_index_background, doc_id, content)
+
+    # AŞAMA 3 (arka plan): SGS soru çıkarımı — sadece PDF ve SGS dışında tutulmamışsa
+    if (
+        source_module != "sgs_academy"
+        and not exclude_from_sgs
+        and mime_type in ("application/pdf", "application/octet-stream")
+    ):
+        bg.add_task(_sgs_pipeline_background, doc_id, content, safe_name)
+
     return doc
 
 
