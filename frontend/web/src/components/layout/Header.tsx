@@ -34,13 +34,13 @@ export default function Header({ onOpenAssistant, onOpenSidebar }: HeaderProps) 
   const bellRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    notificationsService.list()
-      .then(({ unread_count }) => setUnread(unread_count))
+    notificationsService.unreadCount()
+      .then(count => setUnread(count))
       .catch(() => {})
 
     const interval = setInterval(() => {
-      notificationsService.list()
-        .then(({ unread_count }) => setUnread(unread_count))
+      notificationsService.unreadCount()
+        .then(count => setUnread(count))
         .catch(() => {})
     }, 60_000)
     return () => clearInterval(interval)

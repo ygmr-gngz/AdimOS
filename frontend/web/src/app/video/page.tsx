@@ -145,20 +145,11 @@ function PreviewModal({ job, onClose, onApprove, onReject }: {
             padding: 24, minHeight: 360,
           }}>
             {job.video_url ? (
-              job.type === 'infographic' ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={job.video_url}
-                  alt={job.title}
-                  style={{ maxWidth: '100%', maxHeight: 500, borderRadius: 12, objectFit: 'contain' }}
-                />
-              ) : (
-                <video
-                  src={job.video_url}
-                  controls
-                  style={{ maxWidth: '100%', maxHeight: 400, borderRadius: 12 }}
-                />
-              )
+              <video
+                src={job.video_url}
+                controls
+                style={{ maxWidth: '100%', maxHeight: 500, borderRadius: 12 }}
+              />
             ) : (
               <div style={{ textAlign: 'center', color: '#94a3b8' }}>
                 {['rendering', 'tts_generating', 'scripting', 'warmup_pinging'].includes(job.status) ? (
