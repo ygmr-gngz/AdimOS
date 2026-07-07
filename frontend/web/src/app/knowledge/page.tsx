@@ -133,7 +133,7 @@ export default function KnowledgePage() {
           <div className="flex items-center gap-2.5">
             <GraduationCap size={14} className={excludeFromSgs ? 'text-gray-600' : 'text-brand-400'} />
             <div>
-              <p className="text-xs font-medium text-gray-300">SGS Akademi'ye otomatik besle</p>
+              <p className="text-xs font-medium text-gray-300">SGS Akademi&apos;ye otomatik besle</p>
               <p className="text-[11px] text-gray-600">PDF soru çıkarımı yapılarak SGS kartlarına eklenir</p>
             </div>
           </div>
