@@ -915,9 +915,110 @@ def topic_source_content(topic: str, lesson_name: str | None = None):
     }
 
 
+def _bg_konu_anlatimi(
+    job_id: str,
+    topic: str,
+    lesson_name: str,
+    source_text: str,
+    duration_variant: str,
+) -> None:
+    """GPT ile SplitLessonScene storyboard üretir ve Remotion'a gönderir."""
+    import json, os
+    from openai import OpenAI
+    from app.db.supabase import get_supabase_client as _sb
+    from app.api.routes.video import _set_status, _get_brand, _run_remotion_render
+
+    supabase = _sb()
+    brand = _get_brand()
+
+    try:
+        _set_status(job_id, "scripting")
+        logger.info(f"[sgs] konu_anlatimi senaryo başlıyor job={job_id} topic={topic!r}")
+
+        slide_count       = 2 if duration_variant == "short" else 4
+        duration_per_slide = 28 if duration_variant == "short" else 90
+        structures = {
+            2: [("tanim",    "ornek"),       ("sinav_notu", "sinav_notu")],
+            4: [("tanim",    "ornek"),       ("kural",      "onemli"),
+                ("ornek",    "ornek"),       ("sinav_notu", "sinav_notu")],
+        }
+        slide_types = structures.get(slide_count, structures[4])
+
+        prompt = (
+            f'"{topic}" konusunu SGS sınavına hazırlanan öğrencilere {slide_count} slaytla anlat.\n'
+            f"Ders: {lesson_name}\n\n"
+            f"Kaynak Metin:\n{source_text[:3500]}\n\n"
+            "Her slayt için JSON:\n"
+            "- question_text: konunun tanımı veya slaytın ana mesajı (2-4 cümle, sınav diline uygun)\n"
+            "- key_points: 3-4 kısa ve net madde (sınavda doğrudan çıkabilecek bilgiler)\n"
+            "- right_panel_type: 'ornek' | 'onemli' | 'sinav_notu'\n"
+            "- right_content: sağ panel ana içerik (somut örnek / uyarı / sınav ipucu)\n"
+            "- explanation: dipnot (ilgili kanun maddesi veya kısa not)\n\n"
+            f"Slayt sıraları: {[s[0] for s in slide_types]}\n"
+            'Sadece JSON döndür: {"slides": [{...}, ...]}'
+        )
+
+        client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0.3,
+            max_tokens=2000,
+        )
+        data = json.loads(resp.choices[0].message.content)
+        slides_raw = data.get("slides", [])
+
+        if not slides_raw:
+            raise ValueError("GPT boş slayt listesi döndürdü")
+
+        scenes = []
+        for i, (s, (_, right_type_fallback)) in enumerate(
+            zip(slides_raw[:slide_count], slide_types), 1
+        ):
+            scenes.append({
+                "id": i,
+                "component": "SplitLessonScene",
+                "duration_seconds": duration_per_slide,
+                "question_number": i,
+                "total_questions": min(len(slides_raw), slide_count),
+                "title": f"{lesson_name} — {topic}",
+                "question_text": s.get("question_text", ""),
+                "key_points": s.get("key_points", []),
+                "right_panel_type": s.get("right_panel_type", right_type_fallback),
+                "right_content": s.get("right_content", ""),
+                "explanation": s.get("explanation", ""),
+            })
+
+        storyboard = {
+            "video_type": "konu_anlatimi",
+            "title": f"{topic} — Konu Anlatımı",
+            "lesson_name": lesson_name,
+            "topic": topic,
+            "format": "16:9",
+            "language": "tr",
+            "brand": brand,
+            "scenes": scenes,
+        }
+
+        supabase.table("video_jobs").update({
+            "storyboard": storyboard,
+            "updated_at": "now()",
+        }).eq("id", job_id).execute()
+
+        logger.info(f"[sgs] konu_anlatimi storyboard hazır job={job_id} slide_count={len(scenes)}")
+        _run_remotion_render(job_id, storyboard, has_audio=False)
+
+    except Exception as exc:
+        logger.error(f"[sgs] konu_anlatimi pipeline hatası job={job_id}: {exc}")
+        from app.api.routes.video import _set_status as _ss
+        _ss(job_id, "failed", {"error_message": f"Konu anlatımı üretilemedi: {str(exc)[:300]}"})
+
+
 @router.post("/topics/{topic}/generate-konu-anlatimi")
 def generate_konu_anlatimi(
     topic: str,
+    bg: BackgroundTasks,
     lesson_name: str | None = None,
     duration_variant: str = "long",
 ):
@@ -977,35 +1078,25 @@ def generate_konu_anlatimi(
     )
 
     target_minutes = 12 if duration_variant == "long" else 1
-    video_type = "lesson"
-
-    # Video job oluştur
-    payload_json = {
-        "production_type": "konu_anlatimi",
-        "source_doc_ids": doc_ids,
-        "source_doc_names": doc_names,
-        "source_chunk_count": len(chunks),
-        "duration_variant": duration_variant,
-        "source_text_preview": source_text[:300],
-    }
 
     title = f"{topic} — Konu Anlatımı"
     if duration_variant == "short":
         title += " (Kısa)"
 
     job_row = {
-        "type": video_type,
+        "type": "konu_anlatimi",
         "title": title,
         "lesson_name": actual_lesson,
         "topic": topic,
         "description": f"Konu anlatımı — Kaynak: {', '.join(doc_names[:3])}",
         "target_duration_minutes": target_minutes,
         "status": "pending",
-        "payload_json": payload_json,
-        "storyboard": {
+        "payload_json": {
             "production_type": "konu_anlatimi",
-            "source_text": source_text,
-            "structure": ["tanim", "kural", "sayisal_ornek", "sinav_notu", "ozet"],
+            "source_doc_ids": doc_ids,
+            "source_doc_names": doc_names,
+            "source_chunk_count": len(chunks),
+            "duration_variant": duration_variant,
         },
     }
 
@@ -1014,8 +1105,12 @@ def generate_konu_anlatimi(
         from fastapi import HTTPException
         raise HTTPException(status_code=500, detail="Video işi oluşturulamadı")
 
+    job_id = result.data[0]["id"]
+    bg.add_task(_bg_konu_anlatimi, job_id, topic, actual_lesson, source_text, duration_variant)
+    logger.info(f"[sgs] konu_anlatimi job={job_id} topic={topic!r} bg task tetiklendi")
+
     return {
-        "job_id": result.data[0]["id"],
+        "job_id": job_id,
         "title": title,
         "topic": topic,
         "lesson_name": actual_lesson,
@@ -1023,4 +1118,5 @@ def generate_konu_anlatimi(
         "chunk_count": len(chunks),
         "duration_variant": duration_variant,
         "status": "pending",
+        "composition": "SplitLessonScene (QuizVideo)",
     }
