@@ -104,15 +104,26 @@ export default function DocumentCard({ document: doc, onDelete, onReindex, onRel
         </button>
       )}
 
-      {/* Yeniden işle */}
+      {/* Yeniden işle — uploaded ise belirgin, failed ise hover'da görünür */}
       {canReindex && onReindex && (
-        <button
-          onClick={() => onReindex(doc.id)}
-          title="Yeniden işle"
-          className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-brand-500/20 text-gray-600 hover:text-brand-400 transition-all"
-        >
-          <RefreshCw size={15} />
-        </button>
+        doc.status === 'uploaded' ? (
+          <button
+            onClick={() => onReindex(doc.id)}
+            title="İndeksle"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-brand-500/15 border border-brand-500/30 text-brand-400 hover:bg-brand-500/25 text-xs font-medium transition-all"
+          >
+            <RefreshCw size={12} />
+            İndeksle
+          </button>
+        ) : (
+          <button
+            onClick={() => onReindex(doc.id)}
+            title="Yeniden işle"
+            className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-brand-500/20 text-gray-600 hover:text-brand-400 transition-all"
+          >
+            <RefreshCw size={15} />
+          </button>
+        )
       )}
 
       {/* Sil */}

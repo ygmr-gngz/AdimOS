@@ -369,6 +369,156 @@ def verify_storage(bg: BackgroundTasks):
     return {"message": "Storage doğrulaması başlatıldı. İşlem tamamlandığında doküman listesini yenileyin."}
 
 
+@router.get("/indexing-audit")
+def indexing_audit():
+    """
+    Tüm dokümanlar için 5-aşamalı indeksleme zinciri denetimi.
+    Aşamalar: yüklendi → metin çıkarıldı → chunk'landı → embedding → konu eşlendi
+    """
+    sb = get_supabase_client()
+
+    # 1. Tüm dokümanları çek
+    docs = sb.table("documents").select("id, file_name, status, source_module, created_at, file_size, storage_path").order("created_at", desc=True).limit(500).execute().data or []
+
+    # 2. Chunk sayıları (doc_id → chunk_count, embedded_count)
+    chunks_raw = sb.table("chunks").select("document_id, embedding", count="exact").limit(50000).execute().data or []
+    chunk_count_map: dict[str, int] = {}
+    embed_count_map: dict[str, int] = {}
+    for c in chunks_raw:
+        did = c["document_id"]
+        chunk_count_map[did] = chunk_count_map.get(did, 0) + 1
+        if c.get("embedding"):
+            embed_count_map[did] = embed_count_map.get(did, 0) + 1
+
+    # 3. Konu eşleme (doc_id → topic_count)
+    sq_raw = sb.table("sgs_questions").select("document_id", count="exact").limit(50000).execute().data or []
+    topic_map: dict[str, int] = {}
+    for r in sq_raw:
+        did = r.get("document_id")
+        if did:
+            topic_map[did] = topic_map.get(did, 0) + 1
+
+    rows = []
+    stalled_by_stage: dict[str, int] = {"metin_cikarmadi": 0, "chunk_yok": 0, "embedding_yok": 0, "konu_eslemedi": 0}
+
+    for doc in docs:
+        did = doc["id"]
+        st = doc["status"]
+
+        # Aşama belirle
+        a1 = True   # DB'de kayıt var
+        a2 = st not in ("uploaded",)  # PROCESSING veya ötesi = metin çıkarma girişildi
+        a3 = chunk_count_map.get(did, 0) > 0
+        a4 = embed_count_map.get(did, 0) > 0
+        a5 = topic_map.get(did, 0) > 0
+
+        # Hangi aşamada takılı?
+        stalled = None
+        if not a2 and st == "uploaded":
+            stalled = "metin_cikarmadi"
+            stalled_by_stage["metin_cikarmadi"] += 1
+        elif not a3 and st not in ("uploaded", "processing"):
+            stalled = "chunk_yok"
+            stalled_by_stage["chunk_yok"] += 1
+        elif a3 and not a4:
+            stalled = "embedding_yok"
+            stalled_by_stage["embedding_yok"] += 1
+
+        rows.append({
+            "id": did,
+            "file_name": doc["file_name"],
+            "status": st,
+            "source_module": doc["source_module"],
+            "created_at": doc["created_at"],
+            "file_size": doc["file_size"],
+            "has_storage_path": bool(doc.get("storage_path")),
+            "stages": {
+                "1_yuklendi":       a1,
+                "2_metin_cikardi":  a2,
+                "3_chunklandi":     a3,
+                "4_embedding":      a4,
+                "5_konu_eslendi":   a5,
+            },
+            "stage_score": sum([a1, a2, a3, a4, a5]),
+            "stalled_at": stalled,
+            "chunk_count": chunk_count_map.get(did, 0),
+            "embedded_count": embed_count_map.get(did, 0),
+            "topic_count": topic_map.get(did, 0),
+        })
+
+    complete   = [r for r in rows if r["stage_score"] == 5]
+    incomplete = [r for r in rows if r["stage_score"] < 5]
+    can_reindex = [r for r in incomplete if r["has_storage_path"] and r["status"] in ("uploaded", "failed", "indexed")]
+
+    return {
+        "total": len(rows),
+        "complete_5_5": len(complete),
+        "incomplete": len(incomplete),
+        "can_reindex": len(can_reindex),
+        "stalled_by_stage": stalled_by_stage,
+        "documents": rows,
+    }
+
+
+@router.post("/backfill-indexing")
+def backfill_indexing(bg: BackgroundTasks, dry_run: bool = True, limit: int = 20):
+    """
+    İndeksleme zinciri eksik olan dokümanları kaldığı aşamadan devam ettirerek tamamlar.
+    dry_run=True (varsayılan): sadece sayım raporlar, hiçbir şeyi işlemez.
+    dry_run=False: gerçekten başlatır (her doküman için ayrı bg task).
+    """
+    sb = get_supabase_client()
+
+    # Eksik chunk'lı ama storage_path'i olan dokümanlar
+    docs = (
+        sb.table("documents")
+        .select("id, file_name, status, storage_path, source_module")
+        .in_("status", ["uploaded", "failed"])
+        .limit(limit * 3)
+        .execute().data or []
+    )
+
+    # Chunk'ı olanları çıkar
+    chunk_docs_resp = sb.table("chunks").select("document_id").limit(50000).execute().data or []
+    has_chunks = {r["document_id"] for r in chunk_docs_resp}
+
+    needs_indexing = [
+        d for d in docs
+        if d["id"] not in has_chunks
+        and d.get("storage_path")
+        and d["storage_path"] not in ("", "sgs/")
+        and not d.get("storage_path", "").startswith("sgs/")
+    ][:limit]
+
+    if dry_run:
+        return {
+            "dry_run": True,
+            "would_reindex": len(needs_indexing),
+            "documents": [
+                {"id": d["id"], "file_name": d["file_name"], "status": d["status"]}
+                for d in needs_indexing
+            ],
+            "note": "dry_run=false ile gerçek işlemi başlatın",
+        }
+
+    # Gerçek backfill — her doküman için reindex bg task
+    launched = 0
+    for doc in needs_indexing:
+        try:
+            bg.add_task(reindex_document, doc["id"], doc["storage_path"], doc["file_name"])
+            launched += 1
+            logger.info(f"[documents] backfill başlatıldı: {doc['id']} — {doc['file_name']}")
+        except Exception as e:
+            logger.warning(f"[documents] backfill task hatası {doc['id']}: {e}")
+
+    return {
+        "dry_run": False,
+        "launched": launched,
+        "total_eligible": len(needs_indexing),
+        "note": "İşlemler arka planda çalışıyor — /indexing-audit ile durumu izleyin",
+    }
+
+
 @router.get("/upload-log")
 def upload_log(limit: int = 50):
     """Son yükleme denemelerini göster (başarılı ve başarısız)."""

@@ -192,7 +192,7 @@ function TopicRow({ topic, count, maxCount, lessonName, rank, generatingTopic, o
   const [questions, setQuestions] = useState<SgsQuestion[]>([])
   const [loadingQuestions, setLoadingQuestions] = useState(false)
   const [questionsLoaded, setQuestionsLoaded] = useState(false)
-  const [sourceContent, setSourceContent] = useState<{ source_available: boolean; chunk_count: number; documents: { id: string; name: string }[]; warning?: string } | null>(null)
+  const [sourceContent, setSourceContent] = useState<{ source_available: boolean; question_count: number; documents: { id: string; name: string }[]; warning?: string } | null>(null)
   const [loadingSource, setLoadingSource] = useState(false)
   const barPct = Math.round((count / (maxCount || 1)) * 100)
   const isGen = generatingTopic === topic
@@ -223,7 +223,7 @@ function TopicRow({ topic, count, maxCount, lessonName, rank, generatingTopic, o
       setLoadingSource(true)
       sgsService.getTopicSourceContent(topic, lessonName)
         .then(d => setSourceContent(d))
-        .catch(() => setSourceContent({ source_available: false, chunk_count: 0, documents: [], warning: 'Kaynak içerik alınamadı.' }))
+        .catch(() => setSourceContent({ source_available: false, question_count: 0, documents: [], warning: 'Kaynak içerik alınamadı.' }))
         .finally(() => setLoadingSource(false))
     }
   }
@@ -320,7 +320,7 @@ function TopicRow({ topic, count, maxCount, lessonName, rank, generatingTopic, o
               Kaynak İçerik
               {sourceContent && (
                 <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] ${sourceContent.source_available ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
-                  {sourceContent.source_available ? `${sourceContent.chunk_count} parça` : 'Yok'}
+                  {sourceContent.source_available ? `${sourceContent.question_count} soru` : 'Yok'}
                 </span>
               )}
             </button>
@@ -359,7 +359,7 @@ function TopicRow({ topic, count, maxCount, lessonName, rank, generatingTopic, o
                 sourceContent.source_available ? (
                   <div className="space-y-2">
                     <p className="text-[11px] text-gray-500">
-                      {sourceContent.chunk_count} metin parçası — {sourceContent.documents.length} doküman
+                      {sourceContent.question_count} soru — {sourceContent.documents.length} doküman
                     </p>
                     <div className="flex flex-wrap gap-1">
                       {sourceContent.documents.map(d => (
@@ -734,7 +734,7 @@ function DashboardTab({ reloadKey }: { reloadKey: number }) {
     setGeneratingTopic(`konu:${topic}`)
     try {
       const result = await sgsService.generateKonuAnlatimi(topic, lesson)
-      toast.success(`"${topic}" konu anlatımı işi oluşturuldu (${result.chunk_count} kaynak parça)`)
+      toast.success(`"${topic}" konu anlatımı işi oluşturuldu (${result.question_count} soru kaynağı)`)
       router.push('/video')
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
