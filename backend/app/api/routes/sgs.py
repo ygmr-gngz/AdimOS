@@ -860,7 +860,6 @@ def generate_konu_anlatimi(
     topic: str,
     lesson_name: str | None = None,
     duration_variant: str = "long",
-    user=Depends(get_current_user),
 ):
     """
     Bir konu için "konu anlatımı" video işi oluşturur.
