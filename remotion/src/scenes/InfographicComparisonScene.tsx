@@ -143,13 +143,28 @@ export function InfographicComparisonScene({ scene, brand }: Props) {
         </div>
       </div>
 
-      {/* Alt */}
+      {/* Alt imza şeridi — logo sol + @handle sağ */}
       <div style={{
-        marginTop: 14, display: 'flex', justifyContent: 'space-between',
+        marginTop: 14, paddingTop: 10,
+        borderTop: `1px solid ${ACCENT}25`,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         opacity: interpolate(frame, [85, 100], [0, 1], { extrapolateRight: 'clamp' }),
       }}>
-        <span style={{ fontSize: 9, color: PALETTE.TEXT_DIM }}>{scene.footer_note ?? 'Eğitim amaçlı hazırlanmıştır.'}</span>
-        <span style={{ fontSize: 9, color: ACCENT, fontWeight: 700, letterSpacing: 1.5 }}>ADIM MÜŞAVİR</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          {brand.logo_url ? (
+            <img src={brand.logo_url} style={{ height: 16, opacity: 0.75, objectFit: 'contain' }} alt="" />
+          ) : (
+            <span style={{ fontSize: 9, fontWeight: 800, color: PALETTE.TEXT_MID, letterSpacing: 2, textTransform: 'uppercase' as const }}>
+              ADIM MÜŞAVİR
+            </span>
+          )}
+          <span style={{ fontSize: 9, color: PALETTE.TEXT_DIM, letterSpacing: 0.5 }}>
+            {scene.footer_note ?? 'Eğitim amaçlı hazırlanmıştır.'}
+          </span>
+        </div>
+        <span style={{ fontSize: 10, color: ACCENT, fontWeight: 800, letterSpacing: 1 }}>
+          {brand.handle ?? '@adimmusavir'}
+        </span>
       </div>
 
       {scene.tts_url && <Audio src={scene.tts_url} />}

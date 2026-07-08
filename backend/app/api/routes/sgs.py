@@ -381,53 +381,112 @@ def _bg_topic_video(content_id: str, video_plan_item: dict, questions: list):
 
 @router.post("/generate-topic-video")
 def generate_topic_video(req: TopicVideoRequest, bg: BackgroundTasks):
-    """17: Ders + konu için soru topla (sgs_questions öncelikli) ve video üret."""
+    """Ders + konu için soru topla ve Remotion pipeline ile SplitQuiz videosu üret."""
+    import uuid
+    from app.db.supabase import get_supabase_client as _sb
+    from app.api.routes.video import _run_pipeline, CreateVideoPayload, QuizQuestion as VQ, QuizOption as VO
+
     # 1. sgs_questions tablosu — en doğru sınıflandırma, tam soru detayı
     topic_questions = get_questions_for_topic(topic=req.topic, lesson_name=req.lesson, limit=req.max_questions * 3)
 
-    # 2. Case insensitive fallback (konu adı büyük/küçük harf farkı)
+    # 2. Case insensitive fallback
     if not topic_questions:
         topic_questions = get_questions_for_topic(topic=req.topic.lower(), lesson_name=req.lesson, limit=req.max_questions * 3)
 
-    # 3. Aralık tablosu (eski yol)
+    # 3. Aralık tablosu fallback
     if not topic_questions:
-        questions = get_questions_by_ranges(lesson_name=req.lesson, year=req.year)
-        topic_questions = [q for q in questions if req.topic.lower() in (q.get("topic") or "").lower()]
+        questions_fallback = get_questions_by_ranges(lesson_name=req.lesson, year=req.year)
+        topic_questions = [q for q in questions_fallback if req.topic.lower() in (q.get("topic") or "").lower()]
 
     # 4. JSONB fallback
     if not topic_questions:
-        questions = get_all_questions(lesson_name=req.lesson, year=req.year)
-        topic_questions = [q for q in questions if req.topic.lower() in (q.get("topic") or "").lower()]
+        questions_fallback = get_all_questions(lesson_name=req.lesson, year=req.year)
+        topic_questions = [q for q in questions_fallback if req.topic.lower() in (q.get("topic") or "").lower()]
 
     if not topic_questions:
         raise HTTPException(
             status_code=404,
-            detail=f"'{req.topic}' konusunda soru bulunamadı. Ders: {req.lesson}"
+            detail=f"'{req.topic}' konusunda soru bulunamadı. Ders: {req.lesson}",
         )
 
     selected = topic_questions[:req.max_questions]
-    q_ids = [q["id"] for q in selected]
+
+    # Soruları QuizQuestion formatına dönüştür
+    quiz_questions: list[VQ] = []
+    for q in selected:
+        opts_raw = q.get("options") or []
+        options: list[VO] = []
+        for opt in opts_raw:
+            if isinstance(opt, str):
+                # "A) metin" formatını ayrıştır
+                if ") " in opt:
+                    label, _, text = opt.partition(") ")
+                    options.append(VO(label=label.strip()[:1], text=text.strip()))
+                else:
+                    options.append(VO(label="?", text=opt.strip()))
+            elif isinstance(opt, dict):
+                options.append(VO(label=opt.get("label", "?"), text=opt.get("text", "")))
+
+        correct_raw = q.get("correct_option") or q.get("answer") or "A"
+        correct_label = correct_raw[0].upper() if correct_raw else "A"
+
+        q_text = (q.get("question_text") or q.get("text") or "").strip()
+        if not q_text or not options:
+            continue
+
+        quiz_questions.append(VQ(
+            text=q_text,
+            options=options,
+            correct_label=correct_label,
+            explanation=q.get("explanation"),
+        ))
+
+    if not quiz_questions:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"'{req.topic}' konusunda {len(selected)} soru bulundu ama "
+                "soru metni veya seçenekler boş — SGS analizi eksik olabilir."
+            ),
+        )
 
     title = f"SGS {req.lesson}: {req.topic} Çıkmış Sorular"
-    video_plan_item = {
-        "title": title,
-        "topic": req.topic,
-        "subject": req.lesson,
-        "question_ids": q_ids,
-        "estimated_duration": f"{len(selected) * 2}-{len(selected) * 3} dakika",
-        "description": f"{req.lesson} dersinden {req.topic} konusunun çıkmış sorularının çözümü.",
-    }
+    payload = CreateVideoPayload(
+        type="quiz",
+        title=title,
+        lesson_name=req.lesson,
+        topic=req.topic,
+        format="16:9",
+        target_duration_minutes=max(5, len(quiz_questions) * 2),
+        questions=quiz_questions,
+        description=f"{req.lesson} dersinden {req.topic} konusunun çıkmış sorularının çözümü.",
+    )
 
-    row = create_content(title, "sgs_topic_video")
-    bg.add_task(_bg_topic_video, row["id"], video_plan_item, selected)
+    job_id = str(uuid.uuid4())
+    supabase = _sb()
+    supabase.table("video_jobs").insert({
+        "id": job_id,
+        "type": "quiz",
+        "title": title,
+        "lesson_name": req.lesson,
+        "topic": req.topic,
+        "format": "16:9",
+        "target_duration_minutes": payload.target_duration_minutes,
+        "status": "pending",
+        "payload_json": payload.model_dump(mode="json"),
+    }).execute()
+
+    bg.add_task(_run_pipeline, job_id, payload)
+    logger.info(f"[sgs] generate-topic-video → Remotion pipeline job={job_id} topic={req.topic!r}")
 
     return {
-        "content_id": row["id"],
-        "status": "generating",
+        "job_id": job_id,
+        "status": "pending",
         "title": title,
-        "question_count": len(selected),
+        "question_count": len(quiz_questions),
         "topic": req.topic,
         "lesson": req.lesson,
+        "composition": "SplitQuizScene (QuizVideo)",
     }
 
 
@@ -790,6 +849,7 @@ def topic_source_content(topic: str, lesson_name: str | None = None):
     Bir konuya ait kaynak içerik parçalarını döndürür.
     Konu anlatımı videosu üretimi bu parçalara dayanır (halüsinasyon koruması).
     """
+    from app.db.supabase import get_supabase_client
     supabase = get_supabase_client()
 
     # 1. Konuya ait soru kayıtlarından document_id'leri topla
@@ -866,6 +926,7 @@ def generate_konu_anlatimi(
     Yalnızca bağlı kaynak parçalarından beslenir — kaynak yoksa üretmez.
     duration_variant: 'long' (8-15 dk) | 'short' (≤60 sn)
     """
+    from app.db.supabase import get_supabase_client
     supabase = get_supabase_client()
 
     # Kaynak içerik kontrolü

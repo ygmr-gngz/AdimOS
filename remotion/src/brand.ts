@@ -6,6 +6,7 @@ export const DEFAULT_BRAND: BrandConfig = {
   background_color: '#08121E',   // neredeyse siyah lacivert (eski: krem #FAF7F0)
   font_heading: 'Playfair Display',
   font_body:    'Lato',
+  handle:       '@adimmusavir',
 }
 
 // Marka paleti — tüm sahneler bu sabitlerden türetir

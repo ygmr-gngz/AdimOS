@@ -164,7 +164,7 @@ export function InfographicCardGridScene({ scene, brand }: Props) {
           </h1>
         </div>
         <span style={{ fontSize: 10, color: PALETTE.TEXT_DIM, letterSpacing: 1.5, flexShrink: 0 }}>
-          @adimmusavir
+          {brand.handle ?? '@adimmusavir'}
         </span>
       </div>
 
@@ -181,19 +181,28 @@ export function InfographicCardGridScene({ scene, brand }: Props) {
         ))}
       </div>
 
-      {/* Alt bilgi şeridi */}
+      {/* Alt imza şeridi — logo sol + @handle sağ */}
       <div style={{
         marginTop: isVertical ? 12 : 16,
         paddingTop: 10,
-        borderTop: `1px solid ${ACCENT}20`,
+        borderTop: `1px solid ${ACCENT}25`,
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         opacity: footerOpacity,
       }}>
-        <span style={{ fontSize: 9, color: PALETTE.TEXT_DIM, letterSpacing: 1 }}>
-          {scene.footer_note ?? 'Eğitim amaçlı hazırlanmıştır.'}
-        </span>
-        <span style={{ fontSize: 9, color: ACCENT, fontWeight: 700, letterSpacing: 1.5 }}>
-          ADIM MÜŞAVİR
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          {brand.logo_url ? (
+            <img src={brand.logo_url} style={{ height: 16, opacity: 0.75, objectFit: 'contain' }} alt="" />
+          ) : (
+            <span style={{ fontSize: 9, fontWeight: 800, color: PALETTE.TEXT_MID, letterSpacing: 2, textTransform: 'uppercase' as const }}>
+              ADIM MÜŞAVİR
+            </span>
+          )}
+          <span style={{ fontSize: 9, color: PALETTE.TEXT_DIM, letterSpacing: 0.5 }}>
+            {scene.footer_note ?? 'Eğitim amaçlı hazırlanmıştır.'}
+          </span>
+        </div>
+        <span style={{ fontSize: 10, color: ACCENT, fontWeight: 800, letterSpacing: 1 }}>
+          {brand.handle ?? '@adimmusavir'}
         </span>
       </div>
 

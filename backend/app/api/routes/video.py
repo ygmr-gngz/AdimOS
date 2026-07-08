@@ -90,12 +90,13 @@ def _get_brand() -> dict:
             "font_heading":     s.get("font_heading", "Playfair Display"),
             "font_body":        s.get("font_body", "Lato"),
             "logo_url":         s.get("logo_url"),
+            "handle":           s.get("handle", "@adimmusavir"),
         }
     except Exception:
         return {
             "primary_color": "#0B2A4A", "secondary_color": "#C9A96E",
             "background_color": "#FAF7F0", "font_heading": "Playfair Display",
-            "font_body": "Lato",
+            "font_body": "Lato", "handle": "@adimmusavir",
         }
 
 

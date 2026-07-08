@@ -136,6 +136,7 @@ export interface BrandConfig {
   font_heading: string     // 'Playfair Display'
   font_body: string        // 'Lato'
   logo_url?: string
+  handle?: string          // '@adimmusavir' — marka imza için
 }
 
 export interface StoryboardJSON {
