@@ -398,7 +398,7 @@ export const sgsService = {
     topic: string
     lesson_name: string
     source_available: boolean
-    chunk_count: number
+    question_count: number
     document_count?: number
     chunks: { id: string; document_name: string; text: string }[]
     documents: { id: string; name: string }[]
@@ -417,7 +417,7 @@ export const sgsService = {
     topic: string
     lesson_name: string
     source_documents: string[]
-    chunk_count: number
+    question_count: number
     duration_variant: string
     status: string
   }> {
