@@ -168,7 +168,7 @@ _TOPIC_CANONICAL_MAP: dict[str, str | None] = {
     "muhasebe standartları": None, "muhasebe bilgi sistemi": None,
     "mali tablolar analizi": None, "muhasebe denetimi": None,
     "ticaret hukuku": None, "borçlar hukuku": None,
-    "vergi hukuku": None, "maliye": None, "i̇ktisat": None, "iktisat": None,
+    "maliye": None, "i̇ktisat": None, "iktisat": None,
     "meslek hukuku": None, "tarih - genel kültür": None,
     "iş ve sosyal güvenlik hukuku": None,
     "i̇ş ve sosyal güvenlik hukuku": None,
