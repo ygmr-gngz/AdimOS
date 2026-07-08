@@ -105,8 +105,9 @@ app.post('/render', (req, res) => {
       }
 
       const compositionId =
-        storyboard.video_type === 'motivation' ? 'MotivationVideo' :
-        storyboard.video_type === 'lesson' ? 'InfographicVideo' :
+        storyboard.video_type === 'motivation'    ? 'MotivationVideo' :
+        storyboard.video_type === 'lesson'        ? 'InfographicVideo' :
+        storyboard.video_type === 'konu_anlatimi' ? 'QuizVideo' :
         'QuizVideo'
 
       console.log(`[remotion] kompozisyon seçiliyor: ${compositionId} frames=${totalFrames} ${dim.width}x${dim.height}`)

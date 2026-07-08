@@ -11,6 +11,7 @@ import { KeyPointScene } from '../scenes/KeyPointScene'
 import { OutroScene } from '../scenes/OutroScene'
 import { SplitQuizScene } from '../scenes/SplitQuizScene'
 import { SplitQuizVerticalScene } from '../scenes/SplitQuizVerticalScene'
+import { SplitLessonScene } from '../scenes/SplitLessonScene'
 import { JournalEntryScene } from '../scenes/JournalEntryScene'
 import { TAccountScene } from '../scenes/TAccountScene'
 import { CalculationStepsScene } from '../scenes/CalculationStepsScene'
@@ -31,6 +32,7 @@ function SceneRenderer({ scene, brand }: { scene: Scene; brand: StoryboardJSON['
     case 'OutroScene': return <OutroScene {...props} />
     case 'SplitQuizScene': return <SplitQuizScene {...props} />
     case 'SplitQuizVerticalScene': return <SplitQuizVerticalScene {...props} />
+    case 'SplitLessonScene': return <SplitLessonScene {...props} />
     case 'JournalEntryScene': return <JournalEntryScene {...props} />
     case 'TAccountScene': return <TAccountScene {...props} />
     case 'CalculationStepsScene': return <CalculationStepsScene {...props} />

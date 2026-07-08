@@ -1,6 +1,6 @@
 // ── Storyboard JSON tipleri ───────────────────────────────────
 
-export type VideoType = 'quiz' | 'lesson' | 'shorts' | 'motivation'
+export type VideoType = 'quiz' | 'lesson' | 'konu_anlatimi' | 'shorts' | 'motivation'
 export type VideoFormat = '16:9' | '9:16'
 
 export type SceneComponent =
@@ -18,9 +18,10 @@ export type SceneComponent =
   | 'DefinitionScene'
   | 'BulletListScene'
   | 'QuoteScene'
-  // Bölünmüş ekran soru çözümü
+  // Bölünmüş ekran soru çözümü + konu anlatımı
   | 'SplitQuizScene'
   | 'SplitQuizVerticalScene'
+  | 'SplitLessonScene'
   // Muhasebe bileşenleri
   | 'JournalEntryScene'
   | 'TAccountScene'
@@ -118,6 +119,11 @@ export interface Scene {
   message?: string             // ana motivasyon mesajı
   message_author?: string      // imza (opsiyonel)
   bg_variant?: 'dark' | 'gradient'
+
+  // Konu anlatımı (SplitLessonScene)
+  key_points?: string[]                                   // sol panel madde listesi
+  right_panel_type?: 'ornek' | 'onemli' | 'sinav_notu'  // sağ panel renk/etiket
+  right_content?: string                                  // sağ panel ana metin
 
   // İnfografik
   infographic_title?: string
