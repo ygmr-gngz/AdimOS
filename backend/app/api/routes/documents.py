@@ -14,7 +14,7 @@ from app.schemas.document import DocumentStatus
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-_MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+_MAX_UPLOAD_BYTES = 200 * 1024 * 1024  # 200 MB
 _BUCKET = "documents"
 _SAFE_NAME_RE = re.compile(r'[^\w\-.]')
 
@@ -152,10 +152,10 @@ async def upload_document(
 
     if file_size > _MAX_UPLOAD_BYTES:
         _log_upload_attempt(file_name, file_size, "boyut_kontrolu",
-                            error=f"50 MB sınırı aşıldı ({file_size // (1024 * 1024)} MB)")
+                            error=f"200 MB sınırı aşıldı ({file_size // (1024 * 1024)} MB)")
         raise HTTPException(
             status_code=413,
-            detail=f"Dosya boyutu 50 MB sınırını aşıyor ({file_size // (1024 * 1024)} MB).",
+            detail=f"Dosya boyutu 200 MB sınırını aşıyor ({file_size // (1024 * 1024)} MB).",
         )
     mime_type = file.content_type or "application/pdf"
 
@@ -516,6 +516,138 @@ def backfill_indexing(bg: BackgroundTasks, dry_run: bool = True, limit: int = 20
         "launched": launched,
         "total_eligible": len(needs_indexing),
         "note": "İşlemler arka planda çalışıyor — /indexing-audit ile durumu izleyin",
+    }
+
+
+@router.get("/duplicate-audit")
+def duplicate_audit():
+    """
+    Bilgi Merkezi'nde aynı dosya adına sahip birden fazla kayıt (mükerrer) tespiti.
+    Hangi kopyaların tutulacağını, hangilerinin arşivleneceğini önerir.
+    """
+    from collections import defaultdict
+    sb = get_supabase_client()
+
+    docs = (
+        sb.table("documents")
+        .select("id, file_name, status, source_module, created_at, file_size, storage_path")
+        .order("created_at", desc=False)
+        .limit(1000)
+        .execute().data or []
+    )
+
+    chunks_raw = sb.table("chunks").select("document_id").limit(50000).execute().data or []
+    chunk_map: dict[str, int] = {}
+    for c in chunks_raw:
+        did = c["document_id"]
+        chunk_map[did] = chunk_map.get(did, 0) + 1
+
+    groups: dict[str, list] = defaultdict(list)
+    for doc in docs:
+        groups[doc["file_name"]].append(doc)
+
+    duplicate_groups = []
+    for file_name, group in groups.items():
+        if len(group) < 2:
+            continue
+
+        enriched = []
+        for doc in group:
+            chunks = chunk_map.get(doc["id"], 0)
+            enriched.append({
+                "id": doc["id"],
+                "status": doc["status"],
+                "source_module": doc["source_module"],
+                "created_at": doc["created_at"],
+                "file_size": doc["file_size"],
+                "has_storage": bool(doc.get("storage_path")),
+                "chunk_count": chunks,
+                # Skor: en fazla chunk'lı ve indexed olan kazanır
+                "_score": chunks * 100 + (50 if doc["status"] == "indexed" else 0) + (10 if doc.get("storage_path") else 0),
+            })
+
+        enriched.sort(key=lambda x: x["_score"], reverse=True)
+        keep = {k: v for k, v in enriched[0].items() if k != "_score"}
+        archive = [{k: v for k, v in d.items() if k != "_score"} for d in enriched[1:]]
+
+        duplicate_groups.append({
+            "file_name": file_name,
+            "copy_count": len(group),
+            "keep": keep,
+            "archive": archive,
+        })
+
+    duplicate_groups.sort(key=lambda g: g["copy_count"], reverse=True)
+
+    return {
+        "total_docs": len(docs),
+        "duplicate_groups": len(duplicate_groups),
+        "total_to_archive": sum(g["copy_count"] - 1 for g in duplicate_groups),
+        "note": "dry_run sonucu — POST /archive-duplicates ile uygula",
+        "groups": duplicate_groups,
+    }
+
+
+@router.post("/archive-duplicates")
+def archive_duplicates(dry_run: bool = True):
+    """
+    duplicate-audit'in önerdiği arşivleme planını uygular.
+    dry_run=True (varsayılan): sadece sayım — hiçbir şeyi değiştirmez.
+    dry_run=False: fazla kopyaları status='archived' yapar (silmez, gizler).
+    """
+    from collections import defaultdict
+    sb = get_supabase_client()
+
+    docs = (
+        sb.table("documents")
+        .select("id, file_name, status, created_at")
+        .order("created_at", desc=False)
+        .limit(1000)
+        .execute().data or []
+    )
+
+    chunks_raw = sb.table("chunks").select("document_id").limit(50000).execute().data or []
+    chunk_map: dict[str, int] = {}
+    for c in chunks_raw:
+        did = c["document_id"]
+        chunk_map[did] = chunk_map.get(did, 0) + 1
+
+    groups: dict[str, list] = defaultdict(list)
+    for doc in docs:
+        groups[doc["file_name"]].append(doc)
+
+    to_archive: list[str] = []
+    for file_name, group in groups.items():
+        if len(group) < 2:
+            continue
+        scored = sorted(
+            group,
+            key=lambda d: chunk_map.get(d["id"], 0) * 100 + (50 if d["status"] == "indexed" else 0),
+            reverse=True
+        )
+        to_archive.extend(d["id"] for d in scored[1:])
+
+    if dry_run:
+        return {
+            "dry_run": True,
+            "would_archive": len(to_archive),
+            "ids": to_archive,
+            "note": "dry_run=false ile gerçek arşivlemeyi başlatın (onayınız gerekiyor)",
+        }
+
+    archived = 0
+    for doc_id in to_archive:
+        try:
+            sb.table("documents").update({"status": "archived"}).eq("id", doc_id).execute()
+            archived += 1
+        except Exception as e:
+            logger.warning(f"[documents] arşivleme hatası {doc_id}: {e}")
+
+    return {
+        "dry_run": False,
+        "archived": archived,
+        "total_eligible": len(to_archive),
+        "note": "Arşivlenen belgeler varsayılan listede gizlenir",
     }
 
 

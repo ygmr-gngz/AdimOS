@@ -29,7 +29,13 @@ def create_document(
 
 def get_documents(source_module: str | None = None, limit: int = 200):
     supabase = get_supabase_client()
-    query = supabase.table("documents").select("*").order("created_at", desc=True).limit(limit)
+    query = (
+        supabase.table("documents")
+        .select("*")
+        .neq("status", "archived")   # arşivlenen mükerrerleri gizle
+        .order("created_at", desc=True)
+        .limit(limit)
+    )
     if source_module:
         query = query.eq("source_module", source_module)
     response = query.execute()

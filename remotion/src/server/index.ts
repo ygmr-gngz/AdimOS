@@ -59,6 +59,25 @@ async function uploadToSupabase(filePath: string, jobId: string): Promise<string
   return urlData.publicUrl
 }
 
+// ── Chromium bellek ayarları (Railway container için kritik) ──
+// /dev/shm varsayılan 64 MB → render sırasında dolar → OOM.
+// --disable-dev-shm-usage: /dev/shm yerine /tmp kullanır (sınırsız disk).
+// enableMultiProcessOnLinux:false: ayrı renderer process açmaz → RAM yarıya iner.
+const CHROMIUM_OPTS = {
+  headless: true,
+  disableWebSecurity: false,
+  gl: 'angle' as const,
+  enableMultiProcessOnLinux: false,
+  args: [
+    '--disable-dev-shm-usage',
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-background-timer-throttling',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-renderer-backgrounding',
+  ],
+}
+
 // Bundle bir kez hazır tutulur (restart'ta yeniden oluşturulur)
 let bundleLocation: string | null = null
 async function getBundle(): Promise<string> {
@@ -117,6 +136,7 @@ app.post('/render', (req, res) => {
         id: compositionId,
         inputProps: { storyboard },
         browserExecutable,
+        chromiumOptions: CHROMIUM_OPTS,
       })
 
       await renderMedia({
@@ -131,8 +151,9 @@ app.post('/render', (req, res) => {
         outputLocation: outPath,
         inputProps: { storyboard },
         browserExecutable,
-        // OOM koruması: tek Chromium sekmesi (varsayılan = CPU sayısı kadar paralel)
+        chromiumOptions: CHROMIUM_OPTS,
         concurrency: 1,
+        scale: 1,
         onProgress: ({ progress }) => {
           const pct = Math.round(progress * 100)
           if (pct % 10 === 0) {
