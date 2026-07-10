@@ -33,8 +33,8 @@ export default function KnowledgePage() {
   const sourceModule = activeTab === 'all' ? undefined : activeTab as DocumentSourceModule
   const { documents, isLoading, uploadingCount, uploadDocument, deleteDocument, reindexDocument, refetch } = useDocuments(sourceModule)
 
-  const handleUpload = useCallback(async (file: File) => {
-    return uploadDocument(file, excludeFromSgs)
+  const handleUpload = useCallback(async (file: File, onProgress?: (pct: number) => void) => {
+    return uploadDocument(file, excludeFromSgs, onProgress)
   }, [uploadDocument, excludeFromSgs])
 
   const handleSyncSgs = useCallback(async () => {

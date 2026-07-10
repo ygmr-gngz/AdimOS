@@ -60,6 +60,6 @@ export const CONTENT_TYPE_LABELS: Record<string, string> = {
   topic_explanation: 'Konu Anlatım',
 }
 
-export const MAX_FILE_SIZE_MB = 50
+export const MAX_FILE_SIZE_MB = 200
 export const SUPPORTED_FILE_TYPES = ['application/pdf', 'text/plain', 'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document']

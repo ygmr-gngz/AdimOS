@@ -519,6 +519,104 @@ def backfill_indexing(bg: BackgroundTasks, dry_run: bool = True, limit: int = 20
     }
 
 
+@router.get("/upload-url")
+def create_upload_url(
+    file_name: str = Query(...),
+    file_size: int = Query(...),
+    source_module: str = Query(default="knowledge_center"),
+    exclude_from_sgs: bool = Query(default=False),
+):
+    """
+    Doğrudan-storage yükleme için imzalı URL üretir.
+    Dosya bu endpoint'in GÖVDESINDEN GEÇMEZ — sadece meta veri alır.
+    """
+    if file_size > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Dosya {file_size // (1024 * 1024)} MB, limit {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+        )
+
+    safe_name = _SAFE_NAME_RE.sub('_', file_name)
+    doc = create_document(safe_name, "", file_size, "application/pdf",
+                          source_module=source_module, exclude_from_sgs=exclude_from_sgs)
+    doc_id = doc["id"]
+    object_path = f"{doc_id}/{safe_name}"
+    storage_path = f"{_BUCKET}/{object_path}"
+
+    sb = get_supabase_client()
+    sb.table("documents").update({"storage_path": storage_path}).eq("id", doc_id).execute()
+
+    try:
+        signed = sb.storage.from_(_BUCKET).create_signed_upload_url(object_path)
+        # supabase-py 2.x → dict: {"signedUrl": "...", "token": "...", "path": "..."}
+        if isinstance(signed, dict):
+            signed_url = signed.get("signedUrl") or signed.get("signed_url", "")
+        else:
+            signed_url = getattr(signed, "signed_url", "") or getattr(signed, "signedUrl", "")
+        if not signed_url:
+            raise ValueError("signedUrl boş döndü")
+    except Exception as e:
+        logger.error(f"[documents] imzalı URL oluşturulamadı: {e}")
+        raise HTTPException(status_code=500, detail=f"İmzalı URL alınamadı: {str(e)[:200]}")
+
+    logger.info(f"[documents] upload-url üretildi: {doc_id} — {safe_name} ({file_size // 1024} KB)")
+    return {
+        "doc_id": doc_id,
+        "signed_url": signed_url,
+        "path": object_path,
+        "file_name": safe_name,
+    }
+
+
+@router.post("/register-upload/{doc_id}")
+def register_upload(doc_id: str, bg: BackgroundTasks, exclude_from_sgs: bool = Query(default=False)):
+    """
+    Frontend doğrudan Supabase'e yüklemeyi tamamladıktan sonra bu endpoint'i çağırır.
+    DB kaydını günceller ve indeksleme pipeline'ını başlatır.
+    """
+    sb = get_supabase_client()
+    rows = sb.table("documents").select("*").eq("id", doc_id).execute().data or []
+    if not rows:
+        raise HTTPException(status_code=404, detail="Doküman bulunamadı")
+
+    doc = rows[0]
+    doc_status = doc.get("status")
+
+    if doc_status == "indexed":
+        return {"doc_id": doc_id, "status": "already_indexed", "note": "Tekrar indeksleme atlandı"}
+
+    bg.add_task(reindex_document, doc_id, doc["storage_path"], doc["file_name"])
+
+    mime_type = doc.get("mime_type", "application/pdf")
+    if (
+        not exclude_from_sgs
+        and doc.get("source_module") != "sgs_academy"
+        and not doc.get("exclude_from_sgs")
+        and mime_type in ("application/pdf", "application/octet-stream")
+    ):
+        from app.db.storage import download_file
+        import tempfile
+        # SGS pipeline için içerik lazım — arka planda indir
+        def _sgs_bg(did: str, fname: str):
+            try:
+                clean_path = doc["storage_path"].replace(f"{_BUCKET}/", "", 1)
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                    tmp_path = tmp.name
+                download_file(_BUCKET, clean_path, tmp_path)
+                import os
+                with open(tmp_path, "rb") as f:
+                    content = f.read()
+                os.unlink(tmp_path)
+                _sgs_pipeline_background(did, content, fname)
+            except Exception as e:
+                logger.warning(f"[documents] SGS bg hatası {did}: {e}")
+
+        bg.add_task(_sgs_bg, doc_id, doc["file_name"])
+
+    logger.info(f"[documents] register-upload: indeksleme başlatıldı {doc_id} — {doc['file_name']}")
+    return {"doc_id": doc_id, "status": "indexing_started"}
+
+
 @router.get("/duplicate-audit")
 def duplicate_audit():
     """

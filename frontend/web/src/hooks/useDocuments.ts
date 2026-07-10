@@ -22,7 +22,11 @@ export function useDocuments(sourceModule?: DocumentSourceModule) {
     }
   }, [sourceModule])
 
-  const uploadDocument = useCallback(async (file: File, excludeFromSgs = false) => {
+  const uploadDocument = useCallback(async (
+    file: File,
+    excludeFromSgs = false,
+    onProgress?: (pct: number) => void,
+  ) => {
     const tempId = `temp-${Date.now()}-${Math.random()}`
     const tempDoc: Document = {
       id: tempId,
@@ -31,7 +35,7 @@ export function useDocuments(sourceModule?: DocumentSourceModule) {
       file_path: '',
       file_size: file.size,
       mime_type: file.type || 'application/pdf',
-      status: 'processing',
+      status: 'uploaded',
       chunk_count: 0,
       source_module: sourceModule ?? 'knowledge_center',
       created_at: new Date().toISOString(),
@@ -40,10 +44,24 @@ export function useDocuments(sourceModule?: DocumentSourceModule) {
     setDocuments(prev => [tempDoc, ...prev])
     setUploadingCount(c => c + 1)
     try {
-      const doc = await documentService.upload(file, sourceModule, excludeFromSgs)
-      setDocuments(prev => prev.map(d => d.id === tempId ? doc : d))
-      toast.success(`${file.name} yüklendi`)
-      return doc
+      // 1. İmzalı URL al (meta veri gönderilir, dosya gövdesinden geçmez)
+      const urlResult = await documentService.getUploadUrl(file, sourceModule, excludeFromSgs)
+
+      // 2. Doğrudan Supabase Storage'a yükle (büyük dosya, ilerleme çubuğu)
+      await documentService.uploadToSignedUrl(urlResult.signed_url, file, onProgress)
+
+      // 3. Backend'e bildir — indeksleme başlasın
+      await documentService.registerUpload(urlResult.doc_id, excludeFromSgs)
+
+      const registeredDoc: Document = {
+        ...tempDoc,
+        id: urlResult.doc_id,
+        file_name: urlResult.file_name,
+        status: 'uploaded',
+      }
+      setDocuments(prev => prev.map(d => d.id === tempId ? registeredDoc : d))
+      toast.success(`${file.name} yüklendi — indeksleniyor`)
+      return registeredDoc
     } catch (err: unknown) {
       setDocuments(prev => prev.filter(d => d.id !== tempId))
       const detail =
