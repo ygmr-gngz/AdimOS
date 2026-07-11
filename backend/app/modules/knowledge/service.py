@@ -1,5 +1,5 @@
 import logging
-from app.db.repositories.documents_repo import create_document, update_document_status, get_documents, get_document, delete_document
+from app.db.repositories.documents_repo import create_document, update_document_status, update_document_file_status, get_documents, get_document, delete_document
 from app.db.repositories.chunks_repo import insert_chunks, delete_chunks_by_document_id
 from app.db.storage import upload_file, delete_file
 from app.modules.knowledge.pdf_loader import load_pdf
@@ -88,9 +88,13 @@ def reindex_document(document_id: str, storage_path: str, file_name: str):
             err_str = str(dl_err)
             if "not_found" in err_str or "Object not found" in err_str or "404" in err_str:
                 logger.warning(
-                    f"[knowledge] dosya storage'da bulunamadı, kayıt failed yapılıyor: {document_id}"
+                    f"[knowledge] dosya storage'da bulunamadı, kayıt failed+kayip yapılıyor: {document_id}"
                 )
                 update_document_status(document_id, DocumentStatus.FAILED)
+                try:
+                    update_document_file_status(document_id, "kayip")
+                except Exception as fs_err:
+                    logger.debug(f"[knowledge] file_status güncelleme hatası {document_id}: {fs_err}")
                 return
             raise
 

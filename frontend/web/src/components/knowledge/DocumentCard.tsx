@@ -35,9 +35,10 @@ interface DocumentCardProps {
 
 export default function DocumentCard({ document: doc, onDelete, onReindex, onRelink }: DocumentCardProps) {
   const config = statusConfig[doc.status]
-  const canReindex = doc.status === 'failed' || doc.status === 'uploaded'
   const fileStatus: DocumentFileStatus = doc.file_status ?? 'mevcut'
   const isFileMissing = fileStatus === 'kayip'
+  // Dosya kayıpsa reindex faydasız (zaten failed olacak); sadece relink işe yarar
+  const canReindex = (doc.status === 'failed' || doc.status === 'uploaded') && !isFileMissing
 
   return (
     <div className={`flex items-center gap-4 p-4 bg-surface-50 rounded-lg border transition-colors group ${
@@ -93,14 +94,15 @@ export default function DocumentCard({ document: doc, onDelete, onReindex, onRel
       </Badge>
 
       {/* Eylem butonları */}
-      {/* Yeniden bağla — kayıp dosya için */}
+      {/* Yeniden bağla — kayıp dosya için (her zaman görünür) */}
       {isFileMissing && onRelink && (
         <button
           onClick={() => onRelink(doc.id)}
-          title="Dosyayı yeniden bağla"
-          className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-amber-500/20 text-gray-600 hover:text-amber-400 transition-all"
+          title="Kaynak dosyayı yeniden yükle ve bağla"
+          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400 hover:bg-amber-500/25 text-xs font-medium transition-all"
         >
-          <Upload size={15} />
+          <Upload size={12} />
+          Yeniden Yükle
         </button>
       )}
 

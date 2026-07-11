@@ -72,6 +72,12 @@ def update_document_status(document_id: str, status: DocumentStatus):
     return response.data[0] if response.data else None
 
 
+def update_document_file_status(document_id: str, file_status: str):
+    """file_status alanını günceller: 'mevcut' | 'kayip' | 'yeniden_yuklendi'"""
+    supabase = get_supabase_client()
+    supabase.table("documents").update({"file_status": file_status}).eq("id", document_id).execute()
+
+
 def delete_document(document_id: str):
     supabase = get_supabase_client()
     supabase.table("documents").delete().eq("id", document_id).execute()

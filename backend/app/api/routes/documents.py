@@ -175,7 +175,25 @@ async def upload_document(
         doc["storage_path"] = storage_path
 
         upload_file(_BUCKET, f"{doc_id}/{safe_name}", content)
+
+        # Yazım sözleşmesi: storage'da dosya gerçekten var mı?
+        from app.db.storage import slugify_filename as _slugify
+        expected_key = _slugify(safe_name)
+        try:
+            folder_files = sb.storage.from_(_BUCKET).list(doc_id)
+            if not any(f.get("name") == expected_key for f in (folder_files or [])):
+                raise Exception(f"storage list'te dosya görünmüyor: {expected_key}")
+        except Exception as verify_err:
+            logger.warning(f"[documents] storage doğrulama uyarısı {doc_id}: {verify_err}")
+            # Kritik değil — upload başardıysa devam; sadece logla
+
     except Exception as e:
+        if doc_id:
+            # Storage yazılamadıysa DB kaydını sil (hayalet kayıt oluşmasın)
+            try:
+                get_supabase_client().table("documents").delete().eq("id", doc_id).execute()
+            except Exception:
+                pass
         _log_upload_attempt(file_name, file_size, "storage_yukleme", error=str(e), doc_id=doc_id)
         logger.error(f"[documents] yükleme hatası {file_name}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Dosya yüklenemedi: {str(e)[:200]}")
@@ -303,9 +321,12 @@ async def relink_document(document_id: UUID, bg: BackgroundTasks, file: UploadFi
         logger.error(f"[documents] relink storage yükleme hatası {doc_id_str}: {e}")
         raise HTTPException(status_code=500, detail=f"Dosya yüklenemedi: {str(e)[:200]}")
 
+    from datetime import datetime, timezone
     sb = get_supabase_client()
     sb.table("documents").update({
         "file_size": len(content),
+        "file_status": "yeniden_yuklendi",
+        "relinked_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", doc_id_str).execute()
 
     bg.add_task(reindex_document, doc_id_str, storage_path, doc["file_name"])
@@ -538,11 +559,16 @@ def create_upload_url(
             detail=f"Dosya {file_size // (1024 * 1024)} MB, limit {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
         )
 
-    safe_name = _SAFE_NAME_RE.sub('_', file_name)
-    doc = create_document(safe_name, "", file_size, "application/pdf",
+    # Görüntü için Türkçe karakterleri korur; storage anahtarı için ayrıca normalize edilir
+    display_name = _SAFE_NAME_RE.sub('_', file_name)
+    # download_file() ile AYNI normalizasyon → yükleme ve indirme anahtarı her zaman eşleşir
+    from app.db.storage import slugify_filename
+    storage_name = slugify_filename(display_name)
+
+    doc = create_document(display_name, "", file_size, "application/pdf",
                           source_module=source_module, exclude_from_sgs=exclude_from_sgs)
     doc_id = doc["id"]
-    object_path = f"{doc_id}/{safe_name}"
+    object_path = f"{doc_id}/{storage_name}"
     storage_path = f"{_BUCKET}/{object_path}"
 
     sb = get_supabase_client()
@@ -558,15 +584,20 @@ def create_upload_url(
         if not signed_url:
             raise ValueError("signedUrl boş döndü")
     except Exception as e:
+        # Signed URL alınamazsa DB kaydını temizle
+        try:
+            sb.table("documents").delete().eq("id", doc_id).execute()
+        except Exception:
+            pass
         logger.error(f"[documents] imzalı URL oluşturulamadı: {e}")
         raise HTTPException(status_code=500, detail=f"İmzalı URL alınamadı: {str(e)[:200]}")
 
-    logger.info(f"[documents] upload-url üretildi: {doc_id} — {safe_name} ({file_size // 1024} KB)")
+    logger.info(f"[documents] upload-url üretildi: {doc_id} — {storage_name} ({file_size // 1024} KB)")
     return {
         "doc_id": doc_id,
         "signed_url": signed_url,
         "path": object_path,
-        "file_name": safe_name,
+        "file_name": display_name,
     }
 
 
@@ -748,6 +779,208 @@ def archive_duplicates(dry_run: bool = True):
         "archived": archived,
         "total_eligible": len(to_archive),
         "note": "Arşivlenen belgeler varsayılan listede gizlenir",
+    }
+
+
+@router.get("/storage-integrity")
+def storage_integrity():
+    """
+    DB ↔ Storage çift yönlü bütünlük denetimi.
+    Her doküman için üç kategori:
+      saglam          — storage'da beklenen slugified isimde mevcut
+      yanlis_anahtarli — storage'da FARKLI isimde mevcut (Türkçe encoding uyumsuzluğu)
+      gercek_kayip    — storage'da hiç yok
+    SGS stub kayıtları (gerçek dosya yok, normal) ayrı kategoride.
+    """
+    from app.db.storage import slugify_filename as _slugify
+    sb = get_supabase_client()
+
+    docs = (
+        sb.table("documents")
+        .select("id, file_name, storage_path, status, source_module, created_at, file_size")
+        .limit(1000)
+        .execute().data or []
+    )
+
+    saglam, yanlis_anahtarli, gercek_kayip, sgs_stub = [], [], [], []
+
+    for doc in docs:
+        doc_id = doc["id"]
+        storage_path = doc.get("storage_path") or ""
+
+        if doc.get("source_module") == "sgs_academy" or storage_path.startswith("sgs/"):
+            sgs_stub.append({"id": doc_id, "file_name": doc["file_name"]})
+            continue
+
+        if not storage_path:
+            gercek_kayip.append({
+                "id": doc_id, "file_name": doc["file_name"],
+                "reason": "storage_path boş", "status": doc["status"],
+            })
+            continue
+
+        # bucket/ prefix'ini çıkar → klasör = doc_id, dosya = son segment
+        clean_path = storage_path.removeprefix(f"{_BUCKET}/")
+        parts = clean_path.split("/", 1)
+        folder = parts[0]
+        raw_filename = parts[1] if len(parts) > 1 else ""
+        expected_key = _slugify(raw_filename) if raw_filename else ""
+
+        try:
+            folder_files = sb.storage.from_(_BUCKET).list(folder)
+            actual_names = [f.get("name", "") for f in (folder_files or [])]
+        except Exception as list_err:
+            gercek_kayip.append({
+                "id": doc_id, "file_name": doc["file_name"],
+                "reason": f"storage.list hatası: {list_err}", "status": doc["status"],
+            })
+            continue
+
+        if not actual_names:
+            gercek_kayip.append({
+                "id": doc_id, "file_name": doc["file_name"],
+                "reason": "Klasör boş", "status": doc["status"],
+                "storage_path": storage_path,
+            })
+        elif expected_key and expected_key in actual_names:
+            saglam.append({
+                "id": doc_id, "file_name": doc["file_name"],
+                "storage_key": f"{folder}/{expected_key}", "status": doc["status"],
+                "file_size": doc["file_size"],
+            })
+        else:
+            # Dosya farklı bir isimle mevcut (büyük ihtimalle Türkçe encoding)
+            actual_match = raw_filename if raw_filename in actual_names else (actual_names[0] if actual_names else None)
+            yanlis_anahtarli.append({
+                "id": doc_id, "file_name": doc["file_name"],
+                "db_storage_path": storage_path,
+                "actual_key": f"{folder}/{actual_match}" if actual_match else None,
+                "expected_key": f"{folder}/{expected_key}",
+                "actual_names_in_folder": actual_names,
+                "reason": "Slug uyumsuzluğu — Türkçe karakter encoding",
+                "kurtarilabilir": bool(actual_match),
+                "status": doc["status"],
+            })
+
+    return {
+        "toplam_kayit": len(docs),
+        "ozet": {
+            "saglam": len(saglam),
+            "yanlis_anahtarli_kurtarilabilir": len(yanlis_anahtarli),
+            "gercek_kayip": len(gercek_kayip),
+            "sgs_stub": len(sgs_stub),
+        },
+        "saglam": saglam,
+        "yanlis_anahtarli": yanlis_anahtarli,
+        "gercek_kayip": gercek_kayip,
+        "not": "POST /fix-storage-paths?dry_run=true ile kurtarılabilir dosyaları düzelt",
+    }
+
+
+@router.post("/fix-storage-paths")
+def fix_storage_paths(bg: BackgroundTasks, dry_run: bool = True):
+    """
+    Yanlış anahtarlı (Türkçe encoding) dosyaları düzeltir:
+    1. Supabase storage'da copy: mevcut_key → slugified_key
+    2. DB storage_path güncelle → slugified path
+    3. Eski key'i storage'dan sil
+    4. Status → 'uploaded' (reindex tetiklenebilir hale gelir)
+    dry_run=true (varsayılan): sadece plan göster, değiştirme.
+    dry_run=false: gerçekten uygula.
+    """
+    from app.db.storage import slugify_filename as _slugify
+    sb = get_supabase_client()
+
+    docs = (
+        sb.table("documents")
+        .select("id, file_name, storage_path, source_module, status")
+        .limit(1000)
+        .execute().data or []
+    )
+
+    to_fix = []
+    for doc in docs:
+        doc_id = doc["id"]
+        storage_path = doc.get("storage_path") or ""
+        if not storage_path or storage_path.startswith("sgs/") or doc.get("source_module") == "sgs_academy":
+            continue
+
+        clean_path = storage_path.removeprefix(f"{_BUCKET}/")
+        parts = clean_path.split("/", 1)
+        folder = parts[0]
+        raw_filename = parts[1] if len(parts) > 1 else ""
+        expected_key = _slugify(raw_filename) if raw_filename else ""
+
+        if not raw_filename or raw_filename == expected_key:
+            continue  # Zaten doğru
+
+        try:
+            folder_files = sb.storage.from_(_BUCKET).list(folder)
+            actual_names = [f.get("name", "") for f in (folder_files or [])]
+        except Exception:
+            continue
+
+        if raw_filename in actual_names and expected_key not in actual_names:
+            to_fix.append({
+                "id": doc_id,
+                "file_name": doc["file_name"],
+                "from_storage_key": f"{folder}/{raw_filename}",
+                "to_storage_key": f"{folder}/{expected_key}",
+                "new_db_storage_path": f"{_BUCKET}/{folder}/{expected_key}",
+                "current_status": doc["status"],
+            })
+
+    if dry_run:
+        return {
+            "dry_run": True,
+            "duzeltilecek": len(to_fix),
+            "plan": to_fix,
+            "not": "dry_run=false ile uygula — onayınız gerekiyor",
+        }
+
+    fixed, failed_items = [], []
+    for item in to_fix:
+        try:
+            # 1. Supabase'de copy
+            try:
+                sb.storage.from_(_BUCKET).copy(item["from_storage_key"], item["to_storage_key"])
+            except Exception:
+                # copy() yok veya başarısız → download + upload
+                raw_bytes = sb.storage.from_(_BUCKET).download(item["from_storage_key"])
+                sb.storage.from_(_BUCKET).upload(
+                    item["to_storage_key"], raw_bytes,
+                    {"content-type": "application/pdf", "upsert": "true"},
+                )
+
+            # 2. DB güncelle
+            sb.table("documents").update({
+                "storage_path": item["new_db_storage_path"],
+                "file_status": "mevcut",
+                "status": "uploaded",
+            }).eq("id", item["id"]).execute()
+
+            # 3. Eski key'i sil
+            try:
+                sb.storage.from_(_BUCKET).remove([item["from_storage_key"]])
+            except Exception as rm_err:
+                logger.warning(f"[documents] eski storage key silinemedi {item['from_storage_key']}: {rm_err}")
+
+            # 4. Reindex tetikle
+            bg.add_task(reindex_document, item["id"], item["new_db_storage_path"], item["file_name"])
+
+            fixed.append(item)
+            logger.info(f"[documents] path düzeltildi: {item['id']} → {item['to_storage_key']}")
+        except Exception as e:
+            logger.error(f"[documents] path düzeltme hatası {item['id']}: {e}")
+            failed_items.append({"id": item["id"], "file_name": item["file_name"], "hata": str(e)[:200]})
+
+    return {
+        "dry_run": False,
+        "duzeltilen": len(fixed),
+        "basarisiz": len(failed_items),
+        "duzeltilen_detay": fixed,
+        "basarisiz_detay": failed_items,
+        "not": "Düzeltilen dosyalar arka planda yeniden indeksleniyor",
     }
 
 
