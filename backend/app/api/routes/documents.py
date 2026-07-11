@@ -3,6 +3,7 @@ import os
 import re
 import tempfile
 from datetime import datetime, timezone
+from uuid import UUID
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Query
 from app.modules.knowledge.service import list_documents, fetch_document, remove_document, reindex_document
 from app.db.repositories.sgs_repo import list_analyses
@@ -240,40 +241,41 @@ def sync_sgs_documents():
 
 
 @router.get("/{document_id}")
-def get_document(document_id: str):
-    doc = fetch_document(document_id)
+def get_document(document_id: UUID):
+    doc = fetch_document(str(document_id))
     if not doc:
         raise HTTPException(status_code=404, detail="Döküman bulunamadı")
     return doc
 
 
 @router.post("/{document_id}/reindex")
-def reindex_doc(document_id: str, bg: BackgroundTasks):
-    doc = fetch_document(document_id)
+def reindex_doc(document_id: UUID, bg: BackgroundTasks):
+    doc = fetch_document(str(document_id))
     if not doc:
         raise HTTPException(status_code=404, detail="Döküman bulunamadı")
-    bg.add_task(reindex_document, document_id, doc["storage_path"], doc["file_name"])
-    return {"message": "Yeniden işleme başlatıldı", "document_id": document_id}
+    bg.add_task(reindex_document, str(document_id), doc["storage_path"], doc["file_name"])
+    return {"message": "Yeniden işleme başlatıldı", "document_id": str(document_id)}
 
 
 @router.delete("/{document_id}")
-def delete_document(document_id: str):
-    doc = fetch_document(document_id)
+def delete_document(document_id: UUID):
+    doc = fetch_document(str(document_id))
     if not doc:
         raise HTTPException(status_code=404, detail="Döküman bulunamadı")
-    remove_document(document_id, doc["storage_path"])
+    remove_document(str(document_id), doc["storage_path"])
     return {"message": "Döküman silindi"}
 
 
 # ── GÖREV 6: Kayıp PDF yeniden bağlama ───────────────────────
 
 @router.patch("/{document_id}/relink")
-async def relink_document(document_id: str, bg: BackgroundTasks, file: UploadFile = File(...)):
+async def relink_document(document_id: UUID, bg: BackgroundTasks, file: UploadFile = File(...)):
     """
     Kayıp dosyayı yeniden yükle: storage'a yaz, file_status='yeniden_yuklendi',
     sonra arka planda yeniden indeksle.
     """
-    doc = fetch_document(document_id)
+    doc_id_str = str(document_id)
+    doc = fetch_document(doc_id_str)
     if not doc:
         raise HTTPException(status_code=404, detail="Döküman bulunamadı")
 
@@ -281,7 +283,7 @@ async def relink_document(document_id: str, bg: BackgroundTasks, file: UploadFil
     if len(content) > _MAX_UPLOAD_BYTES:
         raise HTTPException(
             status_code=413,
-            detail=f"Dosya 50 MB sınırını aşıyor ({len(content) // (1024 * 1024)} MB).",
+            detail=f"Dosya {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB sınırını aşıyor ({len(content) // (1024 * 1024)} MB).",
         )
 
     storage_path = doc.get("storage_path", "")
@@ -298,20 +300,20 @@ async def relink_document(document_id: str, bg: BackgroundTasks, file: UploadFil
             {"content-type": file.content_type or "application/pdf", "upsert": "true"},
         )
     except Exception as e:
-        logger.error(f"[documents] relink storage yükleme hatası {document_id}: {e}")
+        logger.error(f"[documents] relink storage yükleme hatası {doc_id_str}: {e}")
         raise HTTPException(status_code=500, detail=f"Dosya yüklenemedi: {str(e)[:200]}")
 
     sb = get_supabase_client()
     sb.table("documents").update({
         "file_size": len(content),
-    }).eq("id", document_id).execute()
+    }).eq("id", doc_id_str).execute()
 
-    bg.add_task(reindex_document, document_id, storage_path, doc["file_name"])
+    bg.add_task(reindex_document, doc_id_str, storage_path, doc["file_name"])
 
-    logger.info(f"[documents] relink tamamlandı: {document_id}")
+    logger.info(f"[documents] relink tamamlandı: {doc_id_str}")
     return {
         "message": "Dosya yeniden bağlandı ve indeksleniyor",
-        "document_id": document_id,
+        "document_id": doc_id_str,
     }
 
 
