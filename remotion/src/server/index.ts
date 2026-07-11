@@ -1,29 +1,33 @@
 /**
- * Remotion Render Server — Railway'de ayrı bir Node.js servisi olarak çalışır.
- * FastAPI backend bu servisi HTTP ile çağırır.
+ * Remotion Lambda Bridge — Railway'de çalışan ince köprü servisi.
+ *
+ * ÖNCEKİ DURUM: renderMedia() → Chromium → 8 GB RAM → OOM crash
+ * YENİ DURUM:   renderMediaOnLambda() → AWS Lambda → 0 Chromium → <256 MB RAM
+ *
+ * Backend Python ile API yüzeyi AYNI → backend'de sıfır değişiklik:
+ *   POST /render { job_id, storyboard } → hemen {status:'started'} döner
+ *   Lambda render tamamlanınca → Supabase Storage → /video/render-callback
  */
 import express from 'express'
-import path from 'path'
-import fs from 'fs'
-import { bundle } from '@remotion/bundler'
-import { renderMedia, selectComposition } from '@remotion/renderer'
-import { StoryboardJSON, RenderRequest, RenderResponse } from '../types'
-import { DIMENSIONS, FPS } from '../brand'
-import { getTotalFrames } from '../utils'
+import { createClient } from '@supabase/supabase-js'
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
+import { renderMediaOnLambda, getRenderProgress } from '@remotion/lambda/client'
+import type { RenderRequest, RenderResponse } from '../types'
 
 const app = express()
 app.use(express.json({ limit: '10mb' }))
 
-const PORT = process.env.PORT || 3001
-const OUT_DIR = process.env.OUT_DIR || path.join(process.cwd(), 'out')
+const PORT             = process.env.PORT || 3001
+const LAMBDA_FUNCTION  = process.env.REMOTION_LAMBDA_FUNCTION_NAME || ''
+const LAMBDA_REGION    = process.env.REMOTION_LAMBDA_REGION || 'eu-central-1'
+const SERVE_URL        = process.env.REMOTION_SERVE_URL || ''   // S3 bundle URL
 
-// ── Render kuyruk sistemi (max 1 eşzamanlı render) ────────────
-// OOM koruması: Railway memory sınırını aşmamak için renderlar sıralanır.
-// Her render ayrı Chromium örneği açar; eşzamanlı render = katlanır RAM.
+// ── Render kuyruğu (max 1 eşzamanlı — Lambda'da CPU sınırı yok ama
+//    queue tutulur: ani patlamada backend sıraya alır, kayıp olmaz) ──
 let _renderRunning = false
 const _renderQueue: Array<() => Promise<void>> = []
 
-async function _processRenderQueue() {
+async function _processQueue() {
   if (_renderRunning || _renderQueue.length === 0) return
   _renderRunning = true
   const task = _renderQueue.shift()!
@@ -31,223 +35,201 @@ async function _processRenderQueue() {
     await task()
   } finally {
     _renderRunning = false
-    _processRenderQueue()  // bir sonraki görevi başlat
+    _processQueue()
   }
 }
 
-function _logMemory(tag: string) {
-  const mem = process.memoryUsage()
-  console.log(
-    `[remotion] ${tag} | RSS=${Math.round(mem.rss / 1024 / 1024)}MB ` +
-    `Heap=${Math.round(mem.heapUsed / 1024 / 1024)}/${Math.round(mem.heapTotal / 1024 / 1024)}MB`
-  )
+// ── S3'ten buffer olarak indir ────────────────────────────────
+async function _s3Download(bucket: string, key: string): Promise<Buffer> {
+  const s3 = new S3Client({ region: LAMBDA_REGION })
+  const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+  const chunks: Buffer[] = []
+  for await (const chunk of resp.Body as NodeJS.ReadableStream) {
+    chunks.push(Buffer.from(chunk))
+  }
+  return Buffer.concat(chunks)
 }
 
-// Supabase yükleme (isteğe bağlı — job_id ile hedef URL belirlenir)
-async function uploadToSupabase(filePath: string, jobId: string): Promise<string> {
-  const { createClient } = await import('@supabase/supabase-js')
-  const supabase = createClient(
+// ── Supabase video-outputs bucket'a yükle ────────────────────
+async function _supabaseUpload(buf: Buffer, jobId: string): Promise<string> {
+  const sb = createClient(
     process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
-  const data = fs.readFileSync(filePath)
-  const remotePath = `videos/${jobId}.mp4`
-  await supabase.storage.from('video-outputs').upload(remotePath, data, {
-    contentType: 'video/mp4', upsert: true,
+  const path = `videos/${jobId}.mp4`
+  await sb.storage.from('video-outputs').upload(path, buf, {
+    contentType: 'video/mp4',
+    upsert: true,
   })
-  const { data: urlData } = supabase.storage.from('video-outputs').getPublicUrl(remotePath)
-  return urlData.publicUrl
+  const { data } = sb.storage.from('video-outputs').getPublicUrl(path)
+  return data.publicUrl
 }
 
-// ── Chromium bellek ayarları (Railway container için kritik) ──
-// /dev/shm varsayılan 64 MB → render sırasında dolar → OOM.
-// --disable-dev-shm-usage: /dev/shm yerine /tmp kullanır (sınırsız disk).
-// enableMultiProcessOnLinux:false: ayrı renderer process açmaz → RAM yarıya iner.
-const CHROMIUM_OPTS = {
-  headless: true,
-  disableWebSecurity: false,
-  gl: 'angle' as const,
-  enableMultiProcessOnLinux: false,
-  args: [
-    '--disable-dev-shm-usage',
-    '--no-sandbox',
-    '--disable-setuid-sandbox',
-    '--disable-background-timer-throttling',
-    '--disable-backgrounding-occluded-windows',
-    '--disable-renderer-backgrounding',
-  ],
-}
-
-// Bundle bir kez hazır tutulur (restart'ta yeniden oluşturulur)
-let bundleLocation: string | null = null
-async function getBundle(): Promise<string> {
-  if (bundleLocation) return bundleLocation
-  console.log('[remotion] bundle oluşturuluyor...')
-  bundleLocation = await bundle({ entryPoint: path.join(process.cwd(), 'src/index.ts') })
-  console.log('[remotion] bundle hazır:', bundleLocation)
-  return bundleLocation
+// ── Backend callback ─────────────────────────────────────────
+async function _callback(jobId: string, status: string, extra: Record<string, unknown> = {}) {
+  const backendUrl = process.env.BACKEND_URL
+  if (!backendUrl) return
+  await fetch(`${backendUrl}/video/render-callback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ job_id: jobId, status, ...extra }),
+  }).catch(e => console.warn(`[lambda] callback hatası job=${jobId}:`, e.message))
 }
 
 // ── Render endpoint ───────────────────────────────────────────
-
 app.post('/render', (req, res) => {
-  const body = req.body as RenderRequest
-  const { job_id, storyboard } = body
+  const { job_id, storyboard } = req.body as RenderRequest
 
   if (!job_id || !storyboard) {
     return res.status(400).json({ error: 'job_id ve storyboard gerekli' })
   }
 
-  const queuePos = _renderQueue.length
-  console.log(`[remotion] render kuyruğa alındı: job=${job_id} tip=${storyboard.video_type} sıra=${queuePos} aktif=${_renderRunning}`)
+  if (!LAMBDA_FUNCTION || !SERVE_URL) {
+    console.error('[lambda] REMOTION_LAMBDA_FUNCTION_NAME veya REMOTION_SERVE_URL eksik')
+    return res.status(503).json({
+      error: 'Lambda yapılandırılmamış',
+      missing: {
+        REMOTION_LAMBDA_FUNCTION_NAME: !LAMBDA_FUNCTION,
+        REMOTION_SERVE_URL: !SERVE_URL,
+      },
+    })
+  }
 
-  // Hemen yanıt dön; render arka planda sırayla çalışır
+  const queuePos = _renderQueue.length
+  console.log(`[lambda] kuyruğa alındı: job=${job_id} tip=${storyboard.video_type} sıra=${queuePos}`)
   res.json({ job_id, status: 'started', queue_position: queuePos } as RenderResponse & { queue_position: number })
 
-  // Görevi kuyruğa ekle
   _renderQueue.push(async () => {
-    const startTime = Date.now()
-    console.log(`[remotion] render başlıyor: job=${job_id} tip=${storyboard.video_type}`)
-    _logMemory(`render-start job=${job_id}`)
+    const t0 = Date.now()
+    const elapsed = () => Math.round((Date.now() - t0) / 1000)
+
+    console.log(`[lambda] render başlıyor: job=${job_id} tip=${storyboard.video_type}`)
+
+    const compositionId =
+      storyboard.video_type === 'motivation'    ? 'MotivationVideo' :
+      storyboard.video_type === 'lesson'        ? 'InfographicVideo' :
+      storyboard.video_type === 'konu_anlatimi' ? 'QuizVideo' :
+      'QuizVideo'
 
     try {
-      if (!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR, { recursive: true })
-      const outPath = path.join(OUT_DIR, `${job_id}.mp4`)
+      // ── 1. Lambda render başlat ─────────────────────────────
+      console.log(`[lambda] renderMediaOnLambda başlıyor: ${compositionId}`)
+      const { renderId, bucketName } = await renderMediaOnLambda({
+        region:       LAMBDA_REGION as any,
+        functionName: LAMBDA_FUNCTION,
+        serveUrl:     SERVE_URL,
+        composition:  compositionId,
+        inputProps:   { storyboard },
+        codec:        'h264',
+        imageFormat:  'jpeg',
+        maxRetries:   1,
+        framesPerLambda: 40,
+        privacy:      'private',   // S3 nesnesi private; biz indirip Supabase'e koyacağız
+      })
 
-      const bundlePath = await getBundle()
-      const dim = DIMENSIONS[storyboard.format]
-      const totalFrames = getTotalFrames(storyboard)
+      console.log(`[lambda] Lambda render başlatıldı: renderId=${renderId} bucket=${bucketName}`)
 
-      const browserExecutable = process.env.BROWSER_EXECUTABLE_PATH || undefined
-      if (browserExecutable) {
-        console.log(`[remotion] browser: ${browserExecutable}`)
+      // ── 2. Tamamlanmasını poll'la ───────────────────────────
+      const POLL_MS    = 5_000       // 5 sn
+      const MAX_WAIT   = 20 * 60_000 // 20 dk (Lambda max 15 dk + marj)
+      let   outputFile : string | null = null
+      const pollStart  = Date.now()
+
+      while (Date.now() - pollStart < MAX_WAIT) {
+        await new Promise(r => setTimeout(r, POLL_MS))
+
+        const prog = await getRenderProgress({
+          renderId,
+          bucketName,
+          functionName: LAMBDA_FUNCTION,
+          region:       LAMBDA_REGION as any,
+        })
+
+        const pct = Math.round(prog.overallProgress * 100)
+        if (pct % 10 === 0) {
+          console.log(`[lambda] job=${job_id} ilerleme=${pct}% (${elapsed()}s)`)
+        }
+
+        if (prog.done) {
+          outputFile = (prog as any).outputFile ?? null
+          break
+        }
+
+        if (prog.fatalErrorEncountered) {
+          const msgs = (prog.errors ?? []).map((e: any) => e.message).join('; ')
+          throw new Error(`Lambda render hatası: ${msgs || 'Bilinmeyen hata'}`)
+        }
       }
 
-      const compositionId =
-        storyboard.video_type === 'motivation'    ? 'MotivationVideo' :
-        storyboard.video_type === 'lesson'        ? 'InfographicVideo' :
-        storyboard.video_type === 'konu_anlatimi' ? 'QuizVideo' :
-        'QuizVideo'
+      if (!outputFile) {
+        throw new Error(`Render ${MAX_WAIT / 60_000} dakikada tamamlanmadı — timeout`)
+      }
 
-      console.log(`[remotion] kompozisyon seçiliyor: ${compositionId} frames=${totalFrames} ${dim.width}x${dim.height}`)
+      console.log(`[lambda] render tamam (${elapsed()}s): ${outputFile}`)
 
-      const comp = await selectComposition({
-        serveUrl: bundlePath,
-        id: compositionId,
-        inputProps: { storyboard },
-        browserExecutable,
-        chromiumOptions: CHROMIUM_OPTS,
-      })
-
-      await renderMedia({
-        composition: {
-          ...comp,
-          durationInFrames: totalFrames,
-          width: dim.width,
-          height: dim.height,
-        },
-        serveUrl: bundlePath,
-        codec: 'h264',
-        outputLocation: outPath,
-        inputProps: { storyboard },
-        browserExecutable,
-        chromiumOptions: CHROMIUM_OPTS,
-        concurrency: 1,
-        scale: 1,
-        onProgress: ({ progress }) => {
-          const pct = Math.round(progress * 100)
-          if (pct % 10 === 0) {
-            console.log(`[remotion] job=${job_id} ilerleme=${pct}%`)
-            if (pct === 50) _logMemory(`render-50pct job=${job_id}`)
-          }
-        },
-      })
-
-      const elapsed = Math.round((Date.now() - startTime) / 1000)
-      console.log(`[remotion] render tamam: ${outPath} (${elapsed}s)`)
-      _logMemory(`render-done job=${job_id}`)
-
-      // Supabase'e yükle ve backend'i bilgilendir
+      // ── 3. S3 → Supabase ────────────────────────────────────
       let videoUrl = ''
       if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-        videoUrl = await uploadToSupabase(outPath, job_id)
-        console.log(`[remotion] yüklendi: ${videoUrl}`)
+        // S3 key: "renders/renderId/out.mp4" veya başka format
+        const s3Key = outputFile.startsWith('s3://')
+          ? outputFile.split('/').slice(3).join('/')
+          : outputFile
+        console.log(`[lambda] S3'ten indiriliyor: s3://${bucketName}/${s3Key}`)
+        const buf = await _s3Download(bucketName, s3Key)
+        videoUrl  = await _supabaseUpload(buf, job_id)
+        console.log(`[lambda] Supabase'e yüklendi (${(buf.length / 1024 / 1024).toFixed(1)} MB): ${videoUrl}`)
       }
 
-      if (process.env.BACKEND_URL) {
-        await fetch(`${process.env.BACKEND_URL}/video/render-callback`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ job_id, status: 'done', video_url: videoUrl }),
-        }).catch(e => console.warn('[remotion] callback hatası:', e.message))
-      }
-
-      // Çıktı dosyasını temizle (Railway disk alanı sınırlı)
-      try { fs.unlinkSync(outPath) } catch {}
+      // ── 4. Backend callback ──────────────────────────────────
+      await _callback(job_id, 'done', { video_url: videoUrl })
+      console.log(`[lambda] job=${job_id} tamamlandı — toplam ${elapsed()}s`)
 
     } catch (err) {
-      const elapsed = Math.round((Date.now() - startTime) / 1000)
-      const error = err instanceof Error ? err.message : String(err)
-      console.error(`[remotion] render hatası job=${job_id} (${elapsed}s):`, error)
-      _logMemory(`render-error job=${job_id}`)
-
-      if (process.env.BACKEND_URL) {
-        await fetch(`${process.env.BACKEND_URL}/video/render-callback`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ job_id, status: 'failed', error: `${error} (${elapsed}s sonra)` }),
-        }).catch(() => {})
-      }
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[lambda] render hatası job=${job_id} (${elapsed()}s):`, msg)
+      await _callback(job_id, 'failed', { error: `${msg} (${elapsed()}s sonra)` })
     }
   })
 
-  _processRenderQueue()
+  _processQueue()
 })
 
+// ── Health endpoint ───────────────────────────────────────────
 app.get('/health', (_req, res) => {
-  _logMemory('health-check')
   res.json({
-    ok: true,
-    service: 'remotion',
-    bundle_ready: !!bundleLocation,
-    port: PORT,
-    render_running: _renderRunning,
-    queue_length: _renderQueue.length,
+    ok:               true,
+    service:          'remotion-lambda-bridge',
+    port:             PORT,
+    lambda_function:  LAMBDA_FUNCTION  || '(eksik)',
+    lambda_region:    LAMBDA_REGION,
+    serve_url:        SERVE_URL ? '(ayarlı)' : '(eksik)',
+    lambda_ready:     !!(LAMBDA_FUNCTION && SERVE_URL),
+    render_running:   _renderRunning,
+    queue_length:     _renderQueue.length,
   })
 })
 
-// ── Graceful shutdown (Railway SIGTERM gönderir önce) ────────
+// ── Graceful shutdown ─────────────────────────────────────────
 let _shuttingDown = false
-
-function gracefulShutdown(signal: string) {
+function _shutdown(sig: string) {
   if (_shuttingDown) return
   _shuttingDown = true
-  console.log(`[remotion] ${signal} alındı — render kuyruğu=${_renderQueue.length} aktif=${_renderRunning}`)
-  // Railway ~ 10s timeout verir; aktif render bitmezse process ölür
-  setTimeout(() => {
-    console.log('[remotion] graceful shutdown tamamlandı')
-    process.exit(0)
-  }, 8000)
+  console.log(`[lambda] ${sig} — queue=${_renderQueue.length} active=${_renderRunning}`)
+  setTimeout(() => { console.log('[lambda] shutdown ok'); process.exit(0) }, 8000)
 }
+process.on('SIGTERM', () => _shutdown('SIGTERM'))
+process.on('SIGINT',  () => _shutdown('SIGINT'))
+process.on('uncaughtException',  err    => { console.error('[lambda] CRASH:', err); process.exit(1) })
+process.on('unhandledRejection', reason => console.error('[lambda] unhandledRejection:', reason))
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
-process.on('SIGINT',  () => gracefulShutdown('SIGINT'))
-
-process.on('uncaughtException', (err) => {
-  console.error('[remotion] CRASH uncaughtException:', err)
-  _logMemory('crash')
-  process.exit(1)
-})
-
-process.on('unhandledRejection', (reason) => {
-  console.error('[remotion] unhandledRejection:', reason)
-})
-
-// Railway ve diğer cloud ortamlarında 0.0.0.0 üzerinde dinlemeli
-console.log(`[remotion] sunucu başlıyor PORT=${PORT}`)
+// ── Başlat ───────────────────────────────────────────────────
+console.log(`[lambda] Lambda Bridge başlıyor PORT=${PORT}`)
 app.listen(Number(PORT), '0.0.0.0', () => {
-  console.log(`[remotion] render server 0.0.0.0:${PORT} portunda çalışıyor`)
-  console.log(`[remotion] NODE_VERSION=${process.version} BROWSER=${process.env.BROWSER_EXECUTABLE_PATH || '(yok)'}`)
-  _logMemory('startup')
-  getBundle().catch(e => console.error('[remotion] bundle hatası:', e))
+  console.log(`[lambda] hazır → 0.0.0.0:${PORT}`)
+  console.log(`[lambda] function=${LAMBDA_FUNCTION || '(eksik)'}`)
+  console.log(`[lambda] region=${LAMBDA_REGION}`)
+  console.log(`[lambda] serveUrl=${SERVE_URL ? '(ayarlı)' : '(eksik — REMOTION_SERVE_URL gerekli)'}`)
+  if (!LAMBDA_FUNCTION || !SERVE_URL) {
+    console.warn('[lambda] UYARI: Lambda yapılandırması eksik — /render 503 dönecek')
+  }
 })
