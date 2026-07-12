@@ -34,7 +34,25 @@ import express from 'express'
 import { createClient } from '@supabase/supabase-js'
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 import { renderMediaOnLambda, getRenderProgress } from '@remotion/lambda/client'
+import WebSocket from 'ws'
 import type { RenderRequest, RenderResponse } from '../types'
+
+// ── Supabase client (modül düzeyinde bir kere oluştur) ───────────
+// Node 20'de native WebSocket yok; ws paketi transport olarak verilir.
+// Node 22'de bu satır gereksiz ama zararı yok.
+function _makeSupabase() {
+  return createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { realtime: { transport: WebSocket as any } },
+  )
+}
+// Lazy init: env değerleri uygulama başladıktan sonra okunur
+let _sb: ReturnType<typeof _makeSupabase> | null = null
+function _supabase() {
+  if (!_sb) _sb = _makeSupabase()
+  return _sb
+}
 
 const app = express()
 app.use(express.json({ limit: '10mb' }))
@@ -185,10 +203,7 @@ async function _s3Download(bucket: string, key: string): Promise<Buffer> {
 
 // ── Buffer → Supabase Storage ─────────────────────────────────────
 async function _supabaseUpload(buf: Buffer, jobId: string): Promise<string> {
-  const sb = createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  )
+  const sb   = _supabase()
   const path = `videos/${jobId}.mp4`
   const { error } = await sb.storage
     .from('video-outputs')
