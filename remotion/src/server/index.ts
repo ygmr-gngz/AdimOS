@@ -131,6 +131,32 @@ function _isGuardrailHit(): boolean {
   return _dailyCostUsd >= COST_LIMIT_USD
 }
 
+// ── S3 key çözümleyici ───────────────────────────────────────────
+// getRenderProgress.outputFile şu formatlarda gelebilir:
+//   (a) s3://bucket/renders/xxx/out.mp4
+//   (b) https://s3.eu-central-1.amazonaws.com/bucket/renders/xxx/out.mp4  (path-style)
+//   (c) https://bucket.s3.eu-central-1.amazonaws.com/renders/xxx/out.mp4  (virtual-hosted)
+// Her durumda "renders/xxx/out.mp4" döndür.
+function _s3KeyFromOutput(outputFile: string, renderId: string, bucketName: string): string {
+  try {
+    if (outputFile.startsWith('s3://')) {
+      // s3://bucket/renders/xxx/out.mp4 → renders/xxx/out.mp4
+      return outputFile.split('/').slice(3).join('/')
+    }
+    if (outputFile.startsWith('http')) {
+      const url = new URL(outputFile)
+      const parts = url.pathname.split('/').filter(Boolean)
+      // Path-style: hostname = s3.*.amazonaws.com, ilk part = bucket adı
+      // Virtual-hosted: hostname = bucket.s3.*.amazonaws.com, tüm parts = key
+      const isPathStyle = !url.hostname.startsWith(bucketName)
+      const keyParts = isPathStyle ? parts.slice(1) : parts
+      if (keyParts.length > 0) return keyParts.join('/')
+    }
+  } catch { /* parse hatası → fallback */ }
+  // Remotion Lambda her zaman bu path'i kullanır
+  return `renders/${renderId}/out.mp4`
+}
+
 // ── Render kuyruğu (maks 1 eşzamanlı) ───────────────────────────
 let _renderRunning = false
 const _renderQueue: Array<() => Promise<void>> = []
@@ -377,10 +403,8 @@ app.post('/render', (req, res) => {
       // S3 → Supabase
       let videoUrl = ''
       if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-        const s3Key = result.outputFile.startsWith('s3://')
-          ? result.outputFile.split('/').slice(3).join('/')
-          : result.outputFile
-        console.log(`[lambda] S3'ten indiriliyor: s3://${result.bucketName}/${s3Key}`)
+        const s3Key = _s3KeyFromOutput(result.outputFile, result.renderId, result.bucketName)
+        console.log(`[lambda] S3'ten indiriliyor: s3://${result.bucketName}/${s3Key} (outputFile: ${result.outputFile})`)
         const buf = await _s3Download(result.bucketName, s3Key)
         videoUrl  = await _supabaseUpload(buf, job_id)
         console.log(
@@ -441,6 +465,37 @@ app.get('/health', (_req, res) => {
 // ── GET /compositions ─────────────────────────────────────────────
 app.get('/compositions', (_req, res) => {
   res.json({ mapping: COMPOSITION_MAP })
+})
+
+// ── POST /rescue ──────────────────────────────────────────────────
+// S3'te tamamlanmış ama Supabase'e aktarılamamış render'ı kurtarır.
+// Body: { job_id, render_id, bucket_name }
+app.post('/rescue', async (req, res) => {
+  const { job_id, render_id, bucket_name } = req.body as {
+    job_id: string; render_id: string; bucket_name: string
+  }
+  if (!job_id || !render_id || !bucket_name) {
+    return res.status(400).json({ error: 'job_id, render_id ve bucket_name gerekli' })
+  }
+  console.log(`[lambda] rescue başlıyor: job=${job_id} render=${render_id} bucket=${bucket_name}`)
+  try {
+    const s3Key = `renders/${render_id}/out.mp4`
+    console.log(`[lambda] rescue S3'ten indiriliyor: s3://${bucket_name}/${s3Key}`)
+    const buf = await _s3Download(bucket_name, s3Key)
+    const videoUrl = await _supabaseUpload(buf, job_id)
+    console.log(`[lambda] rescue Supabase'e yüklendi (${(buf.length / 1024 / 1024).toFixed(1)} MB): ${videoUrl}`)
+    await _callback(job_id, 'done', {
+      video_url:      videoUrl,
+      render_id,
+      bucket_name,
+      rescued:        true,
+    })
+    res.json({ ok: true, video_url: videoUrl, size_mb: (buf.length / 1024 / 1024).toFixed(1) })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[lambda] rescue HATA job=${job_id}:`, msg)
+    res.status(500).json({ error: msg })
+  }
 })
 
 // ── Graceful shutdown ─────────────────────────────────────────────
