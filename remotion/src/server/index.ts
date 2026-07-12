@@ -50,6 +50,14 @@ const POLL_MS         = 5_000
 const MAX_WAIT_MS     = 25 * 60_000   // 25 dk
 const NO_PROGRESS_MS  = 8  * 60_000   // 8 dk hareketsizlik → fail
 
+// BACKEND_URL şemasız gelebilir (örn. "adimos-production.up.railway.app")
+// Her durumda https:// ile başlamasını garantile.
+function _normalizeBackendUrl(raw: string | undefined): string {
+  const url = (raw || 'https://adimos-production.up.railway.app').trim()
+  return url.startsWith('http') ? url : `https://${url}`
+}
+const BACKEND_URL = _normalizeBackendUrl(process.env.BACKEND_URL)
+
 // ── Eşleme tablosu — TEK YER ────────────────────────────────────
 // Anahtar: "<video_type>:<format>" veya "<video_type>"
 // Değer: src/index.ts'de registerRoot ile kayıtlı composition ID
@@ -169,13 +177,12 @@ async function _callback(
   status: string,
   extra:  Record<string, unknown> = {},
 ) {
-  const backendUrl = process.env.BACKEND_URL
-  if (!backendUrl) return
-  await fetch(`${backendUrl}/video/render-callback`, {
+  const target = `${BACKEND_URL}/video/render-callback`
+  await fetch(target, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ job_id: jobId, status, ...extra }),
-  }).catch(e => console.warn(`[lambda] callback hatası job=${jobId}:`, e.message))
+  }).catch(e => console.warn(`[lambda] callback hatası job=${jobId} → ${target}:`, e.message))
 }
 
 // ── Render çekirdeği ─────────────────────────────────────────────
@@ -456,6 +463,7 @@ app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`[lambda] function=${LAMBDA_FUNCTION || '(eksik)'}`)
   console.log(`[lambda] region=${LAMBDA_REGION}`)
   console.log(`[lambda] serveUrl=${SERVE_URL ? '(ayarlı)' : '(eksik)'}`)
+  console.log(`[lambda] backendUrl=${BACKEND_URL}`)
   console.log(`[lambda] maxConcurrent=${MAX_CONCURRENT} costLimit=$${COST_LIMIT_USD}/gün`)
   if (!LAMBDA_FUNCTION || !SERVE_URL) {
     console.warn('[lambda] UYARI: Lambda yapılandırması eksik — /render 503 dönecek')
