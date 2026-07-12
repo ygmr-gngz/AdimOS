@@ -17,7 +17,7 @@ public_router = APIRouter()  # auth gerektirmeyen internal callback'ler
 VIDEO_BUCKET = "video-tts"
 _TTS_BACKOFF = (2, 8, 20)       # saniye — 3 deneme
 _MAX_CONCURRENT = 2             # eşzamanlı pipeline sınırı
-_WATCHDOG_MINUTES = 30
+_WATCHDOG_MINUTES = 45
 
 import threading
 _pipeline_semaphore = threading.Semaphore(_MAX_CONCURRENT)
@@ -578,7 +578,7 @@ def _watchdog_sweep(sb=None) -> None:
         status = j["status"]
         logger.warning(f"[video] watchdog: {j['id'][:8]} {status} → failed")
         if status == "rendering":
-            detail = "Render worker geri dönüş yapmadı — büyük olasılıkla OOM (bellek baskısı). Railway RAM metriklerini ve Remotion loglarını kontrol edin."
+            detail = "Remotion Lambda render callback'i gelmedi — Lambda loglarını (CloudWatch) ve Railway Remotion Bridge loglarını kontrol edin."
         elif status == "tts_generating":
             detail = "OpenAI TTS yanıt vermedi — API zaman aşımı veya ağ kopması."
         elif status == "warmup_pinging":

@@ -5,22 +5,18 @@
 
 ---
 
-## Mevcut Durum
+## Karar
 
 | Faktör | Durum |
 |--------|-------|
-| chromiumOptions fix (`--disable-dev-shm-usage` + `enableMultiProcessOnLinux:false`) | Deploy edildi ✓ |
-| Railway worker RAM | **Bilinmiyor — kullanıcı onayı gerekiyor** |
-| Test render sonucu | ⏳ Bekleniyor |
+| chromiumOptions fix | Deploy edildi ✓ |
+| Railway worker RAM | **8 GB** (zaten var) |
+| Test render sonucu | Hâlâ crash — Yol A başarısız |
+| **Karar** | **YOL B — Remotion Lambda** |
 
 ---
 
-## Bu Turun Sorusu
-
-**Railway → render worker → Settings → Resources'ta RAM kaç GB?**
-
-- 4 GB → ayarla → test et (Yol A)
-- Zaten 4 GB+ → hâlâ crash → Yol B (Lambda)
+## Yol B Uygulama Durumu
 
 ---
 
