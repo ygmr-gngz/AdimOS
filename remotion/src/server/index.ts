@@ -54,6 +54,31 @@ function _supabase() {
   return _sb
 }
 
+// ── Yüklü remotion sürümünü oku ─────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const INSTALLED_REMOTION_VERSION: string = (() => {
+  try { return (require('remotion/package.json') as { version: string }).version } catch { return 'unknown' }
+})()
+
+// ── Lambda fonksiyon adından sürüm çıkar ve karşılaştır ─────────
+// Örnek: remotion-render-4-0-488-mem3072mb-... → "4.0.488"
+function _parseLambdaVersion(functionName: string): string | null {
+  const m = functionName.match(/remotion-render-(\d+)-(\d+)-(\d+)/)
+  return m ? `${m[1]}.${m[2]}.${m[3]}` : null
+}
+
+function _assertVersionMatch(functionName: string): void {
+  const lambdaVer = _parseLambdaVersion(functionName)
+  if (!lambdaVer) return  // parse edilemedi, devam et
+  if (lambdaVer !== INSTALLED_REMOTION_VERSION) {
+    throw new Error(
+      `Sürüm uyumsuzluğu: Lambda fonksiyon=${lambdaVer}, ` +
+      `@remotion/lambda paketi=${INSTALLED_REMOTION_VERSION}. ` +
+      `package.json'daki remotion sürümlerini ${lambdaVer}'e sabitle, npm install çalıştır ve yeniden deploy et.`,
+    )
+  }
+}
+
 const app = express()
 app.use(express.json({ limit: '10mb' }))
 
@@ -241,6 +266,9 @@ async function _doRender(
   framesPerLambda: number,
   attempt = 1,
 ): Promise<RenderResult> {
+  // Sürüm uyumsuzluğunu anında tespit et — 15 dk bekleme yerine hemen fail
+  _assertVersionMatch(LAMBDA_FUNCTION)
+
   const { renderId, bucketName } = await renderMediaOnLambda({
     region:          LAMBDA_REGION,
     functionName:    LAMBDA_FUNCTION,
@@ -534,6 +562,13 @@ app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`[lambda] region=${LAMBDA_REGION}`)
   console.log(`[lambda] serveUrl=${SERVE_URL ? '(ayarlı)' : '(eksik)'}`)
   console.log(`[lambda] backendUrl=${BACKEND_URL}`)
+  console.log(`[lambda] remotion paketi=${INSTALLED_REMOTION_VERSION}`)
+  const lambdaVer = _parseLambdaVersion(LAMBDA_FUNCTION)
+  if (lambdaVer && lambdaVer !== INSTALLED_REMOTION_VERSION) {
+    console.error(`[lambda] UYARI: Sürüm uyumsuzluğu — Lambda=${lambdaVer} paket=${INSTALLED_REMOTION_VERSION} — render'lar anında başarısız olacak`)
+  } else if (lambdaVer) {
+    console.log(`[lambda] sürüm eşleşiyor: ${lambdaVer} ✓`)
+  }
   console.log(`[lambda] maxConcurrent=${MAX_CONCURRENT} costLimit=$${COST_LIMIT_USD}/gün`)
   if (!LAMBDA_FUNCTION || !SERVE_URL) {
     console.warn('[lambda] UYARI: Lambda yapılandırması eksik — /render 503 dönecek')
