@@ -1,24 +1,17 @@
 FROM node:22-bookworm-slim
 
-# Chromium sistem bağımlılıkları — @remotion/renderer peer dep gerektiriyor
-# (Lambda Bridge Chromium kullanmıyor; ama kurulum sırasında postinstall gerekiyor)
-RUN apt-get update && apt-get install -y \
-  chromium \
-  fonts-noto-color-emoji \
-  fonts-liberation \
-  ffmpeg \
-  --no-install-recommends \
-  && rm -rf /var/lib/apt/lists/*
-
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-ARG CACHEBUST=2
-RUN npm ci --include=dev
-# Sigorta: typescript kurulmadıysa burada anında patlıyor (tsc: not found sürprizi yok)
+
+# npm install kullan (npm ci değil) — Railway BuildKit cache'i dosya içeriğine göre kilitlenmişti
+# npm install --include=dev garanti typescript kurar
+RUN npm install --include=dev
+
+# Sigorta: typescript kurulmadıysa burada anında patlıyor
 RUN node_modules/.bin/tsc --version
+
 COPY . .
 RUN npm run build
 
