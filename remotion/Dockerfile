@@ -15,7 +15,7 @@ ENV BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --include=dev
 COPY . .
 
 # TypeScript server kodunu derle
