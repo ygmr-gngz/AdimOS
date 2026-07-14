@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 # Chromium sistem bağımlılıkları — @remotion/renderer peer dep gerektiriyor
 # (Lambda Bridge Chromium kullanmıyor; ama kurulum sırasında postinstall gerekiyor)
