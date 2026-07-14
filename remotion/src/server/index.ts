@@ -40,6 +40,8 @@ import type { RenderRequest, RenderResponse } from '../types'
 // ── Supabase client (modül düzeyinde bir kere oluştur) ───────────
 // Node 20'de native WebSocket yok; ws paketi transport olarak verilir.
 // Node 22'de bu satır gereksiz ama zararı yok.
+const VIDEO_BUCKET = process.env.SUPABASE_VIDEO_BUCKET || 'video-outputs'
+
 function _makeSupabase() {
   return createClient(
     process.env.SUPABASE_URL!,
@@ -52,6 +54,42 @@ let _sb: ReturnType<typeof _makeSupabase> | null = null
 function _supabase() {
   if (!_sb) _sb = _makeSupabase()
   return _sb
+}
+
+// ── Bucket varlık kontrolü + otomatik oluşturma ──────────────────
+let _storageReady = false
+
+async function _ensureBucket(): Promise<void> {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.warn('[lambda] SUPABASE_URL veya SUPABASE_SERVICE_ROLE_KEY eksik — storage kontrolü atlandı')
+    return
+  }
+  const sb = _supabase()
+  // Bucket listesini çek
+  const { data: buckets, error: listErr } = await sb.storage.listBuckets()
+  if (listErr) {
+    console.error(`[lambda] Bucket listesi alınamadı: ${listErr.message}`)
+    return
+  }
+  const exists = (buckets ?? []).some(b => b.name === VIDEO_BUCKET)
+  if (exists) {
+    console.log(`[lambda] storage: bucket "${VIDEO_BUCKET}" mevcut ✓`)
+    _storageReady = true
+    return
+  }
+  // Yoksa oluştur (public — frontend getPublicUrl() kullanıyor)
+  console.warn(`[lambda] storage: "${VIDEO_BUCKET}" bulunamadı — oluşturuluyor (public)...`)
+  const { error: createErr } = await sb.storage.createBucket(VIDEO_BUCKET, {
+    public: true,
+    allowedMimeTypes: ['video/mp4'],
+  })
+  if (createErr && !createErr.message.includes('already exists')) {
+    console.error(`[lambda] Bucket oluşturulamadı: ${createErr.message}`)
+    console.error('[lambda] Supabase Dashboard → Storage → "New bucket" → video-outputs (Public) adıyla elle oluştur')
+    return
+  }
+  console.log(`[lambda] storage: bucket "${VIDEO_BUCKET}" oluşturuldu ✓`)
+  _storageReady = true
 }
 
 // ── Yüklü remotion sürümünü oku ─────────────────────────────────
@@ -228,13 +266,13 @@ async function _s3Download(bucket: string, key: string): Promise<Buffer> {
 
 // ── Buffer → Supabase Storage ─────────────────────────────────────
 async function _supabaseUpload(buf: Buffer, jobId: string): Promise<string> {
-  const sb   = _supabase()
-  const path = `videos/${jobId}.mp4`
+  const sb      = _supabase()
+  const stoPath = `videos/${jobId}.mp4`
   const { error } = await sb.storage
-    .from('video-outputs')
-    .upload(path, buf, { contentType: 'video/mp4', upsert: true })
+    .from(VIDEO_BUCKET)
+    .upload(stoPath, buf, { contentType: 'video/mp4', upsert: true })
   if (error) throw new Error(`Supabase upload hatası: ${error.message}`)
-  return sb.storage.from('video-outputs').getPublicUrl(path).data.publicUrl
+  return sb.storage.from(VIDEO_BUCKET).getPublicUrl(stoPath).data.publicUrl
 }
 
 // ── Backend callback ─────────────────────────────────────────────
@@ -444,16 +482,32 @@ app.post('/render', (req, res) => {
       )
 
       // S3 → Supabase
-      let videoUrl = ''
+      const s3Key        = _s3KeyFromOutput(result.outputFile, result.renderId, result.bucketName)
+      const s3BackupPath = `s3://${result.bucketName}/${s3Key}`
+      let videoUrl       = ''
+
       if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-        const s3Key = _s3KeyFromOutput(result.outputFile, result.renderId, result.bucketName)
-        console.log(`[lambda] S3'ten indiriliyor: s3://${result.bucketName}/${s3Key} (outputFile: ${result.outputFile})`)
+        console.log(`[lambda] S3'ten indiriliyor: ${s3BackupPath}`)
         const buf = await _s3Download(result.bucketName, s3Key)
-        videoUrl  = await _supabaseUpload(buf, job_id)
-        console.log(
-          `[lambda] Supabase'e yüklendi` +
-          ` (${(buf.length / 1024 / 1024).toFixed(1)} MB): ${videoUrl}`,
-        )
+
+        try {
+          videoUrl = await _supabaseUpload(buf, job_id)
+          console.log(`[lambda] Supabase'e yüklendi (${(buf.length / 1024 / 1024).toFixed(1)} MB): ${videoUrl}`)
+        } catch (uploadErr) {
+          // Upload başarısız — S3 yolu callback'e yazılır; rescue her zaman mümkün
+          const uploadMsg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr)
+          console.error(`[lambda] Supabase upload hatası job=${job_id}: ${uploadMsg}`)
+          console.error(`[lambda] Video S3'te güvende: ${s3BackupPath}`)
+          await _callback(job_id, 'failed', {
+            error:          `Supabase upload başarısız: ${uploadMsg}`,
+            s3_backup_path: s3BackupPath,
+            render_id:      result.renderId,
+            bucket_name:    result.bucketName,
+            composition_id: compositionId,
+            elapsed_seconds: totalElapsed(),
+          })
+          return
+        }
       }
 
       await _callback(job_id, 'done', {
@@ -461,6 +515,7 @@ app.post('/render', (req, res) => {
         composition_id:  compositionId,
         render_id:       result.renderId,
         bucket_name:     result.bucketName,
+        s3_backup_path:  s3BackupPath,
         cost_lambda_usd: result.costUsd,
         elapsed_seconds: totalElapsed(),
       })
@@ -487,11 +542,15 @@ app.post('/render', (req, res) => {
 // ── GET /health ───────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
   _resetIfNewDay()
+  const lambdaReady   = !!(LAMBDA_FUNCTION && SERVE_URL)
+  const allReady      = lambdaReady && _storageReady
   res.json({
-    ok:               true,
+    ok:               allReady,
     service:          'remotion-lambda-bridge-v2',
     port:             PORT,
-    lambda_ready:     !!(LAMBDA_FUNCTION && SERVE_URL),
+    lambda_ready:     lambdaReady,
+    storage_ready:    _storageReady,
+    storage_bucket:   VIDEO_BUCKET,
     lambda_function:  LAMBDA_FUNCTION  || '(eksik)',
     lambda_region:    LAMBDA_REGION,
     serve_url:        SERVE_URL ? '(ayarlı)' : '(eksik)',
@@ -511,34 +570,39 @@ app.get('/compositions', (_req, res) => {
 })
 
 // ── POST /rescue ──────────────────────────────────────────────────
-// S3'te tamamlanmış ama Supabase'e aktarılamamış render'ı kurtarır.
-// Body: { job_id, render_id, bucket_name }
-app.post('/rescue', async (req, res) => {
-  const { job_id, render_id, bucket_name } = req.body as {
-    job_id: string; render_id: string; bucket_name: string
-  }
-  if (!job_id || !render_id || !bucket_name) {
-    return res.status(400).json({ error: 'job_id, render_id ve bucket_name gerekli' })
-  }
-  console.log(`[lambda] rescue başlıyor: job=${job_id} render=${render_id} bucket=${bucket_name}`)
+// S3'te tamamlanmış ama Supabase'e aktarılamamış render'ları kurtarır.
+// Tek iş: { job_id, render_id, bucket_name }
+// Toplu:  [{ job_id, render_id, bucket_name }, ...]
+interface RescueItem { job_id: string; render_id: string; bucket_name: string }
+
+async function _rescueOne(item: RescueItem): Promise<{ ok: boolean; job_id: string; video_url?: string; size_mb?: string; error?: string }> {
+  const { job_id, render_id, bucket_name } = item
+  console.log(`[lambda] rescue: job=${job_id} render=${render_id} bucket=${bucket_name}`)
   try {
-    const s3Key = `renders/${render_id}/out.mp4`
-    console.log(`[lambda] rescue S3'ten indiriliyor: s3://${bucket_name}/${s3Key}`)
-    const buf = await _s3Download(bucket_name, s3Key)
+    const s3Key    = `renders/${render_id}/out.mp4`
+    const buf      = await _s3Download(bucket_name, s3Key)
     const videoUrl = await _supabaseUpload(buf, job_id)
-    console.log(`[lambda] rescue Supabase'e yüklendi (${(buf.length / 1024 / 1024).toFixed(1)} MB): ${videoUrl}`)
-    await _callback(job_id, 'done', {
-      video_url:      videoUrl,
-      render_id,
-      bucket_name,
-      rescued:        true,
-    })
-    res.json({ ok: true, video_url: videoUrl, size_mb: (buf.length / 1024 / 1024).toFixed(1) })
+    console.log(`[lambda] rescue tamam: job=${job_id} (${(buf.length / 1024 / 1024).toFixed(1)} MB) → ${videoUrl}`)
+    await _callback(job_id, 'done', { video_url: videoUrl, render_id, bucket_name, rescued: true })
+    return { ok: true, job_id, video_url: videoUrl, size_mb: (buf.length / 1024 / 1024).toFixed(1) }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[lambda] rescue HATA job=${job_id}:`, msg)
-    res.status(500).json({ error: msg })
+    return { ok: false, job_id, error: msg }
   }
+}
+
+app.post('/rescue', async (req, res) => {
+  const items: RescueItem[] = Array.isArray(req.body) ? req.body : [req.body]
+  const invalid = items.find(i => !i.job_id || !i.render_id || !i.bucket_name)
+  if (invalid) {
+    return res.status(400).json({ error: 'Her iş için job_id, render_id ve bucket_name gerekli' })
+  }
+  // Sıralı çalıştır — birden fazla işte paralel S3 indirme Supabase'i zorlayabilir
+  const results = []
+  for (const item of items) results.push(await _rescueOne(item))
+  const allOk = results.every(r => r.ok)
+  res.status(allOk ? 200 : 207).json(results.length === 1 ? results[0] : results)
 })
 
 // ── Graceful shutdown ─────────────────────────────────────────────
@@ -556,6 +620,9 @@ process.on('unhandledRejection', reason => console.error('[lambda] unhandledReje
 
 // ── Başlat ────────────────────────────────────────────────────────
 console.log(`[lambda] Lambda Bridge v2 başlıyor PORT=${PORT}`)
+// Bucket varlığını başlangıçta kontrol et / oluştur
+_ensureBucket().catch(e => console.error('[lambda] _ensureBucket hatası:', e))
+
 app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`[lambda] hazır → 0.0.0.0:${PORT}`)
   console.log(`[lambda] function=${LAMBDA_FUNCTION || '(eksik)'}`)
