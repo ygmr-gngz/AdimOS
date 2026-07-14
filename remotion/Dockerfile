@@ -16,9 +16,9 @@ ENV BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --include=dev
+# Sigorta: typescript kurulmadıysa burada anında patlıyor (tsc: not found sürprizi yok)
+RUN node_modules/.bin/tsc --version
 COPY . .
-
-# TypeScript server kodunu derle
 RUN npm run build
 
 EXPOSE 3001

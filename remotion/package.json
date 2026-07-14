@@ -6,7 +6,7 @@
   "scripts": {
     "studio": "npx remotion studio src/index.ts",
     "render:quiz": "npx remotion render src/index.ts QuizVideo out/quiz.mp4",
-    "build": "tsc -p tsconfig.server.json",
+    "build": "npx tsc -p tsconfig.server.json",
     "start": "node dist/server/index.js"
   },
   "engines": {
