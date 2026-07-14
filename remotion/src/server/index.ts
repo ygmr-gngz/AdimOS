@@ -539,6 +539,18 @@ app.post('/render', (req, res) => {
   _processQueue()
 })
 
+// ── SERVE_URL'den Lambda S3 bucket adını çıkar ───────────────────
+function _lambdaS3Bucket(): string {
+  if (!SERVE_URL) return '(eksik)'
+  try {
+    const u = new URL(SERVE_URL)
+    // virtual-hosted: remotionlambda-xxx.s3.region.amazonaws.com
+    if (u.hostname.startsWith('remotionlambda')) return u.hostname.split('.')[0]
+    // path-style: s3.region.amazonaws.com/remotionlambda-xxx/...
+    return u.pathname.split('/').filter(Boolean)[0] || '(parse-hatası)'
+  } catch { return '(parse-hatası)' }
+}
+
 // ── GET /health ───────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
   _resetIfNewDay()
@@ -551,6 +563,7 @@ app.get('/health', (_req, res) => {
     lambda_ready:     lambdaReady,
     storage_ready:    _storageReady,
     storage_bucket:   VIDEO_BUCKET,
+    lambda_s3_bucket: _lambdaS3Bucket(),
     lambda_function:  LAMBDA_FUNCTION  || '(eksik)',
     lambda_region:    LAMBDA_REGION,
     serve_url:        SERVE_URL ? '(ayarlı)' : '(eksik)',
