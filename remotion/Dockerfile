@@ -15,6 +15,7 @@ ENV BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 
 WORKDIR /app
 COPY package.json package-lock.json ./
+# cache-bust: 1 (artırmak npm ci katmanını sıfırlar)
 RUN npm ci --include=dev
 # Sigorta: typescript kurulmadıysa burada anında patlıyor (tsc: not found sürprizi yok)
 RUN node_modules/.bin/tsc --version
