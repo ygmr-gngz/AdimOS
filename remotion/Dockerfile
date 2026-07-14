@@ -13,11 +13,14 @@ RUN apt-get update && apt-get install -y \
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 
-COPY package.json package-lock.json ./
+# Explicit yol: build context repo kökü olduğunda doğru package.json'ı garantile
+COPY remotion/package.json remotion/package-lock.json ./
 RUN npm install --include=dev
-RUN npm exec tsc -- --version
 
-COPY . .
+# Sigorta: typescript kurulmadıysa burada net hata verir (sahte paket indirme yok)
+RUN ./node_modules/.bin/tsc --version
+
+COPY remotion/ .
 RUN npm run build
 
 EXPOSE 3001

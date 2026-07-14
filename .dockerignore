@@ -1,0 +1,12 @@
+**/node_modules/
+remotion/dist/
+remotion/out/
+**/*.log
+.git/
+frontend/
+backend/
+infrastructure/
+audit/
+deploy/
+.claude/
+pnpm-lock.yaml
