@@ -276,17 +276,50 @@ async function _supabaseUpload(buf: Buffer, jobId: string): Promise<string> {
 }
 
 // ── Backend callback ─────────────────────────────────────────────
+// Progress (status='rendering') loglanır ama backend'e gönderilmez:
+// backend handler'ı sadece 'done'/'failed' bekler; 'rendering' gönderilirse
+// else→failed dalına girer ve işi erken bitirir.
 async function _callback(
   jobId:  string,
   status: string,
   extra:  Record<string, unknown> = {},
 ) {
-  const target = `${BACKEND_URL}/video/render-callback`
-  await fetch(target, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ job_id: jobId, status, ...extra }),
-  }).catch(e => console.warn(`[lambda] callback hatası job=${jobId} → ${target}:`, e.message))
+  if (status === 'rendering') {
+    console.log(`[lambda] progress job=${jobId}`, JSON.stringify(extra))
+    return
+  }
+
+  const target = `${BACKEND_URL}/api/v1/video/render-callback`
+  const body   = JSON.stringify({ job_id: jobId, status, ...extra })
+
+  // 3 deneme, exponential backoff: 2s → 4s → 8s
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(target, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      })
+      if (res.ok) {
+        console.log(`[lambda] callback OK job=${jobId} status=${status} HTTP ${res.status}`)
+        return
+      }
+      console.warn(
+        `[lambda] callback HTTP ${res.status} job=${jobId} status=${status} girişim=${attempt}`,
+      )
+    } catch (e) {
+      console.warn(
+        `[lambda] callback ağ hatası job=${jobId} girişim=${attempt}:`,
+        (e as Error).message,
+      )
+    }
+    if (attempt < 3) {
+      await new Promise(r => setTimeout(r, 2_000 * Math.pow(2, attempt - 1)))
+    }
+  }
+  console.error(
+    `[lambda] callback 3 girişimde başarısız — job=${jobId} status=${status} target=${target}`,
+  )
 }
 
 // ── Render çekirdeği ─────────────────────────────────────────────
