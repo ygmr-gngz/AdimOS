@@ -32,6 +32,31 @@ export const PALETTE = {
   NEUTRAL: '#64748B',   // gri — nötr
 }
 
+// Konu anlatımı beyaz tema paleti — tüm lesson sahneleri buradan türetir
+export const LESSON_PALETTE = {
+  BG:       '#FFFFFF',
+  BG_ALT:   '#F8FAFC',
+  BG_CARD:  '#F1F5F9',
+  NAVY:     '#0B2A4A',
+  NAVY_DIM: 'rgba(11,42,74,0.08)',
+  GOLD:     '#C9A96E',
+  GOLD_DIM: 'rgba(201,169,110,0.12)',
+  BLUE:     '#2B7FE0',
+  DARK:     '#0B1E3C',
+  MID:      '#475569',
+  DIM:      '#94A3B8',
+  BORDER:   '#E2E8F0',
+  GREEN:    '#22C55E',
+  GREEN_BG: 'rgba(34,197,94,0.10)',
+  RED:      '#EF4444',
+  RED_BG:   'rgba(239,68,68,0.10)',
+  TEAL:     '#0D9488',
+  TEAL_BG:  'rgba(13,148,136,0.10)',
+  AMBER:    '#F59E0B',
+  AMBER_BG: 'rgba(245,158,11,0.10)',
+  PURPLE:   '#7C3AED',
+} as const
+
 export const FPS = 30
 
 export const DIMENSIONS = {

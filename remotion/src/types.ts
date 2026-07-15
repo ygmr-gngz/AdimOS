@@ -32,6 +32,12 @@ export type SceneComponent =
   | 'InfographicCardGridScene'
   | 'InfographicComparisonScene'
   | 'InfographicProcessScene'
+  // Konu anlatımı (LessonVideo)
+  | 'LessonTitleScene'
+  | 'LessonConceptScene'
+  | 'LessonCardScene'
+  | 'LessonExampleScene'
+  | 'LessonSummaryScene'
 
 export interface QuizOption {
   label: string        // A, B, C, D
@@ -68,7 +74,8 @@ export interface TAccountSide {
 // İnfografik kart
 export interface InfographicCard {
   title: string
-  category?: string         // rozet metni
+  code?: string             // hesap kodu (100, 102, 320 ...)
+  category?: string         // rozet metni (AKTİF, PASİF, GELİR, GİDER ...)
   category_color?: string   // rozet rengi hex
   content?: string          // ana açıklama
   rule?: string             // kural / not
@@ -124,6 +131,10 @@ export interface Scene {
   key_points?: string[]                                   // sol panel madde listesi
   right_panel_type?: 'ornek' | 'onemli' | 'sinav_notu'  // sağ panel renk/etiket
   right_content?: string                                  // sağ panel ana metin
+
+  // Konu anlatımı görsel
+  icon?: string            // emoji ikon (LessonTitleScene, LessonConceptScene)
+  visual_url?: string      // fotoğraf/görsel URL (isteğe bağlı)
 
   // İnfografik
   infographic_title?: string

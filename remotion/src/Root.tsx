@@ -2,6 +2,7 @@ import { Composition } from 'remotion'
 import { QuizVideo, getTotalFrames } from './compositions/QuizVideo'
 import { MotivationVideo, getMotivationTotalFrames } from './compositions/MotivationVideo'
 import { InfographicVideo, getInfographicTotalFrames } from './compositions/InfographicVideo'
+import { LessonVideo, getLessonTotalFrames } from './compositions/LessonVideo'
 import { StoryboardJSON } from './types'
 import { DEFAULT_BRAND, DIMENSIONS, FPS } from './brand'
 
@@ -106,60 +107,80 @@ const DEMO_MOTIVATION: StoryboardJSON = {
   ],
 }
 
-// Konu anlatımı demo storyboard
+// Konu anlatımı demo storyboard — yeni LessonVideo tasarımı
 const DEMO_LESSON: StoryboardJSON = {
   video_type: 'konu_anlatimi',
-  title: 'Anonim Şirket — Konu Anlatımı',
-  lesson_name: 'Ticaret Hukuku',
-  topic: 'Anonim Şirket',
+  title: 'Kasa Hesabı — Konu Anlatımı',
+  lesson_name: 'Muhasebe',
+  topic: 'Kasa Hesabı',
   format: '16:9',
   language: 'tr',
-  brand: DEFAULT_BRAND,
+  brand: { ...DEFAULT_BRAND, handle: '@adimmusavir' },
   scenes: [
     {
-      id: 1, component: 'SplitLessonScene', duration_seconds: 30,
-      question_number: 1, total_questions: 3,
-      title: 'Ticaret Hukuku — Anonim Şirket',
-      question_text: 'Anonim şirket, sermayesi belirli ve paylara bölünmüş olan, borçlarından yalnızca malvarlığıyla sorumlu bulunan şirkettir (TTK md. 329).',
-      key_points: [
-        'Asgari sermaye: 250.000 TL (halka açık: 500.000 TL)',
-        'En az 1 kurucu ortak yeterli (tek pay sahipli AŞ mümkün)',
-        'Ortakların sorumluluğu taahhüt ettikleri pay bedeli ile sınırlıdır',
-        'Zorunlu organlar: genel kurul + yönetim kurulu + denetim',
-      ],
-      right_panel_type: 'ornek',
-      right_content: 'ABC A.Ş. 1.000.000 TL sermaye ile kuruldu. Her biri 1 TL nominal değerli 1.000.000 pay ihraç edildi. Pay sahipleri yalnızca taahhüt ettikleri pay bedelini ödemekle yükümlüdür.',
-      explanation: 'TTK 329: "Anonim şirketin borçlarından dolayı yalnız şirket malvarlığı sorumludur." — Ortakların kişisel malvarlığına başvurulamaz.',
+      id: 1, component: 'LessonTitleScene', duration_seconds: 8,
+      icon: '💰', title: 'Kasa Hesabı',
+      subtitle: 'MUHASEBE',
+      key_point: '100 Nolu Hesap — Dönen Varlıklar grubu',
     },
     {
-      id: 2, component: 'SplitLessonScene', duration_seconds: 28,
-      question_number: 2, total_questions: 3,
-      title: 'Ticaret Hukuku — Anonim Şirket',
-      question_text: 'Yönetim Kurulu, anonim şirketin devredilemez ve vazgeçilemez yetkilerini kullanan zorunlu organıdır.',
-      key_points: [
-        'En az 1 üyeden oluşur; tüzel kişi üye atanabilir',
-        'Görev süresi maksimum 3 yıl (esas sözleşmeyle uzatılamaz)',
-        'YK kararları oy çokluğuyla alınır; her üyenin 1 oy hakkı',
-        'Temsil yetkisi devredilebilir (murahhas üye / müdür)',
+      id: 2, component: 'LessonConceptScene', duration_seconds: 14,
+      icon: '📌', title: 'Kasa Hesabı Nedir?',
+      definition: 'İşletmenin kasasında bulunan yerli ve yabancı para mevcutlarını izleyen aktif karakterli bir hesaptır.',
+      bullet_points: [
+        'Hesap kodu: 100 — Dönen Varlıklar grubu',
+        'Borç bakiyesi verir; alacak bakiyesi vermez',
+        'Nakit giriş → Borçlandırılır (Artış)',
+        'Nakit çıkış → Alacaklandırılır (Azalış)',
       ],
-      right_panel_type: 'sinav_notu',
-      right_content: 'SGS sınav odağı: YK görev süresi (3 yıl), temsil yetkisinin devri, devredilemez yetkiler (TTK 375). Bu maddeler çoktan seçmeli sorularda doğrudan çıkar.',
-      explanation: 'TTK 375: Stratejik planlama, muhasebe sistemi, iç kontrol — bunlar YK\'nın devredilemez görevleridir.',
     },
     {
-      id: 3, component: 'SplitLessonScene', duration_seconds: 28,
-      question_number: 3, total_questions: 3,
-      title: 'Ticaret Hukuku — Anonim Şirket',
-      question_text: 'Genel Kurul, pay sahiplerinin en yüksek karar organıdır ve yılda en az bir kez olağan olarak toplanır.',
-      key_points: [
-        'Olağan GK: hesap dönemi bitiminden itibaren 3 ay içinde',
-        'Olağanüstü GK: zorunluluk hâlinde her zaman toplanabilir',
-        'Toplantı yeter sayısı: ödenmiş sermayenin en az ¼\'ü',
-        'Karar: toplantıda hazır bulunan payların oy çokluğu',
+      id: 3, component: 'LessonCardScene', duration_seconds: 16,
+      infographic_title: 'Kasa Hesabına Giren İşlemler',
+      infographic_subtitle: 'Borçlandırma ve Alacaklandırma',
+      cards: [
+        {
+          icon: '📈', title: 'Nakit Satış', category: 'Borç',
+          content: 'Mal veya hizmet nakit karşılığı satıldığında kasaya para girer.',
+          rule: 'Kasa hesabı BORÇLANIR',
+        },
+        {
+          icon: '🏦', title: 'Bankadan Çekim', category: 'Borç',
+          content: 'Bankadaki mevduattan nakit çekildiğinde kasaya aktarılır.',
+          rule: 'Kasa BORÇ / Banka ALACAK',
+        },
+        {
+          icon: '🛒', title: 'Nakit Alım', category: 'Alacak',
+          content: 'Mal, hizmet veya demirbaş peşin alındığında kasadan para çıkar.',
+          rule: 'Kasa hesabı ALACAKLANIR',
+        },
+        {
+          icon: '💳', title: 'Borç Ödeme', category: 'Alacak',
+          content: 'Alacaklılara nakit ödeme yapıldığında kasadan çıkar.',
+          rule: 'Kasa ALACAK / Borç hesabı BORÇ',
+        },
       ],
-      right_panel_type: 'onemli',
-      right_content: 'Esas sözleşme değişikliği gibi ağırlaştırılmış kararlarda toplantı yetersayısı ödenmiş sermayenin yarısı, karar yeter sayısı ise 2/3 oy aranır (TTK 421).',
-      explanation: 'Dikkat: Nisap hesabında "ödenmiş sermaye" esas alınır, toplam taahhüt edilen sermaye değil.',
+    },
+    {
+      id: 4, component: 'LessonExampleScene', duration_seconds: 20,
+      title: 'Nakit Satış Örneği',
+      question_text: 'İşletme 15.000 TL\'lik malı peşin sattı. KDV %20 hesabı yapılmamıştır. Bu işlemi yevmiye defterine kaydediniz.',
+      journal_rows: [
+        { code: '100', name: 'Kasa',          debit: 15000 },
+        { code: '600', name: '    Yurt İçi Satışlar', credit: 15000, indent: true },
+      ],
+      explanation: 'Nakit tahsilat yapıldığı için 100 Kasa borçlandırıldı, 600 Yurt İçi Satışlar alacaklandırıldı.',
+    },
+    {
+      id: 5, component: 'LessonSummaryScene', duration_seconds: 12,
+      title: 'Kasa Hesabı — Özet',
+      bullet_points: [
+        'Hesap kodu 100, Dönen Varlıklar grubunda yer alır',
+        'Nakit girişlerde borçlandırılır, nakit çıkışlarda alacaklandırılır',
+        'Dönem sonunda her zaman borç bakiyesi (veya sıfır) verir',
+        'Kasa sayım fazlası → 397 / sayım noksanı → 197 hesapla karşılaştırılır',
+      ],
+      key_point: 'Kasa hesabı HİÇBİR ZAMAN alacak bakiyesi vermez!',
     },
   ],
 }
@@ -250,17 +271,17 @@ export function Root() {
         }}
       />
       <Composition
-        id="LessonVideoDemo"
+        id="LessonVideo"
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        component={QuizVideo as any}
-        durationInFrames={getTotalFrames(DEMO_LESSON)}
+        component={LessonVideo as any}
+        durationInFrames={getLessonTotalFrames(DEMO_LESSON)}
         fps={FPS}
         width={dim.width}
         height={dim.height}
         defaultProps={{ storyboard: DEMO_LESSON }}
         calculateMetadata={({ props }) => {
           const sb = (props as { storyboard: StoryboardJSON }).storyboard
-          return { durationInFrames: getTotalFrames(sb), width: DIMENSIONS[sb.format].width, height: DIMENSIONS[sb.format].height }
+          return { durationInFrames: getLessonTotalFrames(sb), width: DIMENSIONS[sb.format].width, height: DIMENSIONS[sb.format].height }
         }}
       />
     </>

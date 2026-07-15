@@ -161,8 +161,8 @@ const COMPOSITION_MAP: Record<string, string> = {
   'infographic':            'InfographicVideo',
   'lesson':                 'InfographicVideo',
   // Konu anlatımı (uzun format)
-  'konu_anlatimi':          'LessonVideoDemo',
-  'sgs_topic_video':        'LessonVideoDemo',
+  'konu_anlatimi':          'LessonVideo',
+  'sgs_topic_video':        'LessonVideo',
 }
 
 function resolveComposition(videoType: string, format: string): string | null {
