@@ -7,7 +7,8 @@
     "studio": "npx remotion studio src/index.ts",
     "render:quiz": "npx remotion render src/index.ts QuizVideo out/quiz.mp4",
     "build": "npx tsc -p tsconfig.server.json",
-    "start": "node dist/server/index.js"
+    "start": "node dist/server/index.js",
+    "deploy:site": "tsx scripts/deploy-site.ts"
   },
   "engines": {
     "node": ">=22"

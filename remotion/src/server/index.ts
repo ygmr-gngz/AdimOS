@@ -120,6 +120,8 @@ function _assertVersionMatch(functionName: string): void {
 const app = express()
 app.use(express.json({ limit: '10mb' }))
 
+const TEMPLATE_VERSION = 'quiz-board-v2'
+
 const PORT            = process.env.PORT || 3001
 const LAMBDA_FUNCTION = process.env.REMOTION_LAMBDA_FUNCTION_NAME || ''
 const LAMBDA_REGION   = (process.env.AWS_REGION || 'eu-central-1') as Parameters<typeof getRenderProgress>[0]['region']
@@ -341,29 +343,24 @@ async function _doRender(
   _assertVersionMatch(LAMBDA_FUNCTION)
 
   // Composition'ın bundle'da gerçekten var olduğunu doğrula — ücretli render öncesi erken hata
-  try {
-    const allComps = await getCompositionsOnLambda({
-      region:       LAMBDA_REGION,
-      functionName: LAMBDA_FUNCTION,
-      serveUrl:     SERVE_URL,
-      inputProps:   {},   // storyboard olmadan composition listesini almak yeterli
-    })
-    const found = allComps.find((c: { id: string }) => c.id === compositionId)
-    if (!found) {
-      const available = allComps.map((c: { id: string }) => c.id).join(', ')
-      throw new Error(
-        `Composition bulunamadı: "${compositionId}". ` +
-        `Bundle'da mevcut: ${available}. ` +
-        `Çözüm: Remotion bundle'ı yeniden deploy et → npx remotion lambda sites create --site-name=<site>`,
-      )
-    }
-  } catch (e) {
-    // getCompositionsOnLambda'nın kendisi başarısız olduysa (ağ, IAM izni vb.) → logla ve devam et
-    // "Composition bulunamadı" hatasıysa yeniden fırlat
-    const msg = (e as Error).message ?? ''
-    if (msg.includes('Composition bulunamadı')) throw e
-    console.warn(`[lambda] getCompositionsOnLambda kontrolü başarısız — atlanıyor: ${msg}`)
+  // Try-catch yok: herhangi bir hata (ağ, IAM, calculateMetadata crash) doğrudan fırlatılır.
+  // Bu sayede renderMediaOnLambda'ya ulaşmadan iş failed olur ve gereksiz Lambda ücreti oluşmaz.
+  const allComps = await getCompositionsOnLambda({
+    region:       LAMBDA_REGION,
+    functionName: LAMBDA_FUNCTION,
+    serveUrl:     SERVE_URL,
+    inputProps:   {},   // storyboard olmadan composition listesini almak yeterli
+  })
+  const _found = allComps.find((c: { id: string }) => c.id === compositionId)
+  if (!_found) {
+    const available = allComps.map((c: { id: string }) => c.id).join(', ')
+    throw new Error(
+      `Composition bulunamadı: "${compositionId}". ` +
+      `Bundle'da mevcut: ${available}. ` +
+      `Çözüm: Remotion bundle'ı yeniden deploy et → npx remotion lambda sites create --site-name=<site>`,
+    )
   }
+  console.log(`[lambda] composition doğrulandı: "${compositionId}" ✓ (template=${TEMPLATE_VERSION})`)
 
   const { renderId, bucketName } = await renderMediaOnLambda({
     region:          LAMBDA_REGION,
@@ -701,6 +698,7 @@ app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`[lambda] serveUrl=${SERVE_URL ? '(ayarlı)' : '(eksik)'}`)
   console.log(`[lambda] backendUrl=${BACKEND_URL}`)
   console.log(`[lambda] remotion paketi=${INSTALLED_REMOTION_VERSION}`)
+  console.log(`[lambda] template=${TEMPLATE_VERSION}`)
   const lambdaVer = _parseLambdaVersion(LAMBDA_FUNCTION)
   if (lambdaVer && lambdaVer !== INSTALLED_REMOTION_VERSION) {
     console.error(`[lambda] UYARI: Sürüm uyumsuzluğu — Lambda=${lambdaVer} paket=${INSTALLED_REMOTION_VERSION} — render'lar anında başarısız olacak`)

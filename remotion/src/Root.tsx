@@ -224,8 +224,9 @@ export function Root() {
         height={dimV.height}
         defaultProps={{ storyboard: DEMO_SPLIT_VERTICAL }}
         calculateMetadata={({ props }) => {
-          const sb = (props as { storyboard: StoryboardJSON }).storyboard
-          return { durationInFrames: getTotalFrames(sb), width: DIMENSIONS[sb.format].width, height: DIMENSIONS[sb.format].height }
+          const sb = (props as { storyboard?: StoryboardJSON }).storyboard
+          const fmt = sb?.format ?? '9:16'
+          return { durationInFrames: getTotalFrames(sb), width: DIMENSIONS[fmt].width, height: DIMENSIONS[fmt].height }
         }}
       />
       <Composition
@@ -238,8 +239,9 @@ export function Root() {
         height={dim.height}
         defaultProps={{ storyboard: DEMO_STORYBOARD }}
         calculateMetadata={({ props }) => {
-          const sb = (props as { storyboard: StoryboardJSON }).storyboard
-          return { durationInFrames: getTotalFrames(sb), width: DIMENSIONS[sb.format].width, height: DIMENSIONS[sb.format].height }
+          const sb = (props as { storyboard?: StoryboardJSON }).storyboard
+          const fmt = sb?.format ?? '16:9'
+          return { durationInFrames: getTotalFrames(sb), width: DIMENSIONS[fmt].width, height: DIMENSIONS[fmt].height }
         }}
       />
       <Composition
@@ -252,8 +254,9 @@ export function Root() {
         height={dimV.height}
         defaultProps={{ storyboard: DEMO_MOTIVATION }}
         calculateMetadata={({ props }) => {
-          const sb = (props as { storyboard: StoryboardJSON }).storyboard
-          return { durationInFrames: getMotivationTotalFrames(sb), width: DIMENSIONS[sb.format].width, height: DIMENSIONS[sb.format].height }
+          const sb = (props as { storyboard?: StoryboardJSON }).storyboard
+          const fmt = sb?.format ?? '9:16'
+          return { durationInFrames: getMotivationTotalFrames(sb), width: DIMENSIONS[fmt].width, height: DIMENSIONS[fmt].height }
         }}
       />
       <Composition
@@ -266,8 +269,9 @@ export function Root() {
         height={dimV.height}
         defaultProps={{ storyboard: DEMO_INFOGRAPHIC }}
         calculateMetadata={({ props }) => {
-          const sb = (props as { storyboard: StoryboardJSON }).storyboard
-          return { durationInFrames: getInfographicTotalFrames(sb), width: DIMENSIONS[sb.format].width, height: DIMENSIONS[sb.format].height }
+          const sb = (props as { storyboard?: StoryboardJSON }).storyboard
+          const fmt = sb?.format ?? '9:16'
+          return { durationInFrames: getInfographicTotalFrames(sb), width: DIMENSIONS[fmt].width, height: DIMENSIONS[fmt].height }
         }}
       />
       <Composition
@@ -280,8 +284,9 @@ export function Root() {
         height={dim.height}
         defaultProps={{ storyboard: DEMO_LESSON }}
         calculateMetadata={({ props }) => {
-          const sb = (props as { storyboard: StoryboardJSON }).storyboard
-          return { durationInFrames: getLessonTotalFrames(sb), width: DIMENSIONS[sb.format].width, height: DIMENSIONS[sb.format].height }
+          const sb = (props as { storyboard?: StoryboardJSON }).storyboard
+          const fmt = sb?.format ?? '16:9'
+          return { durationInFrames: getLessonTotalFrames(sb), width: DIMENSIONS[fmt].width, height: DIMENSIONS[fmt].height }
         }}
       />
       {/* LessonVideoDemo — geriye dönük uyumluluk: eski S3 bundle'ında bu ID kayıtlıydı */}
@@ -295,8 +300,9 @@ export function Root() {
         height={dim.height}
         defaultProps={{ storyboard: DEMO_LESSON }}
         calculateMetadata={({ props }) => {
-          const sb = (props as { storyboard: StoryboardJSON }).storyboard
-          return { durationInFrames: getLessonTotalFrames(sb), width: DIMENSIONS[sb.format].width, height: DIMENSIONS[sb.format].height }
+          const sb = (props as { storyboard?: StoryboardJSON }).storyboard
+          const fmt = sb?.format ?? '16:9'
+          return { durationInFrames: getLessonTotalFrames(sb), width: DIMENSIONS[fmt].width, height: DIMENSIONS[fmt].height }
         }}
       />
     </>

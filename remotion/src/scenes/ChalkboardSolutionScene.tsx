@@ -77,8 +77,8 @@ function QuestionPanel({ scene, brand, fadeIn }: {
           borderRadius: 12, padding: '16px 18px', marginBottom: 22,
         }}>
           <p style={{
-            fontSize: 17, fontFamily: HEAD_FONT, fontWeight: 600,
-            color: L.DARK, lineHeight: 1.65, margin: 0,
+            fontSize: 34, fontFamily: HEAD_FONT, fontWeight: 600,
+            color: L.DARK, lineHeight: 1.55, margin: 0,
           }}>
             {scene.question_text}
           </p>
@@ -106,7 +106,7 @@ function QuestionPanel({ scene, brand, fadeIn }: {
                   flexShrink: 0, marginTop: 2,
                 }} />
                 <span style={{
-                  fontSize: 16, color: L.DARK, fontFamily: MATH_FONT,
+                  fontSize: 28, color: L.DARK, fontFamily: MATH_FONT,
                   fontWeight: 700, lineHeight: 1.45,
                 }}>
                   {g}
@@ -131,7 +131,7 @@ function QuestionPanel({ scene, brand, fadeIn }: {
             borderRadius: 10, padding: '10px 16px',
           }}>
             <span style={{
-              fontSize: 16, color: L.NAVY, fontFamily: MATH_FONT,
+              fontSize: 28, color: L.NAVY, fontFamily: MATH_FONT,
               fontWeight: 800,
             }}>
               {scene.asked}
@@ -265,7 +265,7 @@ function ChalkboardPanel({ steps, frame, totalFrames, brand }: {
 
                   {/* Tahta metni */}
                   <div style={{
-                    fontSize: isActive ? 22 : 20,
+                    fontSize: isActive ? 44 : 36,
                     fontFamily: MATH_FONT,
                     fontWeight: isActive ? 700 : 600,
                     color: isActive ? color : (isPast ? L.MID : color),
@@ -372,9 +372,9 @@ export function ChalkboardSolutionScene({ scene, brand }: Props) {
       {(showMistake || showTip || showAnswer) && (
         <div style={{
           borderTop: `1px solid ${L.BORDER}`,
-          padding: '10px 40px',
+          padding: '14px 40px',
           display: 'flex', gap: 16, alignItems: 'center',
-          background: L.BG, zIndex: 5, minHeight: 56,
+          background: L.BG, zIndex: 5, minHeight: 72,
         }}>
           {showMistake && (
             <div style={{
@@ -383,7 +383,7 @@ export function ChalkboardSolutionScene({ scene, brand }: Props) {
             }}>
               <span style={{ fontSize: 16 }}>⚠️</span>
               <span style={{
-                fontSize: 14, color: L.RED, fontFamily: 'Lato',
+                fontSize: 22, color: L.RED, fontFamily: 'Lato',
                 fontWeight: 700, lineHeight: 1.45,
               }}>
                 {scene.common_mistake}
@@ -397,7 +397,7 @@ export function ChalkboardSolutionScene({ scene, brand }: Props) {
             }}>
               <span style={{ fontSize: 16 }}>💡</span>
               <span style={{
-                fontSize: 14, color: L.AMBER, fontFamily: 'Lato',
+                fontSize: 22, color: L.AMBER, fontFamily: 'Lato',
                 fontWeight: 700, lineHeight: 1.45,
               }}>
                 {scene.exam_tip}
@@ -413,7 +413,7 @@ export function ChalkboardSolutionScene({ scene, brand }: Props) {
             }}>
               <span style={{ fontSize: 14 }}>✅</span>
               <span style={{
-                fontSize: 15, color: '#166534', fontFamily: MATH_FONT,
+                fontSize: 48, color: '#166534', fontFamily: MATH_FONT,
                 fontWeight: 900, letterSpacing: 0.5,
               }}>
                 {scene.answer}
