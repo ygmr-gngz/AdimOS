@@ -212,3 +212,38 @@ Sadece JSON döndür. Başka hiçbir metin yok."""
                 "platform.openai.com/account/billing adresinden kredi ekleyin."
             ) from e
         raise RuntimeError(f"SGS soru storyboard üretimi başarısız: {e}") from e
+
+
+def generate_sgs_topic_storyboard(
+    title: str,
+    topic: str,
+    subject: str,
+    questions: list[dict],
+) -> dict:
+    """
+    service.py moviepy pipeline için geriye dönük uyumluluk sarmalayıcı.
+
+    generate_sgs_question_storyboard() çağırır ve Remotion formatındaki çıktıyı
+    moviepy pipeline'ının beklediği alanlara (narration, type) uyarlar.
+    """
+    raw = generate_sgs_question_storyboard(title, topic, subject, questions)
+    scenes_raw = raw.get("scenes", [])
+
+    adapted_scenes = []
+    for s in scenes_raw:
+        adapted = dict(s)
+        # moviepy pipeline narration alanını okur; Remotion pipeline voice_text kullanır
+        if "narration" not in adapted:
+            adapted["narration"] = s.get("voice_text", "")
+        # moviepy pipeline type alanını loglar; Remotion pipeline component kullanır
+        if "type" not in adapted:
+            adapted["type"] = s.get("component", "unknown")
+        adapted_scenes.append(adapted)
+
+    return {
+        "title": title,
+        "description": f"{subject} — {topic} — {len(questions)} soru çözümü",
+        "tags": ["sgs", subject.lower(), topic.lower(), "çıkmış sorular"],
+        "estimated_duration_minutes": len(questions) * 3,
+        "scenes": adapted_scenes,
+    }
