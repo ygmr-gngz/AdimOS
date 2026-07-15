@@ -11,6 +11,7 @@
 import { interpolate, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
 import { Scene, BrandConfig, ChalkboardStep } from '../types'
 import { LESSON_PALETTE as L } from '../brand'
+import { BrandWatermark } from '../components/BrandWatermark'
 
 interface Props { scene: Scene; brand: BrandConfig }
 
@@ -337,21 +338,8 @@ export function ChalkboardSolutionScene({ scene, brand }: Props) {
       fontFamily: MATH_FONT,
       overflow: 'hidden', position: 'relative',
     }}>
-      {/* Filigran */}
-      <div style={{
-        position: 'absolute', inset: 0,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        pointerEvents: 'none', overflow: 'hidden', zIndex: 0,
-      }}>
-        <span style={{
-          fontSize: 140, fontWeight: 900, letterSpacing: '0.10em',
-          textTransform: 'uppercase', color: L.NAVY,
-          opacity: 0.03, transform: 'rotate(-12deg)', whiteSpace: 'nowrap',
-          userSelect: 'none', fontFamily: 'Lato',
-        }}>
-          ADIM MÜŞAVİRLİK
-        </span>
-      </div>
+      {/* Marka filigranı */}
+      <BrandWatermark theme="light" opacity={0.04} />
 
       {/* Üst lacivert şerit */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, background: L.NAVY, zIndex: 10 }} />

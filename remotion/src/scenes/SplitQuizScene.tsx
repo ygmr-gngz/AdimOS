@@ -7,6 +7,7 @@
 import { interpolate, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
 import { BrandConfig, Scene, SolutionStep } from '../types'
 import { PALETTE } from '../brand'
+import { BrandWatermark } from '../components/BrandWatermark'
 
 const ACCENT      = PALETTE.ACCENT        // #2B7FE0
 const WHITE       = '#FFFFFF'
@@ -142,21 +143,8 @@ export function SplitQuizScene({ scene, brand }: Props) {
       display: 'flex', flexDirection: 'row',
       fontFamily: brand.font_body, overflow: 'hidden', position: 'relative',
     }}>
-      {/* Logo filigran — merkezi, %5 opaklık */}
-      <div style={{
-        position: 'absolute', inset: 0,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        pointerEvents: 'none', zIndex: 1, overflow: 'hidden',
-      }}>
-        <span style={{
-          fontSize: 96, fontWeight: 900, letterSpacing: '0.06em',
-          textTransform: 'uppercase', color: ACCENT,
-          opacity: 0.05, transform: 'rotate(-15deg)', whiteSpace: 'nowrap',
-          userSelect: 'none',
-        }}>
-          ADIM MÜŞAVİRLİK
-        </span>
-      </div>
+      {/* Marka filigranı */}
+      <BrandWatermark theme="light" opacity={0.045} />
 
       {/* ── Sol Panel: Soru (55%) ───────────────────────────── */}
       <div style={{

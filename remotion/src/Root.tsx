@@ -5,6 +5,7 @@ import { InfographicVideo, getInfographicTotalFrames } from './compositions/Info
 import { LessonVideo, getLessonTotalFrames } from './compositions/LessonVideo'
 import { StoryboardJSON } from './types'
 import { DEFAULT_BRAND, DIMENSIONS, FPS } from './brand'
+import { getTotalFrames as utils_getTotalFrames } from './utils'
 
 // Remotion Studio'da önizleme için örnek storyboard
 const DEMO_STORYBOARD: StoryboardJSON = {
@@ -303,6 +304,22 @@ export function Root() {
           const sb = (props as { storyboard?: StoryboardJSON }).storyboard
           const fmt = sb?.format ?? '16:9'
           return { durationInFrames: getLessonTotalFrames(sb), width: DIMENSIONS[fmt].width, height: DIMENSIONS[fmt].height }
+        }}
+      />
+      {/* EducationalReel — kısa eğitim içeriği (9:16, 15–45 sn) */}
+      <Composition
+        id="EducationalReel"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={MotivationVideo as any}
+        durationInFrames={getMotivationTotalFrames(DEMO_MOTIVATION)}
+        fps={FPS}
+        width={dimV.width}
+        height={dimV.height}
+        defaultProps={{ storyboard: DEMO_MOTIVATION }}
+        calculateMetadata={({ props }) => {
+          const sb = (props as { storyboard?: StoryboardJSON }).storyboard
+          const fmt = sb?.format ?? '9:16'
+          return { durationInFrames: utils_getTotalFrames(sb), width: DIMENSIONS[fmt].width, height: DIMENSIONS[fmt].height }
         }}
       />
     </>

@@ -124,7 +124,9 @@ const TEMPLATE_VERSION = 'quiz-board-v2'
 
 // REMOTION_PREFLIGHT_STRICT=true → altyapı hatası render'ı durdurur
 // REMOTION_PREFLIGHT_STRICT=false (varsayılan) → altyapı hatası loglanır, yerel allowlist ile devam
-const PREFLIGHT_STRICT = process.env.REMOTION_PREFLIGHT_STRICT === 'true'
+// String() ile parse — "True" / " true " / "TRUE" gibi varyantları da yakalar
+const PREFLIGHT_STRICT =
+  String(process.env.REMOTION_PREFLIGHT_STRICT ?? 'false').trim().toLowerCase() === 'true'
 
 const PORT            = process.env.PORT || 3001
 const LAMBDA_FUNCTION = process.env.REMOTION_LAMBDA_FUNCTION_NAME || ''
@@ -149,26 +151,39 @@ const BACKEND_URL = _normalizeBackendUrl(process.env.BACKEND_URL)
 // Anahtar: "<video_type>:<format>" veya "<video_type>"
 // Değer: src/index.ts'de registerRoot ile kayıtlı composition ID
 const COMPOSITION_MAP: Record<string, string> = {
-  // Soru çözümü 16:9
-  'soru_cozumu:16:9':       'QuizVideo',
-  'quiz:16:9':              'QuizVideo',
-  // Soru çözümü 9:16 (dikey kısa içerik)
-  'soru_cozumu:9:16':       'SplitQuizVerticalDemo',
-  'quiz:9:16':              'SplitQuizVerticalDemo',
-  'shorts:9:16':            'SplitQuizVerticalDemo',
-  'shorts':                 'SplitQuizVerticalDemo',
-  'kisa_icerik:9:16':       'SplitQuizVerticalDemo',
-  'kisa_icerik':            'SplitQuizVerticalDemo',
-  // Motivasyon
-  'motivasyon':             'MotivationVideo',
-  'motivation':             'MotivationVideo',
-  // İnfografik animasyon
-  'infografik_animasyon':   'InfographicVideo',
-  'infographic':            'InfographicVideo',
-  'lesson':                 'InfographicVideo',
-  // Konu anlatımı (uzun format)
-  'konu_anlatimi':          'LessonVideo',
-  'sgs_topic_video':        'LessonVideo',
+  // ── Soru çözümü 16:9 (tek soru veya soru seti) ────────────────
+  'soru_cozumu:16:9':         'QuizVideo',
+  'quiz:16:9':                'QuizVideo',
+  'single_question:16:9':     'QuizVideo',
+  'question_set_long:16:9':   'QuizVideo',
+  'question_set_long':        'QuizVideo',
+  // ── Soru çözümü 9:16 (dikey kısa içerik) ─────────────────────
+  'soru_cozumu:9:16':         'SplitQuizVerticalDemo',
+  'quiz:9:16':                'SplitQuizVerticalDemo',
+  'single_question:9:16':     'SplitQuizVerticalDemo',
+  'shorts:9:16':              'SplitQuizVerticalDemo',
+  'shorts':                   'SplitQuizVerticalDemo',
+  'kisa_icerik:9:16':         'SplitQuizVerticalDemo',
+  // ── Motivasyon Reels ───────────────────────────────────────────
+  'motivasyon':               'MotivationVideo',
+  'motivation':               'MotivationVideo',
+  'motivation_reel':          'MotivationVideo',
+  'motivation_reel:9:16':     'MotivationVideo',
+  // ── Kısa eğitim içeriği (EducationalReel) ─────────────────────
+  'educational_reel':         'EducationalReel',
+  'educational_reel:9:16':    'EducationalReel',
+  'bilgilendirme_kisa':       'EducationalReel',
+  'bilgilendirme_kisa:9:16':  'EducationalReel',
+  'kisa_icerik':              'EducationalReel',
+  // ── İnfografik animasyon ──────────────────────────────────────
+  'infografik_animasyon':     'InfographicVideo',
+  'infografik':               'InfographicVideo',
+  'infographic':              'InfographicVideo',
+  'lesson':                   'InfographicVideo',
+  // ── Konu anlatımı (uzun format) ───────────────────────────────
+  'konu_anlatimi':            'LessonVideo',
+  'lesson_long':              'LessonVideo',
+  'sgs_topic_video':          'LessonVideo',
 }
 
 function resolveComposition(videoType: string, format: string): string | null {
@@ -183,17 +198,47 @@ function resolveComposition(videoType: string, format: string): string | null {
 const ALLOWED_COMPOSITIONS = new Set(Object.values(COMPOSITION_MAP))
 
 // ── Toplam kare tahmini ──────────────────────────────────────────
-function estimateTotalFrames(storyboard: any): number {
-  if (storyboard?.total_frames)              return storyboard.total_frames
-  if (storyboard?.duration_seconds)          return Math.ceil(storyboard.duration_seconds * FPS)
-  if (storyboard?.duration_target_minutes)   return Math.ceil(storyboard.duration_target_minutes * 60 * FPS)
+function estimateTotalFrames(storyboard: any, jobId?: string): number {
+  const tag = jobId ? ` job=${jobId}` : ''
+
+  if (storyboard?.total_frames) {
+    const v = storyboard.total_frames
+    console.log(`[lambda] frames${tag} kaynak=total_frames değer=${v}`)
+    return v
+  }
+  if (storyboard?.duration_seconds) {
+    const v = Math.ceil(storyboard.duration_seconds * FPS)
+    console.log(`[lambda] frames${tag} kaynak=duration_seconds değer=${v} (${storyboard.duration_seconds}s)`)
+    return v
+  }
+  if (storyboard?.duration_target_minutes) {
+    const v = Math.ceil(storyboard.duration_target_minutes * 60 * FPS)
+    console.log(`[lambda] frames${tag} kaynak=duration_target_minutes değer=${v} (${storyboard.duration_target_minutes}dk)`)
+    return v
+  }
   if (Array.isArray(storyboard?.scenes) && storyboard.scenes.length > 0) {
-    const totalSec = storyboard.scenes.reduce(
+    const scenes = storyboard.scenes
+    const totalSec = scenes.reduce(
       (acc: number, s: any) => acc + (s.duration_seconds ?? s.duration ?? 5),
       0,
     )
-    if (totalSec > 0) return Math.ceil(totalSec * FPS)
+    if (totalSec > 0) {
+      const v = Math.ceil(totalSec * FPS)
+      const avgSec = (totalSec / scenes.length).toFixed(1)
+      console.log(
+        `[lambda] frames${tag} kaynak=scene_sum sahne=${scenes.length} toplamSn=${totalSec.toFixed(1)}` +
+        ` ortalamaSn/sahne=${avgSec} değer=${v}`,
+      )
+      if (totalSec < 60) {
+        console.warn(
+          `[lambda] UYARI${tag}: toplam sahne süresi ${totalSec.toFixed(1)}s < 60s. ` +
+          `Backend'de her sahneye gerçek duration_seconds gönderilmeli (TTS süresi veya hedef).`
+        )
+      }
+      return v
+    }
   }
+  console.log(`[lambda] frames${tag} kaynak=fallback değer=3600`)
   return 3_600 // varsayılan 2 dk
 }
 
@@ -551,7 +596,7 @@ app.post('/render', (req, res) => {
     return res.status(429).json({ error: err })
   }
 
-  const totalFrames     = estimateTotalFrames(storyboard)
+  const totalFrames     = estimateTotalFrames(storyboard, job_id)
   const framesPerLambda = Math.max(20, Math.ceil(totalFrames / MAX_CONCURRENT))
   const queuePos        = _renderQueue.length
 
