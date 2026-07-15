@@ -122,6 +122,10 @@ app.use(express.json({ limit: '10mb' }))
 
 const TEMPLATE_VERSION = 'quiz-board-v2'
 
+// REMOTION_PREFLIGHT_STRICT=true → altyapı hatası render'ı durdurur
+// REMOTION_PREFLIGHT_STRICT=false (varsayılan) → altyapı hatası loglanır, yerel allowlist ile devam
+const PREFLIGHT_STRICT = process.env.REMOTION_PREFLIGHT_STRICT === 'true'
+
 const PORT            = process.env.PORT || 3001
 const LAMBDA_FUNCTION = process.env.REMOTION_LAMBDA_FUNCTION_NAME || ''
 const LAMBDA_REGION   = (process.env.AWS_REGION || 'eu-central-1') as Parameters<typeof getRenderProgress>[0]['region']
@@ -174,6 +178,9 @@ function resolveComposition(videoType: string, format: string): string | null {
     null
   )
 }
+
+// COMPOSITION_MAP'teki tüm geçerli ID'leri içerir — altyapı hatası durumunda fallback allowlist
+const ALLOWED_COMPOSITIONS = new Set(Object.values(COMPOSITION_MAP))
 
 // ── Toplam kare tahmini ──────────────────────────────────────────
 function estimateTotalFrames(storyboard: any): number {
@@ -342,25 +349,82 @@ async function _doRender(
   // Sürüm uyumsuzluğunu anında tespit et — 15 dk bekleme yerine hemen fail
   _assertVersionMatch(LAMBDA_FUNCTION)
 
-  // Composition'ın bundle'da gerçekten var olduğunu doğrula — ücretli render öncesi erken hata
-  // Try-catch yok: herhangi bir hata (ağ, IAM, calculateMetadata crash) doğrudan fırlatılır.
-  // Bu sayede renderMediaOnLambda'ya ulaşmadan iş failed olur ve gereksiz Lambda ücreti oluşmaz.
-  const allComps = await getCompositionsOnLambda({
-    region:       LAMBDA_REGION,
-    functionName: LAMBDA_FUNCTION,
-    serveUrl:     SERVE_URL,
-    inputProps:   {},   // storyboard olmadan composition listesini almak yeterli
-  })
-  const _found = allComps.find((c: { id: string }) => c.id === compositionId)
-  if (!_found) {
-    const available = allComps.map((c: { id: string }) => c.id).join(', ')
-    throw new Error(
-      `Composition bulunamadı: "${compositionId}". ` +
-      `Bundle'da mevcut: ${available}. ` +
-      `Çözüm: Remotion bundle'ı yeniden deploy et → npx remotion lambda sites create --site-name=<site>`,
-    )
+  // ── Yerel allowlist kontrolü (altyapıdan bağımsız, her zaman çalışır) ────────
+  if (!ALLOWED_COMPOSITIONS.has(compositionId)) {
+    throw new Error(`İzin verilmeyen composition ID: "${compositionId}"`)
   }
-  console.log(`[lambda] composition doğrulandı: "${compositionId}" ✓ (template=${TEMPLATE_VERSION})`)
+
+  // ── Lambda preflight — composition yeni bundle'da kayıtlı mı? ────────────────
+  // Altyapı hatası (ağ, AWS iç hata, response parse) ile composition eksikliğini ayır.
+  try {
+    const rawResult: unknown = await getCompositionsOnLambda({
+      region:       LAMBDA_REGION,
+      functionName: LAMBDA_FUNCTION,
+      serveUrl:     SERVE_URL,
+      inputProps:   {},
+    })
+
+    // Dönüş tipini logla — hassas veri yok
+    console.log(`[lambda] preflight response type=${Array.isArray(rawResult) ? 'array' : typeof rawResult}`)
+
+    // Remotion 4.x doğrudan dizi döndürür; wrapped obje formatını da destekle
+    let allComps: Array<{ id: string }>
+    if (Array.isArray(rawResult)) {
+      allComps = rawResult as Array<{ id: string }>
+    } else if (
+      rawResult !== null &&
+      typeof rawResult === 'object' &&
+      Array.isArray((rawResult as Record<string, unknown>).compositions)
+    ) {
+      allComps = (rawResult as Record<string, unknown>).compositions as Array<{ id: string }>
+      console.log('[lambda] preflight: wrapped response (.compositions) şekli')
+    } else {
+      if (rawResult !== null && typeof rawResult === 'object') {
+        console.log(`[lambda] preflight response keys=${Object.keys(rawResult as object).join(',')}`)
+      }
+      throw new Error(
+        `getCompositionsOnLambda beklenen composition dizisini döndürmedi (type=${typeof rawResult})`,
+      )
+    }
+
+    const ids = allComps
+      .filter((item): item is { id: string } =>
+        Boolean(item) && typeof (item as Record<string, unknown>).id === 'string',
+      )
+      .map(item => item.id)
+
+    if (!ids.includes(compositionId)) {
+      throw new Error(
+        `Composition bulunamadı: "${compositionId}". ` +
+        `Bundle'da mevcut: ${ids.join(', ')}. ` +
+        `Çözüm: npm run deploy:site → Railway REMOTION_SERVE_URL güncelle`,
+      )
+    }
+    console.log(`[lambda] composition doğrulandı: "${compositionId}" ✓ (template=${TEMPLATE_VERSION})`)
+
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e))
+    console.error(`[lambda] composition preflight HATA: ${err.message}`)
+    console.error(`[lambda] composition preflight stack: ${err.stack ?? 'stack yok'}`)
+
+    // Composition gerçekten eksik veya API beklenen format dışı dönüş yaptı → her zaman fail
+    if (
+      err.message.includes('Composition bulunamadı') ||
+      err.message.includes('döndürmedi')
+    ) {
+      throw err
+    }
+
+    // Altyapı hatası (ağ, AWS iç hata, Lambda response parse hatası) → PREFLIGHT_STRICT'e göre karar
+    if (PREFLIGHT_STRICT) {
+      throw new Error(`Composition preflight başarısız (PREFLIGHT_STRICT=true): ${err.message}`)
+    }
+    console.warn(
+      `[lambda] preflight altyapı hatası; yerel allowlist ile devam ` +
+      `(katı mod: REMOTION_PREFLIGHT_STRICT=true). composition=${compositionId}`,
+    )
+    // compositionId zaten ALLOWED_COMPOSITIONS içinde doğrulandı (üstteki blok)
+  }
 
   const { renderId, bucketName } = await renderMediaOnLambda({
     region:          LAMBDA_REGION,
