@@ -9,6 +9,7 @@ Her soru için ONE ChalkboardSolutionScene sahnesi üretilir.
 """
 import json
 import logging
+import unicodedata
 from openai import OpenAI
 from app.core.config import settings
 
@@ -198,6 +199,19 @@ Sadece JSON döndür. Başka hiçbir metin yok."""
         )
         result = json.loads(r.choices[0].message.content)
         scenes = result.get("scenes", [])
+
+        # Unicode NFC normalizasyonu — Türkçe/matematik karakter bütünlüğü
+        def _nfc(obj):
+            if isinstance(obj, str):
+                return unicodedata.normalize("NFC", obj)
+            if isinstance(obj, list):
+                return [_nfc(v) for v in obj]
+            if isinstance(obj, dict):
+                return {k: _nfc(v) for k, v in obj.items()}
+            return obj
+        scenes = [_nfc(s) for s in scenes]
+        result["scenes"] = scenes
+
         chalk_count = sum(1 for s in scenes if s.get("component") == "ChalkboardSolutionScene")
         logger.info(f"[sgs-storyboard] tamamlandı: {len(scenes)} sahne, {chalk_count} ChalkboardSolutionScene (beklenen {q_count})")
         if chalk_count < q_count:

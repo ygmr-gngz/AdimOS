@@ -1,7 +1,7 @@
 import React from 'react'
 import { AbsoluteFill, Audio, spring, useCurrentFrame, useVideoConfig } from 'remotion'
 import { LESSON_PALETTE as L } from '../brand'
-import { LessonWatermark, TopNavyBar, BottomGoldBar, BrandHandle, categoryBadgeStyle } from '../components/LessonBrand'
+import { LessonWatermark, TopNavyBar, BottomGoldBar, BrandHandle, BrandCornerLogo, categoryBadgeStyle } from '../components/LessonBrand'
 import { Scene, BrandConfig, InfographicCard } from '../types'
 
 interface Props { scene: Scene; brand: BrandConfig }
@@ -102,6 +102,7 @@ export const LessonCardScene: React.FC<Props> = ({ scene, brand }) => {
       <TopNavyBar />
       <BottomGoldBar />
       <BrandHandle handle={brand.handle} />
+      <BrandCornerLogo logoUrl={brand.logo_url} handle={brand.handle} corner="top-right" />
 
       <AbsoluteFill style={{
         display: 'flex', flexDirection: 'column',

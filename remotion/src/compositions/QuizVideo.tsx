@@ -65,10 +65,17 @@ export function QuizVideo({ storyboard }: QuizVideoProps) {
   const { brand, scenes } = storyboard
 
   // Kümülatif başlangıç frame'lerini hesapla
+  // duration_seconds GPT'den string veya undefined gelebilir — NaN koruması
   let cursor = 0
   const sceneTimings = scenes.map(scene => {
     const start = cursor
-    const durationFrames = Math.round(scene.duration_seconds * FPS) + TRANSITION_FRAMES
+    const raw = scene.duration_seconds as number | string | undefined | null
+    const safeSec = (typeof raw === 'number' && isFinite(raw) && raw > 0)
+      ? raw
+      : (typeof raw === 'string' && Number(raw) > 0)
+        ? Number(raw)
+        : 30
+    const durationFrames = Math.max(TRANSITION_FRAMES + 1, Math.round(safeSec * FPS) + TRANSITION_FRAMES)
     cursor += durationFrames
     return { scene, start, durationFrames }
   })

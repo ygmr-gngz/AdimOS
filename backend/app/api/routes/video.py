@@ -519,10 +519,16 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 description=payload.description or "",
             )
             scenes = raw.get("scenes", [])
-            if len(scenes) < 4:
+            if len(scenes) < 8:
                 raise RuntimeError(
                     f"Konu anlatımı kalite kontrolü başarısız: yalnızca {len(scenes)} sahne "
-                    "üretildi (minimum 4 gerekli) — storyboard üretimini tekrar deneyin"
+                    "üretildi (minimum 8 gerekli) — storyboard üretimini tekrar deneyin"
+                )
+            total_sec = sum(s.get("duration_seconds") or 0 for s in scenes)
+            if total_sec < 1080:
+                logger.warning(
+                    f"[video] {job_id[:8]} uyarı: toplam sahne süresi {total_sec:.0f}s < 1080s (18dk). "
+                    "Storyboard kısa olabilir, TTS tahmini sonuçta süre uzayacaktır."
                 )
             for i, s in enumerate(scenes, 1):
                 s["id"] = i

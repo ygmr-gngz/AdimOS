@@ -62,6 +62,56 @@ export function BrandHandle({ handle, opacity = 0.55 }: { handle?: string; opaci
   )
 }
 
+/** Köşe logosu — logo_url varsa gerçek görsel, yoksa metin imzası */
+export function BrandCornerLogo({
+  logoUrl,
+  handle = '@adimmusavir',
+  corner = 'top-right',
+}: {
+  logoUrl?: string | null
+  handle?: string
+  corner?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left'
+}) {
+  const isTop    = corner.startsWith('top')
+  const isRight  = corner.endsWith('right')
+  return (
+    <div style={{
+      position: 'absolute',
+      top:    isTop    ? 18 : undefined,
+      bottom: !isTop   ? 18 : undefined,
+      right:  isRight  ? 28 : undefined,
+      left:   !isRight ? 28 : undefined,
+      zIndex: 20,
+      display: 'flex', alignItems: 'center', gap: 8,
+    }}>
+      {logoUrl ? (
+        <img
+          src={logoUrl}
+          alt="logo"
+          style={{
+            height: 36, width: 'auto',
+            objectFit: 'contain', borderRadius: 4,
+            filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.18))',
+          }}
+        />
+      ) : (
+        <div style={{
+          background: L.NAVY, borderRadius: 8,
+          padding: '5px 14px',
+        }}>
+          <span style={{
+            fontSize: 13, fontWeight: 800, color: L.GOLD,
+            fontFamily: 'Lato', letterSpacing: '0.06em',
+            whiteSpace: 'nowrap' as const,
+          }}>
+            {handle}
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Kategori kategorisi için renk → badge config */
 export function categoryBadgeStyle(category?: string, customColor?: string) {
   const cat = (category ?? '').toUpperCase()

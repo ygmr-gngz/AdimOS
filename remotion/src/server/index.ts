@@ -596,6 +596,46 @@ app.post('/render', (req, res) => {
     return res.status(429).json({ error: err })
   }
 
+  // ── [lesson-props] diagnostic logging (LessonVideo / QuizVideo) ────────────────
+  {
+    const scenes: any[] = storyboard.scenes ?? []
+    const totalSec = scenes.reduce((sum: number, s: any) => {
+      const d = Number(s.duration_seconds)
+      return sum + (isFinite(d) ? d : 0)
+    }, 0)
+    console.log(
+      `[lesson-props] job=${job_id} composition=${compositionId}` +
+      ` title_present=${Boolean(storyboard.title)}` +
+      ` brand_present=${Boolean(storyboard.brand)}` +
+      ` scene_count=${scenes.length}` +
+      ` total_duration_sec=${totalSec.toFixed(1)}`,
+    )
+    if (scenes.length > 0) {
+      const components = scenes.map((s: any) => s.component ?? 'MISSING').join(',')
+      console.log(`[lesson-props] components=${components}`)
+      const durations = scenes.map((s: any) => {
+        const d = s.duration_seconds
+        if (d === undefined || d === null) return 'MISSING'
+        const n = Number(d)
+        return isNaN(n) ? 'NaN' : String(Math.round(n))
+      }).join(',')
+      console.log(`[lesson-props] durations_sec=${durations}`)
+    }
+    const badDurations = scenes.filter((s: any) => {
+      const d = Number(s.duration_seconds)
+      return !isFinite(d) || d <= 0
+    }).length
+    if (badDurations > 0) {
+      console.warn(`[lesson-props] UYARI: ${badDurations}/${scenes.length} sahnede duration_seconds geçersiz — NaN fallback devreye girecek`)
+    }
+    if (totalSec < 60 && scenes.length > 0) {
+      console.warn(`[lesson-props] UYARI: toplam ${totalSec.toFixed(1)}s < 60s — içerik çok kısa`)
+    }
+    if (scenes.length < 4 && compositionId === 'LessonVideo') {
+      console.warn(`[lesson-props] UYARI: ${scenes.length} sahne — LessonVideo için minimum 8 sahne bekleniyor`)
+    }
+  }
+
   const totalFrames     = estimateTotalFrames(storyboard, job_id)
   const framesPerLambda = Math.max(20, Math.ceil(totalFrames / MAX_CONCURRENT))
   const queuePos        = _renderQueue.length

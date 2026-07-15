@@ -97,7 +97,7 @@ function SolutionStepItem({ step, index, frame, totalSteps }: {
       <div style={{ opacity, transform: `translateY(${y}px)` }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           <div style={{ width: 6, height: 6, borderRadius: '50%', background: ACCENT, marginTop: 8, flexShrink: 0 }} />
-          <span style={{ fontSize: 13, color: TEXT_MID, lineHeight: 1.6 }}>{step.text}</span>
+          <span style={{ fontSize: 28, color: TEXT_MID, lineHeight: 1.6 }}>{step.text}</span>
         </div>
       </div>
     )
@@ -115,7 +115,7 @@ function SolutionStepItem({ step, index, frame, totalSteps }: {
         }}>
           {index + 1}
         </div>
-        <span style={{ fontSize: 14, color: TEXT_DARK, lineHeight: 1.65 }}>{step.text}</span>
+        <span style={{ fontSize: 30, color: TEXT_DARK, lineHeight: 1.65 }}>{step.text}</span>
       </div>
     </div>
   )
@@ -128,7 +128,10 @@ export function SplitQuizScene({ scene, brand }: Props) {
 
   const steps    = scene.solution_steps ?? []
   const options  = scene.options ?? []
-  const totalFrames = Math.round(scene.duration_seconds * fps)
+  const rawSec = scene.duration_seconds as number | string | undefined | null
+  const safeSec = (typeof rawSec === 'number' && isFinite(rawSec) && rawSec > 0) ? rawSec
+                : (typeof rawSec === 'string' && Number(rawSec) > 0) ? Number(rawSec) : 35
+  const totalFrames = Math.round(safeSec * fps)
 
   const leftOpacity  = interpolate(frame, [0, 20],  [0, 1], { extrapolateRight: 'clamp' })
   const rightOpacity = interpolate(frame, [8, 28],  [0, 1], { extrapolateRight: 'clamp' })
@@ -182,8 +185,8 @@ export function SplitQuizScene({ scene, brand }: Props) {
           background: WHITE,
         }}>
           <p style={{
-            fontSize: 16, fontFamily: brand.font_heading, fontWeight: 600,
-            color: TEXT_DARK, lineHeight: 1.7, margin: 0,
+            fontSize: 38, fontFamily: brand.font_heading, fontWeight: 600,
+            color: TEXT_DARK, lineHeight: 1.6, margin: 0,
           }}>
             {scene.question_text}
           </p>
@@ -215,7 +218,7 @@ export function SplitQuizScene({ scene, brand }: Props) {
                   {opt.label}
                 </div>
                 <span style={{
-                  fontSize: 12, color: showCorrect ? RED_CORRECT : TEXT_MID,
+                  fontSize: 22, color: showCorrect ? RED_CORRECT : TEXT_MID,
                   lineHeight: 1.45, fontWeight: showCorrect ? 700 : 400,
                   display: '-webkit-box', WebkitLineClamp: 3,
                   WebkitBoxOrient: 'vertical' as const,

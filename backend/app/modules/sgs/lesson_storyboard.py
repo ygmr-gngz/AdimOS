@@ -8,6 +8,7 @@ Sahne tipleri: LessonTitleScene → LessonConceptScene → LessonCardScene → L
 """
 import json
 import logging
+import unicodedata
 from openai import OpenAI
 from app.core.config import settings
 
@@ -106,14 +107,21 @@ VİDEO BİLGİSİ:
    - duration_seconds: 60
 
 ════════ SAHNE SAYISI KILAVUZU ════════
-{target_minutes} dakika için önerilen sahne dizisi:
+{target_minutes} dakika için ZORUNLU sahne dizisi (minimum 8 sahne):
 - 1 LessonTitleScene (~25s)
-- 3 LessonConceptScene (~270s = 4.5dk)
-- 1 LessonCardScene (~75s = 1.25dk)
-- 2-3 LessonExampleScene (~220-330s = 3.5-5.5dk)
+- 3-4 LessonConceptScene (her biri ~90-120s — kavram başına ayrı sahne)
+- 1-2 LessonCardScene (her biri ~75s)
+- 3-4 LessonExampleScene (her biri ~110-140s — örnek başına ayrı sahne)
 - 1 LessonSummaryScene (~60s)
-Toplam içerik: ~650-760s ≈ 11-12dk minimum (TTS ile gerçek süre daha uzun olacak)
-Hedef {target_minutes}dk için her scene'in voice_text'ini DOLU ve DETAYLI yaz.
+
+MİNİMUM KURAL — KELİMESİ KELİMESİNE UYULACAK:
+- Toplam sahne sayısı: EN AZ 8, ideal 10-12
+- Toplam voice_text süresi: EN AZ 1080 saniye (18 dakika)
+- Her kavram için ayrı LessonConceptScene — tek sahnede tıkıştırma
+- Her örnek için ayrı LessonExampleScene — tek sahnede tıkıştırma
+- voice_text'ler uzun ve detaylı olsun: başlık 80-120 kelime, kavram 180-250 kelime, kart 150-200 kelime, örnek 200-280 kelime, özet 120-160 kelime
+
+BU KURALLAR İHLAL EDİLİRSE İÇERİK RENDERLENMEYECEK.
 
 ════════ JSON FORMAT ════════
 {{
@@ -185,6 +193,19 @@ Sadece JSON döndür. Başka hiçbir metin yok."""
         )
         result = json.loads(r.choices[0].message.content)
         scenes = result.get("scenes", [])
+
+        # Unicode NFC normalizasyonu — Türkçe karakter bütünlüğü (ğ, ş, ü, ç, ö, ı)
+        def _nfc(obj):
+            if isinstance(obj, str):
+                return unicodedata.normalize("NFC", obj)
+            if isinstance(obj, list):
+                return [_nfc(v) for v in obj]
+            if isinstance(obj, dict):
+                return {k: _nfc(v) for k, v in obj.items()}
+            return obj
+        scenes = [_nfc(s) for s in scenes]
+        result["scenes"] = scenes
+
         component_counts = {}
         for s in scenes:
             c = s.get("component", "unknown")

@@ -61,7 +61,14 @@ export function LessonVideo({ storyboard }: LessonVideoProps) {
   let cursor = 0
   const timings = scenes.map(scene => {
     const start = cursor
-    const durationFrames = Math.round(scene.duration_seconds * FPS) + TRANSITION_FRAMES
+    // duration_seconds GPT'den string veya undefined gelebilir — NaN koruması
+    const raw = scene.duration_seconds as number | string | undefined | null
+    const safeSec = (typeof raw === 'number' && isFinite(raw) && raw > 0)
+      ? raw
+      : (typeof raw === 'string' && Number(raw) > 0)
+        ? Number(raw)
+        : 30
+    const durationFrames = Math.max(TRANSITION_FRAMES + 1, Math.round(safeSec * FPS) + TRANSITION_FRAMES)
     cursor += durationFrames
     return { scene, start, durationFrames }
   })

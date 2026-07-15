@@ -78,8 +78,8 @@ function QuestionPanel({ scene, brand, fadeIn }: {
           borderRadius: 12, padding: '16px 18px', marginBottom: 22,
         }}>
           <p style={{
-            fontSize: 34, fontFamily: HEAD_FONT, fontWeight: 600,
-            color: L.DARK, lineHeight: 1.55, margin: 0,
+            fontSize: 44, fontFamily: HEAD_FONT, fontWeight: 600,
+            color: L.DARK, lineHeight: 1.5, margin: 0,
           }}>
             {scene.question_text}
           </p>
@@ -107,7 +107,7 @@ function QuestionPanel({ scene, brand, fadeIn }: {
                   flexShrink: 0, marginTop: 2,
                 }} />
                 <span style={{
-                  fontSize: 28, color: L.DARK, fontFamily: MATH_FONT,
+                  fontSize: 34, color: L.DARK, fontFamily: MATH_FONT,
                   fontWeight: 700, lineHeight: 1.45,
                 }}>
                   {g}
@@ -132,7 +132,7 @@ function QuestionPanel({ scene, brand, fadeIn }: {
             borderRadius: 10, padding: '10px 16px',
           }}>
             <span style={{
-              fontSize: 28, color: L.NAVY, fontFamily: MATH_FONT,
+              fontSize: 36, color: L.NAVY, fontFamily: MATH_FONT,
               fontWeight: 800,
             }}>
               {scene.asked}
@@ -266,7 +266,7 @@ function ChalkboardPanel({ steps, frame, totalFrames, brand }: {
 
                   {/* Tahta metni */}
                   <div style={{
-                    fontSize: isActive ? 44 : 36,
+                    fontSize: isActive ? 58 : 46,
                     fontFamily: MATH_FONT,
                     fontWeight: isActive ? 700 : 600,
                     color: isActive ? color : (isPast ? L.MID : color),
@@ -401,7 +401,7 @@ export function ChalkboardSolutionScene({ scene, brand }: Props) {
             }}>
               <span style={{ fontSize: 14 }}>✅</span>
               <span style={{
-                fontSize: 48, color: '#166534', fontFamily: MATH_FONT,
+                fontSize: 52, color: '#166534', fontFamily: MATH_FONT,
                 fontWeight: 900, letterSpacing: 0.5,
               }}>
                 {scene.answer}
