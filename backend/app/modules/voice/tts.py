@@ -5,7 +5,7 @@ import base64
 _client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 
-def synthesize(text: str, voice: str = "alloy") -> str:
+def synthesize(text: str, voice: str = "nova") -> str:
     response = _client.audio.speech.create(
         model="tts-1",
         voice=voice,

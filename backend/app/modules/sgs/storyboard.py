@@ -1,10 +1,11 @@
 """
-SGS Çok Sorulu Video Storyboard Üretici — Hoca Tarzı, Detaylı Çözüm.
+SGS/SMMM Soru Çözüm Storyboard Üretici — ChalkboardSolutionScene pedagojik format.
 
-Her soru için 6 sahne:
-  soru_okuma → adim_adim_cozum → sik_analizi → dogru_cevap → tuzak_uyarisi → pratik_bilgi
+Öğretmen çözüm sırası (kesinlikle uyulur):
+  verilen → yöntem → adım adım çözüm → kontrol → sık hata → doğru şık (EN SON)
 
-Hedef toplam süre: 20-25 dakika (5 soru)
+Her soru için ONE ChalkboardSolutionScene sahnesi üretilir.
+Çıktı doğrudan Remotion-hazır JSON'dur (component isimleri Remotion bileşen adlarıyla eşleşir).
 """
 import json
 import logging
@@ -14,26 +15,39 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 _client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
-_SYSTEM = """Sen Türkiye'nin en deneyimli SGS (Serbest Muhasebeci Mali Müşavirlik) eğitmenlerinden birisin.
-20 yıldır bu sınavı hazırlıyorsun ve öğrencilerinin büyük çoğunluğu sınavı geçiyor.
-Anlatım tarzın: sıcak, güven veren, net. Karmaşık konuları sade Türkçeyle açıklıyorsun.
-Sınavda tekrar eden tuzaklara ve püf noktalara özellikle dikkat çekiyorsun.
-Öğrencine "Sen bunu yapabilirsin, bu soruyu bir daha yanlış yapmayacaksın" hissini veriyorsun.
-Tüm çıktılar Türkçe olacak."""
+_SYSTEM = """Sen Türkiye'nin en deneyimli SMMM/SGS sınav hazırlık eğitmenlerinden birisin.
+20 yıldır öğrenci yetiştiriyorsun. Anlatımın: net, güven veren, sıcak.
+Öğrenciye "Bu soruyu bir daha yanlış yapmayacaksın" hissini verirsin.
+
+ÖĞRETMEN ÇÖZÜM SIRASI — HER SORU İÇİN BU SIRAYA UYULACAK:
+1. Soruyu oku (question_text olduğu gibi kopyalanır)
+2. Verilenler çıkar (given[])
+3. İstenen belirle (asked)
+4. Yöntem seç (method_text)
+5. Adım adım çöz (chalkboard_steps → step_type: "solve")
+6. Kontrol et (step_type: "verification")
+7. Sık yapılan hatayı göster (common_mistake + step_type: "common_mistake")
+8. DOĞRU ŞIK EN SON aç (step_type: "answer") — bu adım her zaman en sonda olacak
+
+YASAKLI İFADELER (yalnızca final OutroScene'de kullanılabilir, diğer sahnelerde kesinlikle geçemez):
+- "Teşekkür ederim", "teşekkür ederiz", "teşekkürler"
+- "Bir sonraki videoda görüşmek üzere"
+- "Hoşçakalın", "İyi çalışmalar"
+- "Bu videoyu izlediğiniz için"
+- "Konuyu burada kapatalım"
+
+Tüm çıktılar Türkçe. Sadece geçerli JSON döndür."""
 
 
-def _build_question_block(i: int, q: dict) -> str:
-    """Tek soru için prompt bloğu oluşturur."""
-    diff = q.get("difficulty", "orta")
-    year = q.get("year", "")
-    year_note = f" ({year} yılı çıkmış)" if year else ""
+def _build_question_prompt_block(i: int, q: dict) -> str:
+    opts = q.get("options", [])
+    opt_str = ", ".join(f"{o['label']}) {o['text']}" for o in opts)
+    correct = q.get("correct_option", q.get("correct_label", "A"))
     explanation = q.get("explanation", "")
-    correct = q.get("correct_option", "A")
-
     lines = [
-        f"SORU {i}{year_note} | Zorluk: {diff}",
-        f"Soru Metni: {q.get('question_text', '')}",
-        f"Şıklar: {json.dumps(q.get('options', []), ensure_ascii=False)}",
+        f"--- SORU {i} ---",
+        f"Soru Metni: {q.get('question_text', q.get('text', ''))}",
+        f"Şıklar: {opt_str}",
         f"Doğru Cevap: {correct}",
     ]
     if explanation:
@@ -41,142 +55,136 @@ def _build_question_block(i: int, q: dict) -> str:
     return "\n".join(lines)
 
 
-def generate_sgs_topic_storyboard(
+def generate_sgs_question_storyboard(
     title: str,
     topic: str,
     subject: str,
     questions: list[dict],
 ) -> dict:
     """
-    SGS konu videosu için hoca tarzı detaylı storyboard üretir.
+    SGS soru çözüm videosu için ChalkboardSolutionScene pedagojik storyboard üretir.
+    Tüm soruları işler. Remotion-hazır JSON döner (id alanı eklenmemiştir).
 
-    Her soru için zorunlu 6 sahne:
-      question → concept (adım adım) → option_analysis → answer → exam_tip (tuzak) → content (pratik)
+    Returns: {"scenes": [...]}
     """
     q_count = len(questions)
-    total_target = q_count * 4    # soru başı 4 dakika hedef
-    q_blocks = "\n\n".join(_build_question_block(i + 1, q) for i, q in enumerate(questions))
+    q_blocks = "\n\n".join(_build_question_prompt_block(i + 1, q) for i, q in enumerate(questions))
 
-    prompt = f"""Aşağıdaki {q_count} SGS sorusu için profesyonel eğitim videosu storyboard'u oluştur.
+    prompt = f"""Aşağıdaki {q_count} soru için Remotion video storyboard üret.
 
-VIDEO BİLGİLERİ:
+VİDEO BİLGİSİ:
 - Başlık: {title}
 - Konu: {topic}
 - Ders: {subject}
-- Soru Sayısı: {q_count}
-- Hedef Süre: ~{total_target} dakika
+- Format: 16:9
 
 SORULAR:
 {q_blocks}
 
-════════════════════════════════════════
-SAHNE YAPISI — BU SIRAYA UYULACAK
-════════════════════════════════════════
+════════ SAHNE YAPISI ════════
 
-1. "intro" sahnesi (1 adet):
-   - Başlık + "Bu videoda ne çözüyoruz" + soru sayısı
-   - narration: Sıcak karşılama, konuyu tanıt, izleyiciye güven ver (80-100 kelime)
+SAHNE 1 — IntroScene:
+  - title: Video başlığı
+  - subtitle: "{subject} — {q_count} Soru Çözümü"
+  - voice_text: Sıcak giriş, konuyu tanıt, izleyiciye güven ver. KAPANIŞ ifadesi KULLANMA. (60-80 kelime)
+  - duration_seconds: 12
 
-2. "concept" sahnesi — KONU GİRİŞİ (1 adet):
-   - {topic} konusunda sınav için BİLİNMESİ GEREKEN temel kurallar (4-6 madde)
-   - narration: "Bu konudan her sınav döneminde mutlaka soru çıkıyor..." tarzı giriş (120-150 kelime)
-   - display_lines: Her madde max 45 karakter, numaralı
+SAHNE 2 ile {q_count + 1} arası — Her soru için ChalkboardSolutionScene:
+  Öğretmen çözüm sırası ZORUNLU: verilen → yöntem → adım adım → kontrol → sık hata → DOĞRU ŞIK EN SON
 
-3. HER SORU İÇİN 6 SAHNE (soru 1'den {q_count}'e kadar sırayla):
+  Zorunlu alanlar:
+  - component: "ChalkboardSolutionScene"
+  - question_number: (1'den {q_count}'e)
+  - total_questions: {q_count}
+  - question_text: Soruyu EKSIKSIZ kopyala
+  - options: Tüm şıkları [{{"label":"A","text":"..."}}] formatında kopyala
+  - correct_label: Doğru şık harfi (A/B/C/D)
+  - given: Verilenler listesi — her madde max 50 karakter ["...", "..."]
+  - asked: İstenen — "... = ?" formatında, max 50 karakter
+  - method_text: Hangi yöntem kullanılacak, max 80 karakter
+  - chalkboard_steps: Tahta adımları dizisi (aşağıya bakınız)
+  - common_mistake: Bu soruda öğrencilerin sık yaptığı hata, max 80 karakter
+  - exam_tip: Sınav ipucu, max 80 karakter
+  - answer: "Doğru cevap: X — [kısa açıklama]" formatında, max 100 karakter
+  - voice_text: ÖĞRETMEN ANLATIMI — TAM ÇÖZÜM METNI (aşağıya bakınız)
+  - duration_seconds: 180
 
-   SAHNE A — "question" (Soru Okuma):
-   - question_text: Soruyu kelime kelime, net oku
-   - options: Tüm şıkları listele
-   - narration: Soruyu yüksek sesle oku, "Şimdi bu soruya dikkatli bakalım" + ilk izlenim notu (80-100 kelime)
-   - duration: 10.0
+  chalkboard_steps dizisi — step_type sırası ZORUNLU:
+  1. step_type "given" adımları (verilenler, board_text kısa denklem/ifade)
+  2. step_type "method" adımı (hangi yöntemi kullanacağız)
+  3. step_type "solve" adımları (hesap adımları, 3-6 adım)
+  4. step_type "verification" adımı (kontrol/ispat)
+  5. step_type "common_mistake" adımı (sık hata, color: "red")
+  6. step_type "answer" adımı (EN SON, board_text: "✓ Doğru: X", color: "green")
 
-   SAHNE B — "concept" (Adım Adım Çözüm):
-   - title: "Adım Adım Çözüm — Soru {{N}}"
-   - display_lines: Çözüm adımları (1. ..., 2. ..., 3. ...) max 5 adım
-   - narration: Soruyu nasıl çözdüğünü adım adım anlat. Hangi bilgiyi kullandın, neden bu yola gittin. Öğrenci aklında canlandırabilsin. (150-200 kelime)
-   - duration: 15.0
+  Her chalkboard_step alanları:
+  - board_text: Tahtada görünen kısa metin/denklem (max 60 karakter)
+  - step_type: "given" | "method" | "solve" | "verification" | "common_mistake" | "answer"
+  - color: (opsiyonel) "navy" | "blue" | "green" | "red" | "amber" | "gold"
+  - annotation: (opsiyonel) adım altında küçük not, max 40 karakter
 
-   SAHNE C — "option_analysis" (Şık Analizi):
-   - options: Tüm şıkları listele
-   - correct_option: Doğru şık harfi
-   - display_lines: Her YANLIŞ şık için neden yanlış (max 2 satır/şık)
-   - narration: Her yanlış şığı tek tek ele al. "A şıkkı neden yanlış? Çünkü..." formatında. Öğrencinin zihnindeki yanlış anlamayı düzelt. (120-150 kelime)
-   - duration: 12.0
+  voice_text yazım kuralları:
+  - 250-350 kelime
+  - Doğal öğretmen diliyle yaz, okuyormuş gibi değil
+  - Sıra: soruyu oku → verilenler → yöntem → adımlar → kontrol → sık hata → doğru şık
+  - Matematiksel sembolleri Türkçe söyle ("x kare", "a bölü b", "yüzde on sekiz")
+  - DOĞRU ŞIK EN SONDA aç — ortada ipucu verme
+  - KAPANIŞ ifadesi kullanma ("teşekkürler", "hoşçakalın" vb.)
 
-   SAHNE D — "answer" (Doğru Cevap):
-   - options: Tüm şıkları listele
-   - correct_option: Doğru şık harfi
-   - explanation: Neden doğru olduğunun tam açıklaması
-   - narration: Doğru cevabı açıkla. Neden doğru? Hangi kanun maddesi, hangi kural? Somut bağlantı kur. (100-130 kelime)
-   - duration: 10.0
+SAHNE {q_count + 2} — OutroScene:
+  - title: "Soru Çözümü Tamamlandı"
+  - subtitle: "{subject} — {q_count} soru çözüldü"
+  - voice_text: Özet ve kapanış (40-60 kelime, burada kapanış ifadesi kullanılabilir)
+  - duration_seconds: 10
 
-   SAHNE E — "exam_tip" (Tuzak Uyarısı):
-   - tip: "⚠️ TUZAK: ..." veya "DİKKAT: ..." formatında, max 80 karakter
-   - narration: Bu sorunun tuzağını, sınavda hangi hataların yapıldığını anlat. "Bu soruyu yanlış yapan öğrencilerin %80'i şunu düşünüyor, ama..." (80-100 kelime)
-   - duration: 7.0
-
-   SAHNE F — "content" (Pratik Bilgi):
-   - title: "Pratik Bilgi — {topic}"
-   - display_lines: 3-4 pratik bilgi maddesi, max 45 karakter/madde
-   - narration: Bu konuyla ilgili sınavda faydalı pratik bilgiler. Ezber değil, anlayarak öğrenme. (80-100 kelime)
-   - duration: 8.0
-
-4. "summary" sahnesi (1 adet, EN SONDA):
-   - title: "{q_count} Sorunun Özeti"
-   - rows: Her soru için {{label: "Soru N", value: "Doğru: X — bir satır açıklama"}}
-   - narration: Tüm soruları özetle. "Bugün öğrendikleriniz..." (60-80 kelime)
-
-5. "cta" sahnesi (1 adet, EN SON):
-   - narration: Abone çağrısı, gelecek içerik. Sıcak kapanış. (40-50 kelime)
-
-════════════════════════════════════════
-ZORUNLU KURALLAR
-════════════════════════════════════════
-- Tüm narration'lar TÜRKÇE, doğal konuşma dili
-- display_lines: Her satır max 45 karakter, max 5 satır
-- concept sahnesi display_lines numaralı olacak: "1. ...", "2. ...", vb.
-- question sahnesi: question_text EKSIKSIZ kopyalanacak
-- option_analysis ve answer sahnesinde options[] EKSIKSIZ kopyalanacak
-- exam_tip sahnesi: tip alanı "⚠️" ile başlayacak
-- Toplam sahne sayısı: 2 + ({q_count} × 6) + 2 = {2 + q_count * 6 + 2}
-- Sadece JSON döndür, başka hiçbir şey yok
-
-JSON FORMATI:
+════════ JSON FORMAT ════════
 {{
-  "title": "{title}",
-  "description": "YouTube açıklaması, 400-500 karakter, hashtag ile biter",
-  "tags": ["sgs", "çıkmış sorular", "{subject.lower()}", "{topic.lower()}", "sgs sınavı"],
-  "estimated_duration_minutes": {total_target},
   "scenes": [
     {{
-      "type": "intro",
-      "title": "{title[:50]}",
-      "narration": "...",
-      "display_lines": ["{title[:45]}", "{q_count} Soru Çözümü", "{subject}"]
+      "component": "IntroScene",
+      "title": "...",
+      "subtitle": "...",
+      "voice_text": "...",
+      "duration_seconds": 12
     }},
     {{
-      "type": "concept",
-      "title": "Konuya Giriş: {topic}",
-      "narration": "...",
-      "display_lines": ["1. Birinci kural...", "2. İkinci kural...", "3. Üçüncü kural..."]
+      "component": "ChalkboardSolutionScene",
+      "question_number": 1,
+      "total_questions": {q_count},
+      "question_text": "...",
+      "options": [{{"label": "A", "text": "..."}}, ...],
+      "correct_label": "A",
+      "given": ["...", "..."],
+      "asked": "... = ?",
+      "method_text": "...",
+      "chalkboard_steps": [
+        {{"board_text": "...", "step_type": "given", "annotation": "..."}},
+        {{"board_text": "...", "step_type": "method"}},
+        {{"board_text": "...", "step_type": "solve", "annotation": "..."}},
+        {{"board_text": "...", "step_type": "verification", "color": "green"}},
+        {{"board_text": "...", "step_type": "common_mistake", "color": "red"}},
+        {{"board_text": "✓ Doğru: X — ...", "step_type": "answer", "color": "green"}}
+      ],
+      "common_mistake": "...",
+      "exam_tip": "...",
+      "answer": "Doğru cevap: X — ...",
+      "voice_text": "...",
+      "duration_seconds": 180
     }},
-    ... (her soru için 6 sahne: A, B, C, D, E, F) ...
+    ... (her soru için tekrar) ...
     {{
-      "type": "summary",
-      "title": "Bugün Neler Çözdük?",
-      "narration": "...",
-      "rows": [{{"label": "Soru 1", "value": "Doğru: A — özet"}}]
-    }},
-    {{
-      "type": "cta",
-      "title": "Son",
-      "narration": "...",
-      "display_lines": []
+      "component": "OutroScene",
+      "title": "Soru Çözümü Tamamlandı",
+      "subtitle": "{subject} — {q_count} soru çözüldü",
+      "voice_text": "...",
+      "duration_seconds": 10
     }}
   ]
-}}"""
+}}
 
-    logger.info(f"[sgs-storyboard] storyboard üretiliyor: {q_count} soru, konu={topic}, hedef={total_target}dk")
+Sadece JSON döndür. Başka hiçbir metin yok."""
+
+    logger.info(f"[sgs-storyboard] {q_count} soru için ChalkboardSolutionScene storyboard üretiliyor, konu={topic}")
     try:
         r = _client.chat.completions.create(
             model="gpt-4o",
@@ -185,13 +193,15 @@ JSON FORMATI:
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
-            temperature=0.4,
-            max_tokens=12000,
+            temperature=0.35,
+            max_tokens=14000,
         )
         result = json.loads(r.choices[0].message.content)
-        scene_count = len(result.get("scenes", []))
-        expected = 2 + q_count * 6 + 2
-        logger.info(f"[sgs-storyboard] tamamlandı: {scene_count} sahne (beklenen ~{expected})")
+        scenes = result.get("scenes", [])
+        chalk_count = sum(1 for s in scenes if s.get("component") == "ChalkboardSolutionScene")
+        logger.info(f"[sgs-storyboard] tamamlandı: {len(scenes)} sahne, {chalk_count} ChalkboardSolutionScene (beklenen {q_count})")
+        if chalk_count < q_count:
+            logger.warning(f"[sgs-storyboard] eksik sahne: {chalk_count}/{q_count} soru işlendi")
         return result
     except Exception as e:
         err_str = str(e)
@@ -199,7 +209,6 @@ JSON FORMATI:
         if "429" in err_str or "quota" in err_str.lower() or "insufficient_quota" in err_str:
             raise RuntimeError(
                 "OpenAI API kredisi tükendi (429 insufficient_quota). "
-                "platform.openai.com/account/billing adresinden kredi ekleyin, "
-                "ardından videoyu yeniden deneyin."
+                "platform.openai.com/account/billing adresinden kredi ekleyin."
             ) from e
-        raise RuntimeError(f"SGS storyboard üretimi başarısız: {e}") from e
+        raise RuntimeError(f"SGS soru storyboard üretimi başarısız: {e}") from e
