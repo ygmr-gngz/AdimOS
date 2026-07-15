@@ -41,3 +41,4 @@ CREATE OR REPLACE VIEW video_jobs_active AS
 --   - 4+ saat önce güncellenen: pending, scripting, tts_generating, warmup_pinging, rendering
 --   - 7+ gün önce güncellenen: failed
 -- Bu mantık backend/app/modules/automation/scheduler.py'de _task_video_cleanup olarak uygulandı.
+  
