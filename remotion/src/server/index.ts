@@ -33,7 +33,7 @@
 import express from 'express'
 import { createClient } from '@supabase/supabase-js'
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
-import { renderMediaOnLambda, getRenderProgress } from '@remotion/lambda/client'
+import { renderMediaOnLambda, getRenderProgress, getCompositionsOnLambda } from '@remotion/lambda/client'
 import WebSocket from 'ws'
 import type { RenderRequest, RenderResponse } from '../types'
 
@@ -339,6 +339,31 @@ async function _doRender(
 ): Promise<RenderResult> {
   // Sürüm uyumsuzluğunu anında tespit et — 15 dk bekleme yerine hemen fail
   _assertVersionMatch(LAMBDA_FUNCTION)
+
+  // Composition'ın bundle'da gerçekten var olduğunu doğrula — ücretli render öncesi erken hata
+  try {
+    const allComps = await getCompositionsOnLambda({
+      region:       LAMBDA_REGION,
+      functionName: LAMBDA_FUNCTION,
+      serveUrl:     SERVE_URL,
+      inputProps:   {},   // storyboard olmadan composition listesini almak yeterli
+    })
+    const found = allComps.find((c: { id: string }) => c.id === compositionId)
+    if (!found) {
+      const available = allComps.map((c: { id: string }) => c.id).join(', ')
+      throw new Error(
+        `Composition bulunamadı: "${compositionId}". ` +
+        `Bundle'da mevcut: ${available}. ` +
+        `Çözüm: Remotion bundle'ı yeniden deploy et → npx remotion lambda sites create --site-name=<site>`,
+      )
+    }
+  } catch (e) {
+    // getCompositionsOnLambda'nın kendisi başarısız olduysa (ağ, IAM izni vb.) → logla ve devam et
+    // "Composition bulunamadı" hatasıysa yeniden fırlat
+    const msg = (e as Error).message ?? ''
+    if (msg.includes('Composition bulunamadı')) throw e
+    console.warn(`[lambda] getCompositionsOnLambda kontrolü başarısız — atlanıyor: ${msg}`)
+  }
 
   const { renderId, bucketName } = await renderMediaOnLambda({
     region:          LAMBDA_REGION,

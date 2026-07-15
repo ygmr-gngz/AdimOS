@@ -19,6 +19,7 @@ import { MotivationScene } from '../scenes/MotivationScene'
 import { InfographicCardGridScene } from '../scenes/InfographicCardGridScene'
 import { InfographicComparisonScene } from '../scenes/InfographicComparisonScene'
 import { InfographicProcessScene } from '../scenes/InfographicProcessScene'
+import { ChalkboardSolutionScene } from '../scenes/ChalkboardSolutionScene'
 
 function SceneRenderer({ scene, brand }: { scene: Scene; brand: StoryboardJSON['brand'] }) {
   const props = { scene, brand }
@@ -40,6 +41,7 @@ function SceneRenderer({ scene, brand }: { scene: Scene; brand: StoryboardJSON['
     case 'InfographicCardGridScene': return <InfographicCardGridScene {...props} />
     case 'InfographicComparisonScene': return <InfographicComparisonScene {...props} />
     case 'InfographicProcessScene': return <InfographicProcessScene {...props} />
+    case 'ChalkboardSolutionScene': return <ChalkboardSolutionScene {...props} />
     default:
       return (
         <div style={{

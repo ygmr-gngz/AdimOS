@@ -38,6 +38,8 @@ export type SceneComponent =
   | 'LessonCardScene'
   | 'LessonExampleScene'
   | 'LessonSummaryScene'
+  // Pedagojik matematik çözümü (tahta)
+  | 'ChalkboardSolutionScene'
 
 export interface QuizOption {
   label: string        // A, B, C, D
@@ -54,6 +56,16 @@ export interface SolutionStep {
   // journal_entry tipinde:
   debit?: { code?: string; name: string; amount: number }
   credits?: { code?: string; name: string; amount: number }[]
+}
+
+// Tahta adımı — ChalkboardSolutionScene için pedagojik yapı
+export interface ChalkboardStep {
+  board_text: string              // tahtada görünen denklem/metin
+  voice_text?: string             // TTS için ayrı metin (raw matematik değil, konuşma dili)
+  annotation?: string             // adımın altında küçük açıklama
+  highlight?: string              // vurgulanan değişken veya ifade
+  step_type?: 'given' | 'asked' | 'method' | 'solve' | 'verification' | 'common_mistake' | 'exam_tip' | 'answer'
+  color?: 'navy' | 'blue' | 'red' | 'green' | 'amber' | 'gold'
 }
 
 // Yevmiye kaydı satırı
@@ -135,6 +147,15 @@ export interface Scene {
   // Konu anlatımı görsel
   icon?: string            // emoji ikon (LessonTitleScene, LessonConceptScene)
   visual_url?: string      // fotoğraf/görsel URL (isteğe bağlı)
+
+  // Tahta soru çözümü (ChalkboardSolutionScene)
+  given?: string[]                // verilenler: ["a - b = 32", "a = 2b"]
+  asked?: string                  // istenen: "a = ?"
+  method_text?: string            // yöntem açıklaması
+  chalkboard_steps?: ChalkboardStep[]   // tahta adımları
+  common_mistake?: string         // sık yapılan hata (kırmızı vurgu)
+  exam_tip?: string               // sınav ipucu (amber)
+  answer?: string                 // final cevap (yeşil kutu)
 
   // İnfografik
   infographic_title?: string

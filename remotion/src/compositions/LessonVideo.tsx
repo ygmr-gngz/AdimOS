@@ -16,6 +16,7 @@ import { CalculationStepsScene } from '../scenes/CalculationStepsScene'
 import { InfographicCardGridScene } from '../scenes/InfographicCardGridScene'
 import { InfographicComparisonScene } from '../scenes/InfographicComparisonScene'
 import { InfographicProcessScene } from '../scenes/InfographicProcessScene'
+import { ChalkboardSolutionScene } from '../scenes/ChalkboardSolutionScene'
 
 function LessonSceneRenderer({ scene, brand }: { scene: Scene; brand: StoryboardJSON['brand'] }) {
   const p = { scene, brand }
@@ -36,6 +37,7 @@ function LessonSceneRenderer({ scene, brand }: { scene: Scene; brand: Storyboard
     case 'InfographicCardGridScene': return <InfographicCardGridScene {...p} />
     case 'InfographicComparisonScene': return <InfographicComparisonScene {...p} />
     case 'InfographicProcessScene': return <InfographicProcessScene {...p} />
+    case 'ChalkboardSolutionScene': return <ChalkboardSolutionScene {...p} />
 
     default:
       return (

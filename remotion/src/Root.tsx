@@ -284,6 +284,21 @@ export function Root() {
           return { durationInFrames: getLessonTotalFrames(sb), width: DIMENSIONS[sb.format].width, height: DIMENSIONS[sb.format].height }
         }}
       />
+      {/* LessonVideoDemo — geriye dönük uyumluluk: eski S3 bundle'ında bu ID kayıtlıydı */}
+      <Composition
+        id="LessonVideoDemo"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={LessonVideo as any}
+        durationInFrames={getLessonTotalFrames(DEMO_LESSON)}
+        fps={FPS}
+        width={dim.width}
+        height={dim.height}
+        defaultProps={{ storyboard: DEMO_LESSON }}
+        calculateMetadata={({ props }) => {
+          const sb = (props as { storyboard: StoryboardJSON }).storyboard
+          return { durationInFrames: getLessonTotalFrames(sb), width: DIMENSIONS[sb.format].width, height: DIMENSIONS[sb.format].height }
+        }}
+      />
     </>
   )
 }
