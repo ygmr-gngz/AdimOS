@@ -13,16 +13,8 @@ RUN apt-get update && apt-get install -y \
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# CACHE_BUST değeri değiştiğinde bu noktadan itibaren tüm katmanlar sıfırdan çalışır.
-ARG CACHE_BUST=20260715_001
-RUN echo "cache-bust: $CACHE_BUST"
-
-# Root Directory=remotion → build context remotion/ dizini, yollar context-göreli
 COPY package.json package-lock.json ./
-RUN npm install --include=dev
-
-# Sigorta: typescript kurulmadıysa burada net hata verir (sahte paket indirme yok)
-RUN ./node_modules/.bin/tsc --version
+RUN npm ci --include=dev
 
 COPY . .
 RUN npm run build
