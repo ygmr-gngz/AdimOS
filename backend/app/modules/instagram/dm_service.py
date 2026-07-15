@@ -15,6 +15,10 @@ _GRAPH = "https://graph.facebook.com/v21.0"
 
 def send_instagram_message(recipient_id: str, text: str) -> bool:
     """Graph API üzerinden Instagram DM gönder."""
+    if not settings.INSTAGRAM_DM_ENABLED:
+        logger.info("[instagram] DM otomasyonu devre dışı; gönderim atlandı")
+        return False
+
     account_id = settings.INSTAGRAM_BUSINESS_ACCOUNT_ID
     token = settings.META_ACCESS_TOKEN
 

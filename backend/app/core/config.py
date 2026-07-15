@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     FACEBOOK_PAGE_ID: str = ""
     INSTAGRAM_BUSINESS_ACCOUNT_ID: str = ""
 
+    # Özellik bayrağı — "false" metni yanlışlıkla truthy sayılmasın
+    # Kabul edilen true değerleri: 1, true, yes, on (büyük/küçük harf fark etmez)
+    # Varsayılan: kapalı (güvenli varsayılan)
+    INSTAGRAM_DM_ENABLED: bool = False
+
     class Config:
         env_file = (".env", "../.env")
         extra = "ignore"

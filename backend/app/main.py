@@ -18,6 +18,7 @@ async def lifespan(app: FastAPI):
     _startup_logger.info(f"META_VERIFY_TOKEN loaded: {bool(settings.META_VERIFY_TOKEN)}")
     _startup_logger.info(f"META_ACCESS_TOKEN loaded: {bool(settings.META_ACCESS_TOKEN)}")
     _startup_logger.info(f"INSTAGRAM_BUSINESS_ACCOUNT_ID loaded: {bool(settings.INSTAGRAM_BUSINESS_ACCOUNT_ID)}")
+    _startup_logger.info(f"Instagram DM automation enabled={settings.INSTAGRAM_DM_ENABLED}")
     start_scheduler()
 
     # Railway yeniden başlatma sonrası pending işleri kurtar

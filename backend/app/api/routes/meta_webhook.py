@@ -196,6 +196,8 @@ class SendMessageRequest(BaseModel):
 
 @protected_router.post("/send")
 def send_manual_message(req: SendMessageRequest):
+    if not settings.INSTAGRAM_DM_ENABLED:
+        raise HTTPException(status_code=503, detail="Instagram DM otomasyonu devre dışı (INSTAGRAM_DM_ENABLED=false)")
     ok = send_instagram_message(req.instagram_user_id, req.text)
     if not ok:
         raise HTTPException(status_code=502, detail="Mesaj gönderilemedi")
