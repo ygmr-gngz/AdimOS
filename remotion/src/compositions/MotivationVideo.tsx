@@ -18,7 +18,10 @@ export function MotivationVideo({ storyboard }: Props) {
   let cursor = 0
   const timings = scenes.map(scene => {
     const start = cursor
-    const durationFrames = Math.round(scene.duration_seconds * FPS) + TRANSITION_FRAMES
+    const raw = scene.duration_seconds as number | string | undefined | null
+    const safeSec = (typeof raw === 'number' && isFinite(raw) && raw > 0) ? raw
+      : (typeof raw === 'string' && Number(raw) > 0) ? Number(raw) : 20
+    const durationFrames = Math.round(safeSec * FPS) + TRANSITION_FRAMES
     cursor += durationFrames
     return { scene, start, durationFrames }
   })
@@ -45,8 +48,10 @@ export function MotivationVideo({ storyboard }: Props) {
 }
 
 export function getMotivationTotalFrames(storyboard: StoryboardJSON): number {
-  return storyboard.scenes.reduce(
-    (acc, s) => acc + Math.round(s.duration_seconds * FPS) + TRANSITION_FRAMES,
-    0
-  )
+  return (storyboard?.scenes ?? []).reduce((acc, s) => {
+    const raw = s.duration_seconds as number | string | undefined | null
+    const safeSec = (typeof raw === 'number' && isFinite(raw) && raw > 0) ? raw
+      : (typeof raw === 'string' && Number(raw) > 0) ? Number(raw) : 20
+    return acc + Math.round(safeSec * FPS) + TRANSITION_FRAMES
+  }, 0)
 }

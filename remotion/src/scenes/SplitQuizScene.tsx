@@ -192,15 +192,18 @@ export function SplitQuizScene({ scene, brand }: Props) {
           </p>
         </div>
 
-        {/* Şıklar — yatay satır, 4 seçenek yan yana */}
-        <div style={{ display: 'flex', gap: 10 }}>
+        {/* Şıklar — 4 şık: tek satır | 5 şık: 3+2 grid */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: options.length <= 4 ? `repeat(${options.length}, 1fr)` : 'repeat(3, 1fr)',
+          gap: 10,
+        }}>
           {options.map((opt) => {
             const isCorrect   = opt.label === scene.correct_label
             const showCorrect = isCorrect && scene.reveal_correct && correctReveal > 0.5
 
             return (
               <div key={opt.label} style={{
-                flex: 1,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7,
                 padding: '12px 8px', borderRadius: 10,
                 background: showCorrect ? RED_BG : '#F8FAFC',
@@ -218,7 +221,7 @@ export function SplitQuizScene({ scene, brand }: Props) {
                   {opt.label}
                 </div>
                 <span style={{
-                  fontSize: 22, color: showCorrect ? RED_CORRECT : TEXT_MID,
+                  fontSize: 20, color: showCorrect ? RED_CORRECT : TEXT_MID,
                   lineHeight: 1.45, fontWeight: showCorrect ? 700 : 400,
                   display: '-webkit-box', WebkitLineClamp: 3,
                   WebkitBoxOrient: 'vertical' as const,

@@ -157,13 +157,14 @@ const COMPOSITION_MAP: Record<string, string> = {
   'single_question:16:9':     'QuizVideo',
   'question_set_long:16:9':   'QuizVideo',
   'question_set_long':        'QuizVideo',
-  // ── Soru çözümü 9:16 (dikey kısa içerik) ─────────────────────
+  // ── Soru çözümü 9:16 (dikey kısa quiz içeriği) ───────────────
   'soru_cozumu:9:16':         'SplitQuizVerticalDemo',
   'quiz:9:16':                'SplitQuizVerticalDemo',
   'single_question:9:16':     'SplitQuizVerticalDemo',
-  'shorts:9:16':              'SplitQuizVerticalDemo',
-  'shorts':                   'SplitQuizVerticalDemo',
-  'kisa_icerik:9:16':         'SplitQuizVerticalDemo',
+  // shorts ve kisa_icerik:9:16 quiz değil — eğitim kısa videosu
+  'shorts:9:16':              'EducationalReel',
+  'shorts':                   'EducationalReel',
+  'kisa_icerik:9:16':         'EducationalReel',
   // ── Motivasyon Reels ───────────────────────────────────────────
   'motivasyon':               'MotivationVideo',
   'motivation':               'MotivationVideo',

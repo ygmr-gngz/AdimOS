@@ -413,16 +413,55 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
         logger.info(f"[video] {job_id} senaryo oluşturuluyor tip={payload.type}")
 
         if payload.type == "quiz" and payload.questions:
-            storyboard = _build_quiz_storyboard(
-                job_id=job_id,
-                title=payload.title,
-                lesson_name=payload.lesson_name or "",
-                topic=payload.topic or "",
-                questions=payload.questions,
-                format=payload.format,
-                brand=brand,
-                description=payload.description or "",
-            )
+            if payload.format == "9:16":
+                # Dikey kısa quiz — SplitQuizVerticalScene kalır
+                storyboard = _build_quiz_storyboard(
+                    job_id=job_id,
+                    title=payload.title,
+                    lesson_name=payload.lesson_name or "",
+                    topic=payload.topic or "",
+                    questions=payload.questions,
+                    format=payload.format,
+                    brand=brand,
+                    description=payload.description or "",
+                )
+            else:
+                # Yatay 16:9 quiz — öğretmen tahtası (ChalkboardSolutionScene)
+                from app.modules.sgs.storyboard import generate_sgs_question_storyboard
+                questions_dict = [
+                    {
+                        "question_text": q.text,
+                        "options": [{"label": o.label, "text": o.text} for o in q.options],
+                        "correct_option": q.correct_label,
+                        "explanation": q.explanation or "",
+                    }
+                    for q in payload.questions
+                ]
+                raw = generate_sgs_question_storyboard(
+                    title=payload.title,
+                    topic=payload.topic or payload.title,
+                    subject=payload.lesson_name or "SGS",
+                    questions=questions_dict,
+                )
+                scenes = raw.get("scenes", [])
+                for i, s in enumerate(scenes, 1):
+                    s["id"] = i
+                storyboard = {
+                    "video_type": "quiz",
+                    "title": payload.title,
+                    "lesson_name": payload.lesson_name,
+                    "topic": payload.topic,
+                    "format": payload.format,
+                    "language": "tr",
+                    "brand": brand,
+                    "scenes": scenes,
+                }
+                chalk_count = sum(1 for s in scenes if s.get("component") == "ChalkboardSolutionScene")
+                if chalk_count < len(payload.questions):
+                    logger.warning(
+                        f"[video] {job_id[:8]} kalite: {chalk_count}/{len(payload.questions)} "
+                        "ChalkboardSolutionScene üretildi — storyboard eksik olabilir"
+                    )
         elif payload.type in ("motivation", "motivation_reel"):
             from app.modules.content.motivation_generator import generate_motivation_storyboard
             platform = "reels" if payload.format == "9:16" else "shorts"
@@ -447,7 +486,7 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 "scenes": scenes,
             }
 
-        elif payload.type in ("educational_reel", "bilgilendirme_kisa", "kisa_icerik"):
+        elif payload.type in ("educational_reel", "bilgilendirme_kisa", "kisa_icerik", "shorts"):
             from app.modules.content.motivation_generator import generate_motivation_storyboard
             topic_text = payload.topic or payload.title
             tone = payload.description or "eğitici ve bilgilendirici"
