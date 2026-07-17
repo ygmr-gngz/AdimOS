@@ -19,14 +19,36 @@
  *   → Railway'de REMOTION_SERVE_URL'yi bu değerle güncelle
  */
 
+// CJS modunda import sırası korunur — önce fs/path, sonra dotenv, sonra @remotion/lambda
+import { existsSync, readFileSync } from 'fs'
+import { resolve } from 'path'
+
+// .env yükle (root veya parent dizinden)
+;(function loadDotEnv() {
+  const candidates = [
+    resolve(process.cwd(), '..', '.env'),
+    resolve(process.cwd(), '.env'),
+  ]
+  for (const f of candidates) {
+    if (!existsSync(f)) continue
+    readFileSync(f, 'utf8').split(/\r?\n/).forEach(line => {
+      // KEY=value | KEY="value" | KEY='value' tüm formatları destekler
+      const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|(.*?))\s*$/)
+      if (!m || process.env[m[1]]) return
+      process.env[m[1]] = (m[2] ?? m[3] ?? m[4] ?? '').trim()
+    })
+    console.log(`[deploy] .env yüklendi: ${f}`)
+    return
+  }
+  console.warn('[deploy] .env bulunamadı — shell env değişkenleri kullanılacak')
+})()
+
 // REMOTION_AWS_* → AWS_* mapping (deploySite AWS SDK kullanır)
 ;(['ACCESS_KEY_ID', 'SECRET_ACCESS_KEY', 'REGION'] as const).forEach(k => {
   const src = `REMOTION_AWS_${k}` as keyof NodeJS.ProcessEnv
   const dst = `AWS_${k}` as keyof NodeJS.ProcessEnv
   const val = process.env[src]
-  if (val && !process.env[dst]) {
-    process.env[dst] = val
-  }
+  if (val && !process.env[dst]) process.env[dst] = val
 })
 
 import path from 'path'
@@ -49,15 +71,13 @@ if (MISSING.length > 0) {
   process.exit(1)
 }
 
-const REGION       = (process.env.REMOTION_AWS_REGION ?? 'eu-central-1') as Parameters<typeof deploySite>[0]['region']
-const BUCKET       = process.env.REMOTION_AWS_BUCKET_NAME!
-const SITE_NAME    = process.env.REMOTION_SITE_NAME ?? 'adimos-video'
+const REGION        = (process.env.REMOTION_AWS_REGION ?? 'eu-central-1') as Parameters<typeof deploySite>[0]['region']
+const BUCKET        = process.env.REMOTION_AWS_BUCKET_NAME!
+const SITE_NAME     = process.env.REMOTION_SITE_NAME ?? 'adimos-video'
 const FUNCTION_NAME = process.env.REMOTION_LAMBDA_FUNCTION_NAME
 
-// src/index.ts — Remotion entry point
 const ENTRY_POINT = path.resolve(process.cwd(), 'src', 'index.ts')
 
-// Beklenen composition ID'leri
 const EXPECTED_COMPOSITIONS = [
   'QuizVideo',
   'SplitQuizVerticalDemo',
@@ -76,7 +96,6 @@ async function main(): Promise<void> {
   console.log(`[deploy] region:  ${REGION}`)
   console.log('')
 
-  // ── Bundle + S3 upload ─────────────────────────────────────────
   const { serveUrl, siteName } = await deploySite({
     entryPoint: ENTRY_POINT,
     bucketName: BUCKET,
@@ -95,12 +114,12 @@ async function main(): Promise<void> {
       },
     },
   })
+
   console.log('\n')
-  console.log(`[deploy] ✓ Bundle deploy edildi`)
+  console.log('[deploy] ✓ Bundle deploy edildi')
   console.log(`[deploy]   serveUrl: ${serveUrl}`)
   console.log(`[deploy]   siteName: ${siteName}`)
 
-  // ── Composition doğrulaması ────────────────────────────────────
   if (FUNCTION_NAME) {
     console.log('\n[deploy] Composition listesi kontrol ediliyor…')
     try {
@@ -112,7 +131,6 @@ async function main(): Promise<void> {
       })
       const ids = comps.map((c: { id: string }) => c.id)
       console.log(`[deploy] Mevcut composition'lar: ${ids.join(', ')}`)
-
       const missing = EXPECTED_COMPOSITIONS.filter(id => !ids.includes(id))
       if (missing.length > 0) {
         console.warn(`[deploy] ⚠️  Eksik composition'lar: ${missing.join(', ')}`)
@@ -129,7 +147,6 @@ async function main(): Promise<void> {
     console.log('\n[deploy] Composition doğrulaması atlandı (REMOTION_LAMBDA_FUNCTION_NAME eksik)')
   }
 
-  // ── Kullanıcı eylemi ───────────────────────────────────────────
   console.log('\n[deploy] ══════════════════════════════════════════════')
   console.log('[deploy] Railway ortam değişkenini güncelle:')
   console.log(`\n   REMOTION_SERVE_URL = ${serveUrl}\n`)
