@@ -102,9 +102,11 @@ export interface Scene {
   duration_seconds: number  // TTS süresi sonrası güncellenir
   voice_text?: string       // TTS için metin
   tts_url?: string          // Supabase'deki MP3 URL
+  audio_url?: string        // alan adı normalizasyonu (tts_url alias)
 
   // Sahneye özel alanlar
   title?: string
+  context_text?: string    // referans cümle/paragraf/şiir — soru context'i için zorunlu
   subtitle?: string
   question_text?: string
   question_number?: number

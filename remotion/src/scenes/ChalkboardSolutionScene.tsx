@@ -42,6 +42,7 @@ const HEAD_FONT = '"Playfair Display", "Noto Sans", serif'
 function QuestionPanel({ scene, brand, fadeIn }: {
   scene: Scene; brand: BrandConfig; fadeIn: number
 }) {
+  const options = scene.options ?? []
   return (
     <div style={{
       width: '38%', height: '100%',
@@ -59,7 +60,7 @@ function QuestionPanel({ scene, brand, fadeIn }: {
       <div style={{
         display: 'inline-flex', alignItems: 'center', gap: 8,
         background: L.NAVY, borderRadius: 20,
-        padding: '5px 16px', marginBottom: 18, alignSelf: 'flex-start',
+        padding: '5px 16px', marginBottom: 14, alignSelf: 'flex-start',
       }}>
         {scene.question_number && (
           <span style={{ fontSize: 12, fontWeight: 900, color: L.GOLD, fontFamily: 'Lato', letterSpacing: 1 }}>
@@ -71,18 +72,63 @@ function QuestionPanel({ scene, brand, fadeIn }: {
         </span>
       </div>
 
+      {/* Referans metin — context_text */}
+      {scene.context_text && scene.context_text.trim() && (
+        <div style={{
+          background: 'rgba(11,42,74,0.04)',
+          border: `1.5px solid ${L.NAVY}30`,
+          borderLeft: `3px solid ${L.NAVY}`,
+          borderRadius: 8, padding: '9px 12px', marginBottom: 12,
+        }}>
+          <div style={{
+            fontSize: 9, fontWeight: 800, color: L.NAVY, letterSpacing: 2,
+            textTransform: 'uppercase' as const, fontFamily: 'Lato', marginBottom: 4,
+          }}>
+            REFERANS METİN
+          </div>
+          <p style={{
+            fontSize: 26, color: L.DARK, lineHeight: 1.55, margin: 0,
+            fontFamily: HEAD_FONT, fontStyle: 'italic',
+          }}>
+            {scene.context_text}
+          </p>
+        </div>
+      )}
+
       {/* Soru metni */}
       {scene.question_text && (
         <div style={{
           background: L.NAVY_DIM, border: `1.5px solid ${L.BORDER}`,
-          borderRadius: 12, padding: '16px 18px', marginBottom: 22,
+          borderRadius: 12, padding: '12px 14px', marginBottom: 14,
         }}>
           <p style={{
-            fontSize: 44, fontFamily: HEAD_FONT, fontWeight: 600,
+            fontSize: 38, fontFamily: HEAD_FONT, fontWeight: 600,
             color: L.DARK, lineHeight: 1.5, margin: 0,
           }}>
             {scene.question_text}
           </p>
+        </div>
+      )}
+
+      {/* Seçenekler (A-E) */}
+      {options.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+          {options.map(opt => (
+            <div key={opt.label} style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8,
+            }}>
+              <div style={{
+                width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                background: L.NAVY, color: '#fff',
+                fontWeight: 800, fontSize: 10,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                marginTop: 2,
+              }}>
+                {opt.label}
+              </div>
+              <span style={{ fontSize: 22, color: L.MID, lineHeight: 1.45 }}>{opt.text}</span>
+            </div>
+          ))}
         </div>
       )}
 
@@ -339,7 +385,7 @@ export function ChalkboardSolutionScene({ scene, brand }: Props) {
       overflow: 'hidden', position: 'relative',
     }}>
       {/* Marka filigranı */}
-      <BrandWatermark theme="light" opacity={0.04} />
+      <BrandWatermark theme="light" opacity={0.04} logoUrl={brand.logo_url} />
 
       {/* Üst lacivert şerit */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, background: L.NAVY, zIndex: 10 }} />
