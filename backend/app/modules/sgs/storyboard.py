@@ -97,18 +97,19 @@ SAHNE 2 ile {q_count + 1} arası — Her soru için ChalkboardSolutionScene:
   - component: "ChalkboardSolutionScene"
   - question_number: (1'den {q_count}'e)
   - total_questions: {q_count}
-  - question_text: Soruyu EKSIKSIZ kopyala
-  - options: Tüm şıkları [{{"label":"A","text":"..."}}] formatında kopyala
-  - correct_label: Doğru şık harfi (A/B/C/D)
+  - context_text: Soruda "yukarıdaki/aşağıdaki/bu cümlede/bu parçada/verilen cümlede" gibi ifade varsa referans metni/cümleyi buraya eksiksiz kopyala. Yoksa boş string.
+  - question_text: YALNIZCA soru kökü (referans metin context_text'e taşındı), max 200 karakter
+  - options: TÜM şıkları A,B,C,D ve varsa E [{{"label":"A","text":"..."}}] formatında kopyala — HİÇBİR ŞIK ATLANMAZ
+  - correct_label: Doğru şık harfi (A/B/C/D/E)
   - given: Verilenler listesi — her madde max 50 karakter ["...", "..."]
   - asked: İstenen — "... = ?" formatında, max 50 karakter
   - method_text: Hangi yöntem kullanılacak, max 80 karakter
   - chalkboard_steps: Tahta adımları dizisi (aşağıya bakınız)
-  - common_mistake: Bu soruda öğrencilerin sık yaptığı hata, max 80 karakter
-  - exam_tip: Sınav ipucu, max 80 karakter
-  - answer: "Doğru cevap: X — [kısa açıklama]" formatında, max 100 karakter
+  - common_mistake: Bu soruda öğrencilerin sık yaptığı hata, max 100 karakter
+  - exam_tip: Sınav ipucu, max 100 karakter
+  - answer: "Doğru cevap: X — [kısa açıklama]" formatında, max 120 karakter
   - voice_text: ÖĞRETMEN ANLATIMI — TAM ÇÖZÜM METNI (aşağıya bakınız)
-  - duration_seconds: 180
+  - duration_seconds: 55
 
   chalkboard_steps dizisi — step_type sırası ZORUNLU:
   1. step_type "given" adımları (verilenler, board_text kısa denklem/ifade)
@@ -152,8 +153,9 @@ SAHNE {q_count + 2} — OutroScene:
       "component": "ChalkboardSolutionScene",
       "question_number": 1,
       "total_questions": {q_count},
-      "question_text": "...",
-      "options": [{{"label": "A", "text": "..."}}, ...],
+      "context_text": "Referans metin/cümle varsa buraya (yoksa boş string)",
+      "question_text": "Yalnızca soru kökü...",
+      "options": [{{"label": "A", "text": "..."}}, {{"label": "B", "text": "..."}}, {{"label": "C", "text": "..."}}, {{"label": "D", "text": "..."}}, {{"label": "E", "text": "..."}}],
       "correct_label": "A",
       "given": ["...", "..."],
       "asked": "... = ?",
@@ -170,7 +172,7 @@ SAHNE {q_count + 2} — OutroScene:
       "exam_tip": "...",
       "answer": "Doğru cevap: X — ...",
       "voice_text": "...",
-      "duration_seconds": 180
+      "duration_seconds": 55
     }},
     ... (her soru için tekrar) ...
     {{
