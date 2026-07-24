@@ -1,5 +1,6 @@
 import { AbsoluteFill, Sequence } from 'remotion'
 import { StoryboardJSON, Scene, SceneComponent } from '../types'
+import { BrandOverlay } from '../components/BrandOverlay'
 import { FPS, LESSON_PALETTE as L } from '../brand'
 import { getTotalFrames, TRANSITION_FRAMES } from '../utils'
 import { LessonTitleScene } from '../scenes/LessonTitleScene'
@@ -87,6 +88,7 @@ export function LessonVideo({ storyboard }: LessonVideoProps) {
           </AbsoluteFill>
         </Sequence>
       ))}
+      <BrandOverlay brand={brand} theme="light" />
     </AbsoluteFill>
   )
 }

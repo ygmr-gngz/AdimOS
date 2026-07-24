@@ -1,5 +1,6 @@
 import { AbsoluteFill, Sequence, Audio } from 'remotion'
 import { StoryboardJSON, Scene, SceneComponent } from '../types'
+import { BrandOverlay } from '../components/BrandOverlay'
 import { FPS, } from '../brand'
 import { TRANSITION_FRAMES } from '../utils'
 import { IntroScene } from '../scenes/IntroScene'
@@ -80,6 +81,8 @@ export function QuizVideo({ storyboard }: QuizVideoProps) {
     return { scene, start, durationFrames }
   })
 
+  const theme = storyboard.format === '9:16' ? 'dark' : 'light'
+
   return (
     <AbsoluteFill style={{ background: brand.background_color }}>
       {sceneTimings.map(({ scene, start, durationFrames }) => (
@@ -89,6 +92,7 @@ export function QuizVideo({ storyboard }: QuizVideoProps) {
           </AbsoluteFill>
         </Sequence>
       ))}
+      <BrandOverlay brand={brand} theme={theme} />
     </AbsoluteFill>
   )
 }

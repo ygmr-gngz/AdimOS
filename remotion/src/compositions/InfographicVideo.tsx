@@ -5,6 +5,7 @@
  */
 import { AbsoluteFill, Sequence } from 'remotion'
 import { StoryboardJSON } from '../types'
+import { BrandOverlay } from '../components/BrandOverlay'
 import { FPS } from '../brand'
 import { TRANSITION_FRAMES } from '../utils'
 import { InfographicCardGridScene } from '../scenes/InfographicCardGridScene'
@@ -29,7 +30,11 @@ export function InfographicVideo({ storyboard }: Props) {
   let cursor = 0
   const timings = scenes.map(scene => {
     const start = cursor
-    const durationFrames = Math.round(scene.duration_seconds * FPS) + TRANSITION_FRAMES
+    // NaN koruması — duration_seconds string veya undefined gelebilir
+    const raw = scene.duration_seconds as number | string | undefined | null
+    const safeSec = (typeof raw === 'number' && isFinite(raw) && raw > 0) ? raw
+      : (typeof raw === 'string' && Number(raw) > 0) ? Number(raw) : 15
+    const durationFrames = Math.round(safeSec * FPS) + TRANSITION_FRAMES
     cursor += durationFrames
     return { scene, start, durationFrames }
   })
@@ -47,6 +52,7 @@ export function InfographicVideo({ storyboard }: Props) {
           </Sequence>
         )
       })}
+      <BrandOverlay brand={brand} theme="dark" watermarkOpacity={0.10} />
     </AbsoluteFill>
   )
 }

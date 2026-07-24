@@ -3,6 +3,7 @@ import { QuizVideo, getTotalFrames } from './compositions/QuizVideo'
 import { MotivationVideo, getMotivationTotalFrames } from './compositions/MotivationVideo'
 import { InfographicVideo, getInfographicTotalFrames } from './compositions/InfographicVideo'
 import { LessonVideo, getLessonTotalFrames } from './compositions/LessonVideo'
+import { EducationalReel120, getReelTotalFrames } from './compositions/EducationalReel120'
 import { StoryboardJSON } from './types'
 import { DEFAULT_BRAND, DIMENSIONS, FPS } from './brand'
 import { getTotalFrames as utils_getTotalFrames } from './utils'
@@ -186,6 +187,83 @@ const DEMO_LESSON: StoryboardJSON = {
   ],
 }
 
+// EducationalReel120 demo storyboard — 2 dakikalık SGS eğitim Reels
+const DEMO_REEL: StoryboardJSON = {
+  video_type: 'reel',
+  title: 'SGS Demo — 2 Dakikalık Eğitim Reels',
+  lesson_name: 'Özel Güvenlik',
+  topic: '5188 Sayılı Kanun',
+  format: '9:16',
+  language: 'tr',
+  brand: { ...DEFAULT_BRAND, handle: '@adimmusavir' },
+  content_series: 'iki_dakikada_sgs',
+  requested_duration_seconds: 120,
+  duration_tolerance_seconds: 15,
+  scenes: [
+    {
+      id: 1, component: 'EducationalReelScene', duration_seconds: 5,
+      segment_type: 'hook',
+      hook_text: 'SGS\'de En Çok Sorulan\nBu Kuralı Biliyor musun?',
+      highlight_stat: '%73',
+    },
+    {
+      id: 2, component: 'EducationalReelScene', duration_seconds: 15,
+      segment_type: 'context',
+      title: 'Neden Önemli?',
+      bullet_points: [
+        'Her yıl SGS sınavında çıkıyor',
+        'Sınav sorularının %30\'u bu konudan',
+        'Kolayca yanlış yapılan bir alan',
+      ],
+    },
+    {
+      id: 3, component: 'EducationalReelScene', duration_seconds: 25,
+      segment_type: 'content',
+      title: 'Özel Güvenlik Kimlik Kartı',
+      bullet_points: [
+        '5188 sayılı Kanun md. 11 kapsar',
+        'Geçerlilik süresi: 5 yıl',
+        'Valiliğe kayıt zorunluluğu',
+        'Kart olmadan görev yapılamaz',
+      ],
+    },
+    {
+      id: 4, component: 'EducationalReelScene', duration_seconds: 25,
+      segment_type: 'content',
+      title: 'Kart Yenileme Koşulları',
+      bullet_points: [
+        'Süre dolmadan valilik onayı gerekir',
+        'Yenileme eğitim sertifikası şartı',
+        'Süre dolarsa görev yapılamaz',
+        'Yenileme gecikmesi para cezasına yol açar',
+      ],
+    },
+    {
+      id: 5, component: 'EducationalReelScene', duration_seconds: 25,
+      segment_type: 'mistake',
+      title: 'Sık Yapılan Hatalar',
+      common_mistake: '"Kart süresi dolsa da çalışmaya devam edebilirim" — Bu YANLIŞ! Süresi dolan kartla görev yapmak Kanun\'a aykırıdır.',
+    },
+    {
+      id: 6, component: 'EducationalReelScene', duration_seconds: 15,
+      segment_type: 'tip',
+      title: 'Sınav İpucu',
+      exam_tip: 'Soruda "kaç yıl" geçiyorsa cevap 5 yıl. "Yenileme" geçiyorsa "valilik onayı + sertifika" ikisini birlikte yaz.',
+    },
+    {
+      id: 7, component: 'EducationalReelScene', duration_seconds: 10,
+      segment_type: 'outro',
+      title: 'Özet',
+      cta_text: 'Daha fazla SGS sorusu için\n@adimmusavir\'i takip et! 🎯',
+      bullet_points: [
+        'Kimlik kartı geçerliliği: 5 yıl',
+        'Yenileme: valilik onayı + sertifika',
+        'Süresi dolan kartla görev yasak',
+      ],
+    },
+  ],
+}
+
 // İnfografik demo storyboard
 const DEMO_INFOGRAPHIC: StoryboardJSON = {
   video_type: 'lesson',
@@ -320,6 +398,21 @@ export function Root() {
           const sb = (props as { storyboard?: StoryboardJSON }).storyboard
           const fmt = sb?.format ?? '9:16'
           return { durationInFrames: utils_getTotalFrames(sb), width: DIMENSIONS[fmt].width, height: DIMENSIONS[fmt].height }
+        }}
+      />
+      {/* EducationalReel120 — 2 dakikalık SGS eğitim Reels (9:16, ~120 sn) */}
+      <Composition
+        id="EducationalReel120"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={EducationalReel120 as any}
+        durationInFrames={getReelTotalFrames(DEMO_REEL)}
+        fps={FPS}
+        width={dimV.width}
+        height={dimV.height}
+        defaultProps={{ storyboard: DEMO_REEL }}
+        calculateMetadata={({ props }) => {
+          const sb = (props as { storyboard?: StoryboardJSON }).storyboard
+          return { durationInFrames: getReelTotalFrames(sb), width: dimV.width, height: dimV.height }
         }}
       />
     </>

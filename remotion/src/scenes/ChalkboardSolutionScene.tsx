@@ -11,7 +11,6 @@
 import { interpolate, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
 import { Scene, BrandConfig, ChalkboardStep } from '../types'
 import { LESSON_PALETTE as L } from '../brand'
-import { BrandWatermark } from '../components/BrandWatermark'
 
 interface Props { scene: Scene; brand: BrandConfig }
 
@@ -385,7 +384,7 @@ export function ChalkboardSolutionScene({ scene, brand }: Props) {
       overflow: 'hidden', position: 'relative',
     }}>
       {/* Marka filigranı */}
-      <BrandWatermark theme="light" opacity={0.04} logoUrl={brand.logo_url} />
+      {/* BrandOverlay composition seviyesinde eklenir */}
 
       {/* Üst lacivert şerit */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, background: L.NAVY, zIndex: 10 }} />

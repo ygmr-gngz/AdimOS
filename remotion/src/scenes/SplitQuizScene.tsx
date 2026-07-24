@@ -9,7 +9,6 @@
 import { interpolate, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
 import { BrandConfig, Scene, SolutionStep } from '../types'
 import { PALETTE, LESSON_PALETTE as L } from '../brand'
-import { BrandWatermark } from '../components/BrandWatermark'
 
 const ACCENT = PALETTE.ACCENT  // #2B7FE0
 const WHITE  = '#FFFFFF'
@@ -124,7 +123,7 @@ export function SplitQuizScene({ scene, brand }: Props) {
       display: 'flex', flexDirection: 'row',
       fontFamily: brand.font_body, overflow: 'hidden', position: 'relative',
     }}>
-      <BrandWatermark theme="light" opacity={0.04} logoUrl={brand.logo_url} />
+      {/* BrandOverlay composition seviyesinde eklenir */}
 
       {/* ── Sol Panel: Soru (58%) ────────────────────────────── */}
       <div style={{

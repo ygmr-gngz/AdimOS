@@ -1,7 +1,29 @@
 // ── Storyboard JSON tipleri ───────────────────────────────────
 
-export type VideoType = 'quiz' | 'lesson' | 'konu_anlatimi' | 'shorts' | 'motivation'
+export type VideoType = 'quiz' | 'lesson' | 'konu_anlatimi' | 'shorts' | 'motivation' | 'reel'
 export type VideoFormat = '16:9' | '9:16'
+
+// Matematik ifadesi — üç ayrı sunum formatı
+export interface MathExpression {
+  latex:        string  // KaTeX ile renderlama için: "\\frac{a+b}{2}"
+  plain_text:   string  // KaTeX hata verirse fallback: "(a+b)/2"
+  spoken_text:  string  // TTS için Türkçe: "a artı b bölü iki"
+}
+
+// Görsel varlık — Reels ve Motivation sahneleri için
+export interface VisualAsset {
+  visual_type:     'photo' | 'video' | 'illustration' | 'chart' | 'document' | 'icon_scene'
+  visual_url:      string
+  visual_prompt?:  string  // görsel üretim için ipucu
+  motion?:         'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right' | 'static'
+  overlay_opacity?: number  // varsayılan 0.35
+}
+
+// Eğitim Reel sahne tipi
+export type ReelSegmentType = 'hook' | 'context' | 'content' | 'mistake' | 'tip' | 'outro'
+
+// İçerik serisi tanımı
+export type ContentSeries = 'cikmis_soru' | 'iki_dakikada_sgs' | 'sik_hata' | 'bir_soruda_ogren' | 'konu_anlatimi' | 'motivasyon'
 
 export type SceneComponent =
   | 'IntroScene'
@@ -40,6 +62,8 @@ export type SceneComponent =
   | 'LessonSummaryScene'
   // Pedagojik matematik çözümü (tahta)
   | 'ChalkboardSolutionScene'
+  // 2 Dakikalık Eğitim Reels
+  | 'EducationalReelScene'
 
 export interface QuizOption {
   label: string        // A, B, C, D
@@ -146,9 +170,20 @@ export interface Scene {
   right_panel_type?: 'ornek' | 'onemli' | 'sinav_notu'  // sağ panel renk/etiket
   right_content?: string                                  // sağ panel ana metin
 
-  // Konu anlatımı görsel
+  // Görsel varlık (Reels, Motivation)
+  visual?: VisualAsset
+  // Geriye dönük uyumluluk
   icon?: string            // emoji ikon (LessonTitleScene, LessonConceptScene)
   visual_url?: string      // fotoğraf/görsel URL (isteğe bağlı)
+
+  // Matematik ifadeleri
+  math_expressions?: MathExpression[]
+
+  // Eğitim Reel alanları
+  segment_type?: ReelSegmentType   // hook | context | content | mistake | tip | outro
+  hook_text?: string               // kanca metni (0-5s)
+  cta_text?: string                // call-to-action metni
+  highlight_stat?: string          // vurgulanacak istatistik/rakam
 
   // Tahta soru çözümü (ChalkboardSolutionScene)
   given?: string[]                // verilenler: ["a - b = 32", "a = 2b"]
@@ -189,6 +224,14 @@ export interface StoryboardJSON {
   language: string
   brand: BrandConfig
   scenes: Scene[]
+
+  // Kullanıcı süre seçimi — backend kalite kapısı için
+  requested_duration_seconds?: number
+  duration_tolerance_seconds?: number
+
+  // İçerik tekrar engeleme
+  content_series?: ContentSeries
+  storyboard_version?: number        // "Yeniden oluştur" her seferinde artar
 }
 
 // ── Render API tipleri ────────────────────────────────────────

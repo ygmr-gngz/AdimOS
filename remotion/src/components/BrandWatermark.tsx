@@ -1,31 +1,45 @@
 /**
  * BrandWatermark — Tüm composition'larda kullanılan marka filigranı.
- * Açık (beyaz) ve koyu (lacivert) arka planlar için iki tema.
- * logoUrl varsa: ekran yüksekliğinin %50'si kadar logo gösterilir (objectFit: contain).
- * logoUrl yoksa: text tabanlı "ADIM / MÜŞAVİRLİK" yazı filigranı.
+ * Kaynak önceliği: staticFile > logoUrl (Supabase) > metin filigranı
  * position:absolute, inset:0, pointerEvents:none — içerikle çakışmaz.
  */
-import { Img } from 'remotion'
+import { Img, staticFile } from 'remotion'
 import { LESSON_PALETTE } from '../brand'
 
+const STATIC_LOGO = staticFile('brand/adim-musavir-logo.png')
+
 interface BrandWatermarkProps {
-  theme?:   'light' | 'dark'
-  opacity?: number
-  rotate?:  number
+  theme?:    'light' | 'dark'
+  opacity?:  number
+  rotate?:   number
   fontSize?: number
-  logoUrl?: string
+  logoUrl?:  string  // Supabase URL (fallback)
+  useStatic?: boolean // staticFile kullan (varsayılan true)
 }
 
 export function BrandWatermark({
-  theme    = 'light',
+  theme      = 'light',
   opacity,
-  rotate   = -12,
-  fontSize = 220,
+  rotate     = -12,
+  fontSize   = 220,
   logoUrl,
+  useStatic  = true,
 }: BrandWatermarkProps) {
-  const defaultOpacity = theme === 'light' ? 0.045 : 0.055
+  const defaultOpacity = theme === 'light' ? 0.07 : 0.09
   const color          = theme === 'light' ? LESSON_PALETTE.NAVY : '#FFFFFF'
   const eff            = opacity ?? defaultOpacity
+
+  // Kullanılacak logo kaynağı: static > Supabase URL
+  const imgSrc = useStatic ? STATIC_LOGO : (logoUrl ?? null)
+
+  const imgStyle = {
+    height: '50%',
+    maxWidth: '60%',
+    objectFit: 'contain' as const,
+    opacity: eff,
+    transform: `rotate(${rotate}deg)`,
+    userSelect: 'none' as const,
+  }
 
   return (
     <div style={{
@@ -33,21 +47,10 @@ export function BrandWatermark({
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       pointerEvents: 'none', overflow: 'hidden', zIndex: 0,
     }}>
-      {logoUrl ? (
-        /* Logo filigranı — ekran yüksekliğinin %50'si, objectFit: contain */
-        <Img
-          src={logoUrl}
-          style={{
-            height: '50%',
-            maxWidth: '60%',
-            objectFit: 'contain',
-            opacity: eff,
-            transform: `rotate(${rotate}deg)`,
-            userSelect: 'none',
-          }}
-        />
+      {imgSrc ? (
+        <Img src={imgSrc} style={imgStyle} />
       ) : (
-        /* Metin filigranı (logo yoksa) */
+        /* Metin filigranı — hiç logo yok iken */
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           transform: `rotate(${rotate}deg)`,
@@ -55,28 +58,17 @@ export function BrandWatermark({
           gap: 0,
         }}>
           <span style={{
-            fontSize,
-            fontWeight: 900,
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase' as const,
-            color,
-            opacity: eff,
-            whiteSpace: 'nowrap' as const,
-            fontFamily: 'Lato',
-            lineHeight: 0.88,
+            fontSize, fontWeight: 900, letterSpacing: '0.12em',
+            textTransform: 'uppercase' as const, color, opacity: eff,
+            whiteSpace: 'nowrap' as const, fontFamily: 'Lato', lineHeight: 0.88,
           }}>
             ADIM
           </span>
           <span style={{
-            fontSize: Math.round(fontSize * 0.28),
-            fontWeight: 700,
-            letterSpacing: '0.50em',
-            textTransform: 'uppercase' as const,
-            color,
-            opacity: eff * 0.75,
-            whiteSpace: 'nowrap' as const,
-            fontFamily: 'Lato',
-            marginTop: 4,
+            fontSize: Math.round(fontSize * 0.28), fontWeight: 700,
+            letterSpacing: '0.50em', textTransform: 'uppercase' as const,
+            color, opacity: eff * 0.75, whiteSpace: 'nowrap' as const,
+            fontFamily: 'Lato', marginTop: 4,
           }}>
             MÜŞAVİRLİK
           </span>

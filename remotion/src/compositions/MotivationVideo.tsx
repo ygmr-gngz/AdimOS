@@ -4,6 +4,7 @@
  */
 import { AbsoluteFill, Sequence } from 'remotion'
 import { StoryboardJSON } from '../types'
+import { BrandOverlay } from '../components/BrandOverlay'
 import { FPS } from '../brand'
 import { TRANSITION_FRAMES } from '../utils'
 import { MotivationScene } from '../scenes/MotivationScene'
@@ -43,6 +44,7 @@ export function MotivationVideo({ storyboard }: Props) {
           </Sequence>
         )
       })}
+      <BrandOverlay brand={brand} theme="dark" watermarkOpacity={0.10} />
     </AbsoluteFill>
   )
 }
