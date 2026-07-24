@@ -1,4 +1,4 @@
-"""Video Prodüksiyon Motoru — Quiz / Ders / Shorts / Motivasyon."""
+"""Video Prodüksiyon Motoru — Quiz / Ders / Shorts / Motivasyon / EducationalReel120."""
 import logging
 import time
 import uuid
@@ -9,6 +9,12 @@ from openai import RateLimitError as OpenAIRateLimitError, APITimeoutError
 from app.db.supabase import get_supabase_client
 from app.core.config import settings
 from app.modules.content.pronunciation_dict import apply_pronunciation_dict
+from app.modules.content.quality_gates import (
+    check_storyboard_quality,
+    check_audio_volume,
+    check_video_duration,
+)
+from app.modules.content.content_dedup import check_content_duplicate, save_content_fingerprint
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -41,7 +47,7 @@ class QuizQuestion(BaseModel):
     explanation: Optional[str] = None
 
 class CreateVideoPayload(BaseModel):
-    type: str                              # quiz | lesson | shorts | motivation | infographic
+    type: str                              # quiz | lesson | shorts | motivation | infographic | reel
     title: str
     lesson_name: Optional[str] = None
     topic: Optional[str] = None
@@ -51,6 +57,12 @@ class CreateVideoPayload(BaseModel):
     questions: Optional[List[QuizQuestion]] = None
     pre_storyboard: Optional[dict] = None         # infografik önceden üretilmiş storyboard
     infographic_template: Optional[str] = None    # card_grid | comparison | process
+    # Süre kalite kapısı (Section 1)
+    requested_duration_seconds: Optional[float] = None
+    duration_tolerance_seconds: float = 15.0
+    # İçerik tekrar engeli (Section 2)
+    content_series: Optional[str] = None   # cikmis_soru | iki_dakikada_sgs | sik_hata | ...
+    storyboard_version: Optional[int] = None  # yeniden oluşturma sayacı
 
 class RejectBody(BaseModel):
     reason: Optional[str] = None
@@ -393,6 +405,25 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
     total_tts_chars = 0
 
     try:
+        # ── -1. İçerik tekrar kontrolü (Section 2) ─────────────────
+        if payload.content_series and payload.type not in ("infographic",):
+            is_dup, similar_title, sim_score = check_content_duplicate(
+                title=payload.title,
+                topic=payload.topic or payload.title,
+                content_series=payload.content_series,
+            )
+            if is_dup:
+                logger.warning(
+                    f"[video] {job_id[:8]} tekrar içerik: '{similar_title}' "
+                    f"(benzerlik={sim_score:.3f}) — devam ediliyor (override)"
+                )
+                sb.table("video_jobs").update({
+                    "error_message": (
+                        f"Uyarı: Benzer içerik daha önce üretildi → '{similar_title}' "
+                        f"(benzerlik: {sim_score:.0%}). Yine de üretildi."
+                    )
+                }).eq("id", job_id).execute()
+
         # ── 0. İnfografik (TTS yok, Remotion olmadan doğrudan hazır) ──
         if payload.type == "infographic":
             _set_status(job_id, "scripting")
@@ -486,7 +517,23 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 "scenes": scenes,
             }
 
-        elif payload.type in ("educational_reel", "bilgilendirme_kisa", "kisa_icerik", "shorts"):
+        elif payload.type in ("reel", "educational_reel", "bilgilendirme_kisa", "kisa_icerik"):
+            # EducationalReel120 — GPT storyboard + EducationalReelScene bileşeni
+            from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
+            storyboard = generate_educational_reel_storyboard(
+                title=payload.title,
+                topic=payload.topic or payload.title,
+                subject=payload.lesson_name or "SGS",
+                content_series=payload.content_series,
+                description=payload.description or "",
+                brand=brand,
+            )
+            # format override
+            storyboard["format"] = payload.format or "9:16"
+            for i, s in enumerate(storyboard.get("scenes", []), 1):
+                s["id"] = i
+
+        elif payload.type in ("shorts",):
             from app.modules.content.motivation_generator import generate_motivation_storyboard
             topic_text = payload.topic or payload.title
             tone = payload.description or "eğitici ve bilgilendirici"
@@ -501,7 +548,7 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                     "voice_text": narration,
                 })
             storyboard = {
-                "video_type": "educational_reel",
+                "video_type": "shorts",
                 "title": result.get("title", payload.title),
                 "format": payload.format,
                 "language": "tr",
@@ -614,6 +661,24 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 ],
             }
 
+        # ── Storyboard kalite kontrolü (Section 14 pre-render gate) ──
+        quality_warnings = check_storyboard_quality(storyboard, payload.type)
+        if quality_warnings:
+            logger.warning(
+                f"[video] {job_id[:8]} storyboard kalite uyarıları: {quality_warnings}"
+            )
+            sb.table("video_jobs").update({
+                "error_message": "Kalite uyarısı: " + " | ".join(quality_warnings)
+            }).eq("id", job_id).execute()
+
+        # ── İçerik parmak izi kaydet (Section 2) ──────────────────
+        save_content_fingerprint(
+            job_id=job_id,
+            title=payload.title,
+            topic=payload.topic or payload.title,
+            content_series=payload.content_series,
+        )
+
         sb.table("video_jobs").update({"storyboard": storyboard, "updated_at": "now()"}).eq("id", job_id).execute()
 
         scene_records = [
@@ -647,6 +712,23 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
             try:
                 audio_bytes, char_count = _tts_bytes(voice_text)
                 total_tts_chars += char_count
+
+                # Section 6: ses seviyesi kontrolü — sessiz TTS yeniden üretilir
+                vol_ok, mean_vol = check_audio_volume(audio_bytes)
+                if not vol_ok:
+                    logger.warning(
+                        f"[video] {job_id} sahne {scene_row['scene_index']} "
+                        f"sessiz TTS ({mean_vol:.1f}dB) — yeniden üretiliyor"
+                    )
+                    audio_bytes, char_count2 = _tts_bytes(voice_text)
+                    total_tts_chars += char_count2
+                    vol_ok2, mean_vol2 = check_audio_volume(audio_bytes)
+                    if not vol_ok2:
+                        logger.error(
+                            f"[video] {job_id} sahne {scene_row['scene_index']} "
+                            f"yeniden deneme de sessiz ({mean_vol2:.1f}dB) — devam ediliyor"
+                        )
+
                 filename = f"{job_id}_{scene_row['scene_index']}.mp3"
                 tts_url = _upload_tts(audio_bytes, filename)
                 duration = _estimate_duration(voice_text)
@@ -1070,9 +1152,32 @@ def generate_motivation(payload: GenerateMotivationPayload):
 def render_callback(body: RenderCallback):
     """Remotion render servisi tamamlandığında çağırır."""
     if body.status == "done":
+        # Section 1: süre kalite kontrolü
+        duration_note = ""
+        try:
+            sb_cb = get_supabase_client()
+            job_row = sb_cb.table("video_jobs").select(
+                "payload_json, storyboard"
+            ).eq("id", body.job_id).execute().data
+            if job_row:
+                pj = job_row[0].get("payload_json") or {}
+                req_sec  = pj.get("requested_duration_seconds")
+                tol_sec  = pj.get("duration_tolerance_seconds", 15.0)
+                if body.video_url and req_sec:
+                    dur_ok, _, dur_msg = check_video_duration(
+                        video_url=body.video_url,
+                        requested_seconds=req_sec,
+                        tolerance_seconds=tol_sec,
+                    )
+                    logger.info(f"[video] {body.job_id[:8]} {dur_msg}")
+                    if not dur_ok:
+                        duration_note = f" | Süre uyarısı: {dur_msg}"
+        except Exception as dur_exc:
+            logger.warning(f"[video] render callback süre kontrolü hatası: {dur_exc}")
+
         _set_status(body.job_id, "ready_for_review", {
             "video_url": body.video_url,
-            "error_message": None,
+            "error_message": duration_note.strip(" |") if duration_note else None,
         })
         logger.info(f"[video] {body.job_id} render tamamlandı: {body.video_url}")
     else:
@@ -1114,6 +1219,98 @@ def render_health_reset():
         _remotion_consecutive_failures = 0
     logger.info(f"[video] devre kesici sıfırlandı (eski değer: {old})")
     return {"ok": True, "reset_from": old}
+
+
+# ── Section 13: Storyboard önizleme (TTS ve render yok) ──────
+
+class PreviewPayload(BaseModel):
+    type: str
+    title: str
+    lesson_name: Optional[str] = None
+    topic: Optional[str] = None
+    description: Optional[str] = None
+    format: str = "9:16"
+    target_duration_minutes: Optional[int] = 12
+    questions: Optional[List[QuizQuestion]] = None
+    content_series: Optional[str] = None
+
+@router.post("/preview")
+def preview_storyboard(payload: PreviewPayload):
+    """
+    TTS ve Remotion render olmadan sadece storyboard JSON üretir.
+    Kullanıcı sahneleri gözden geçirip onayladıktan sonra /create ile tam pipeline başlatılabilir.
+    """
+    brand = _get_brand()
+    try:
+        if payload.type in ("reel", "educational_reel"):
+            from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
+            storyboard = generate_educational_reel_storyboard(
+                title=payload.title,
+                topic=payload.topic or payload.title,
+                subject=payload.lesson_name or "SGS",
+                content_series=payload.content_series,
+                description=payload.description or "",
+                brand=brand,
+            )
+        elif payload.type in ("konu_anlatimi", "lesson_long", "sgs_topic_video"):
+            from app.modules.sgs.lesson_storyboard import generate_lesson_storyboard
+            storyboard_raw = generate_lesson_storyboard(
+                title=payload.title,
+                topic=payload.topic or payload.title,
+                subject=payload.lesson_name or "SGS",
+                target_minutes=payload.target_duration_minutes or 20,
+                description=payload.description or "",
+            )
+            scenes = storyboard_raw.get("scenes", [])
+            for i, s in enumerate(scenes, 1):
+                s["id"] = i
+            storyboard = {
+                "video_type": "konu_anlatimi", "title": payload.title,
+                "lesson_name": payload.lesson_name, "topic": payload.topic,
+                "format": payload.format, "language": "tr", "brand": brand, "scenes": scenes,
+            }
+        elif payload.type == "quiz" and payload.questions:
+            from app.modules.sgs.storyboard import generate_sgs_question_storyboard
+            questions_dict = [
+                {
+                    "question_text": q.text,
+                    "options": [{"label": o.label, "text": o.text} for o in q.options],
+                    "correct_option": q.correct_label,
+                    "explanation": q.explanation or "",
+                }
+                for q in payload.questions
+            ]
+            raw = generate_sgs_question_storyboard(
+                title=payload.title, topic=payload.topic or payload.title,
+                subject=payload.lesson_name or "SGS", questions=questions_dict,
+            )
+            scenes = raw.get("scenes", [])
+            for i, s in enumerate(scenes, 1):
+                s["id"] = i
+            storyboard = {
+                "video_type": "quiz", "title": payload.title,
+                "lesson_name": payload.lesson_name, "topic": payload.topic,
+                "format": payload.format, "language": "tr", "brand": brand, "scenes": scenes,
+            }
+        else:
+            raise HTTPException(400, f"'{payload.type}' tipi önizleme için desteklenmiyor.")
+
+        # Kalite uyarıları
+        warnings = check_storyboard_quality(storyboard, payload.type)
+
+        return {
+            "ok": True,
+            "storyboard": storyboard,
+            "scene_count": len(storyboard.get("scenes", [])),
+            "quality_warnings": warnings,
+            "hint": "Storyboard'u onayladıktan sonra POST /video/create ile tam pipeline başlatın.",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"[video] preview hatası: {exc}", exc_info=True)
+        raise HTTPException(500, f"Önizleme üretilemedi: {str(exc)[:300]}")
 
 
 # ── GÖREV 4: Cleanup altyapısı ────────────────────────────────

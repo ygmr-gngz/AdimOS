@@ -43,6 +43,9 @@ apscheduler==3.10.4
 # ── Logging & Monitoring ─────────────────────────────────────
 loguru==0.7.3
 
+# ── Matematik Doğrulama (Section 4) ──────────────────────────
+sympy==1.13.3
+
 # ── Test ─────────────────────────────────────────────────────
 pytest==8.3.4
 pytest-asyncio==0.24.0
