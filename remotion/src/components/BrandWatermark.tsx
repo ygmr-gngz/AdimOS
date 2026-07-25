@@ -13,8 +13,7 @@ interface BrandWatermarkProps {
   opacity?:  number
   rotate?:   number
   fontSize?: number
-  logoUrl?:  string  // Supabase URL (fallback)
-  useStatic?: boolean // staticFile kullan (varsayılan true)
+  logoUrl?:  string  // Supabase URL (öncelikli), yoksa staticFile
 }
 
 export function BrandWatermark({
@@ -23,14 +22,13 @@ export function BrandWatermark({
   rotate     = -12,
   fontSize   = 220,
   logoUrl,
-  useStatic  = true,
 }: BrandWatermarkProps) {
   const defaultOpacity = theme === 'light' ? 0.07 : 0.09
   const color          = theme === 'light' ? LESSON_PALETTE.NAVY : '#FFFFFF'
   const eff            = opacity ?? defaultOpacity
 
-  // Kullanılacak logo kaynağı: static > Supabase URL
-  const imgSrc = useStatic ? STATIC_LOGO : (logoUrl ?? null)
+  // Önce Supabase URL, yoksa staticFile (bundle'da varsa)
+  const imgSrc = logoUrl ?? STATIC_LOGO
 
   const imgStyle = {
     height: '50%',

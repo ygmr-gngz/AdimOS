@@ -8,14 +8,14 @@ import { Img, staticFile } from 'remotion'
 import { BrandConfig } from '../types'
 import { LESSON_PALETTE as L } from '../brand'
 
-const LOGO_PATH = staticFile('brand/adim-musavir-logo.png')
+const STATIC_LOGO = staticFile('brand/adim-musavir-logo.png')
 
 interface BrandCornerLogoProps {
   brand?:   BrandConfig
   corner?:  'top-right' | 'top-left'
   size?:    number   // px, varsayılan 140
   padding?: number   // kenar boşluğu, varsayılan 20
-  logoUrl?: string   // Supabase URL (fallback)
+  logoUrl?: string   // Supabase URL (override)
 }
 
 export function BrandCornerLogo({
@@ -29,8 +29,8 @@ export function BrandCornerLogo({
     ? { top: padding, right: padding }
     : { top: padding, left: padding }
 
-  // staticFile yoksa Supabase URL, o da yoksa metin etiketi
-  const src = logoUrl ?? brand?.logo_url
+  // Önce prop logoUrl, sonra brand.logo_url (Supabase), son çare staticFile
+  const src = logoUrl ?? brand?.logo_url ?? STATIC_LOGO
 
   return (
     <div style={{
@@ -40,13 +40,9 @@ export function BrandCornerLogo({
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
       <Img
-        src={LOGO_PATH}
+        src={src}
         style={{ width: size, height: size, objectFit: 'contain' }}
       />
-      {/* Fallback — static logo yüklenemezse, Supabase URL varsa göster */}
-      {!LOGO_PATH && src && (
-        <Img src={src} style={{ width: size, height: size, objectFit: 'contain' }} />
-      )}
     </div>
   )
 }

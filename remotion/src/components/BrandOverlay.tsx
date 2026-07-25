@@ -40,7 +40,7 @@ export function BrandOverlay({
   return (
     <>
       {/* 1. Filigran — içerik arkasında (z:0) */}
-      <BrandWatermark theme={theme} opacity={wOpacity} />
+      <BrandWatermark theme={theme} opacity={wOpacity} logoUrl={brand?.logo_url} />
 
       {/* 2. Köşe logosu — içerik üstünde (z:100) */}
       <BrandCornerLogo brand={brand} corner="top-right" size={logoSize} />
