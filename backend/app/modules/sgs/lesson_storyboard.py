@@ -106,20 +106,34 @@ VİDEO BİLGİSİ:
      kapanış yapabilirsin (100-140 kelime)
    - duration_seconds: 60
 
-════════ SAHNE SAYISI KILAVUZU ════════
-{target_minutes} dakika için ZORUNLU sahne dizisi (minimum 8 sahne):
+════════ SAHNE SAYISI VE EKRAN KULLANIMI KILAVUZU ════════
+{target_minutes} dakika için ZORUNLU sahne dizisi (10-18 sahne):
 - 1 LessonTitleScene (~25s)
-- 3-4 LessonConceptScene (her biri ~90-120s — kavram başına ayrı sahne)
-- 1-2 LessonCardScene (her biri ~75s)
-- 3-4 LessonExampleScene (her biri ~110-140s — örnek başına ayrı sahne)
+- 4-6 LessonConceptScene (her biri ~90-120s — kavram başına ayrı sahne, alt konuları böl)
+- 2-3 LessonCardScene (her biri ~75s — tablo/liste içerikleri için)
+- 4-6 LessonExampleScene (her biri ~110-140s — her örnek için ayrı sahne)
 - 1 LessonSummaryScene (~60s)
 
+EKRAN KULLANIMI KURALLARI (%75-85 hedef):
+- bullet_points: 4-5 madde (3 madde ekranı boş bırakır — yetersiz)
+- cards: 4-5 kart (3 kart yetersiz doluluk)
+- journal_rows: en az 3 kayıt satırı içeren örnekler tercih et
+- definition alanı: 2 cümle — ekranın üst bölümünü doldurmak için yeterince uzun olmalı
+- LessonConceptScene bullet_points: maksimum 5 madde, her madde ≥8 kelime
+- LessonCardScene cards: her kart için content VE rule alanı doldurulmalı
+
 MİNİMUM KURAL — KELİMESİ KELİMESİNE UYULACAK:
-- Toplam sahne sayısı: EN AZ 8, ideal 10-12
+- Toplam sahne sayısı: EN AZ 10, ideal 12-15
 - Toplam voice_text süresi: EN AZ 1080 saniye (18 dakika)
 - Her kavram için ayrı LessonConceptScene — tek sahnede tıkıştırma
 - Her örnek için ayrı LessonExampleScene — tek sahnede tıkıştırma
-- voice_text'ler uzun ve detaylı olsun: başlık 80-120 kelime, kavram 180-250 kelime, kart 150-200 kelime, örnek 200-280 kelime, özet 120-160 kelime
+- Alt konuları böl: "Hesap işleyişi" ve "Örnek kayıtlar" iki ayrı sahne olsun
+- voice_text'ler uzun ve detaylı olsun:
+    başlık: 100-130 kelime
+    kavram: 200-270 kelime
+    kart: 160-220 kelime
+    örnek: 220-300 kelime
+    özet: 130-170 kelime
 
 BU KURALLAR İHLAL EDİLİRSE İÇERİK RENDERLENMEYECEK.
 

@@ -605,10 +605,10 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 description=payload.description or "",
             )
             scenes = raw.get("scenes", [])
-            if len(scenes) < 8:
+            if len(scenes) < 10:
                 raise RuntimeError(
                     f"Konu anlatımı kalite kontrolü başarısız: yalnızca {len(scenes)} sahne "
-                    "üretildi (minimum 8 gerekli) — storyboard üretimini tekrar deneyin"
+                    "üretildi (minimum 10 gerekli, ideal 12-15) — storyboard üretimini tekrar deneyin"
                 )
             total_sec = sum(s.get("duration_seconds") or 0 for s in scenes)
             if total_sec < 1080:

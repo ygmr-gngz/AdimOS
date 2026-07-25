@@ -82,8 +82,8 @@ _LATEX_RULES: list[tuple[str, str]] = [
     (r'\\sqrt',                          'kare kök'),
     # Üs
     (r'\^\{(\d+)\}',                     r'\1. kuvveti'),
-    (r'\^2\b',                           'kare'),
-    (r'\^3\b',                           'küp'),
+    (r'\^2\b',                           ' kare'),
+    (r'\^3\b',                           ' küp'),
     (r'\^\{?([a-zA-Z])\}?',             r'\1. kuvveti'),
     # Alt indis
     (r'_\{([^{}]+)\}',                   r'\1'),
