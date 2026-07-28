@@ -140,48 +140,55 @@ def _remotion_warm_up(url: str, job_id: str) -> bool:
 
 def _tts_bytes(text: str) -> tuple[bytes, int]:
     """
-    OpenAI TTS — 3 deneme, exponential backoff.
-    Pronunciation sözlüğü uygulanır.
+    OpenAI TTS — env'den gelen ses kimliği, exponential backoff.
+    Pronunciation + TR normalizasyonu uygulanır.
     Returns: (ses_baytları, karakter_sayısı)
-    Raises: RuntimeError — tüm denemeler başarısız olursa
+    Raises: PipelineErrorException — kota / auth hatası
+            RuntimeError — geçici hata sonrası tüm denemeler başarısız
     """
     from openai import OpenAI
-    text = apply_pronunciation_dict(text)
+    from app.modules.content.openai_classifier import classify_openai_error
+    from app.errors.registry import PipelineErrorException
+    from app.modules.content.tr_speech_normalize import tr_speech_normalize
+
+    text = apply_pronunciation_dict(tr_speech_normalize(text))
     char_count = len(text)
     client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=60.0)
+
+    voice = settings.TTS_VOICE_ID
+    model = settings.TTS_MODEL
+    speed = settings.TTS_SPEED
 
     last_err = None
     for attempt, wait in enumerate(_TTS_BACKOFF, 1):
         try:
             resp = client.audio.speech.create(
-                model="tts-1-hd",
-                voice="nova",
+                model=model,
+                voice=voice,
                 input=text,
-                speed=0.93,
+                speed=speed,
             )
-            logger.info(f"[tts] deneme {attempt} başarılı — {char_count} karakter")
+            logger.info(f"[tts] attempt={attempt} ok chars={char_count} voice={voice}")
             return resp.content, char_count
         except OpenAIRateLimitError as e:
             last_err = e
-            err_str = str(e)
-            if "insufficient_quota" in err_str:
-                # Kota tükendi — yeniden denemek anlamsız
-                raise RuntimeError(
-                    "OpenAI TTS kotası tükendi (insufficient_quota). "
-                    "API limitinizi kontrol edin."
+            kind = classify_openai_error(e)
+            if kind == "insufficient_quota":
+                raise PipelineErrorException(
+                    "openai_insufficient_quota",
+                    admin_detail={"raw_error": str(e)[:200], "stage": "tts"},
+                    stage="tts",
                 ) from e
-            logger.warning(f"[tts] 429 rate limit · deneme {attempt} · {wait}s bekleniyor")
+            logger.warning(f"[tts] rate_limit attempt={attempt} retry_in={wait}s")
             time.sleep(wait)
         except APITimeoutError as e:
             last_err = e
-            logger.warning(f"[tts] timeout · deneme {attempt} · {wait}s bekleniyor")
+            logger.warning(f"[tts] timeout attempt={attempt} retry_in={wait}s")
             time.sleep(wait)
         except Exception as e:
             raise RuntimeError(f"[tts] OpenAI hatası: {e}") from e
 
-    raise RuntimeError(
-        f"[tts] {len(_TTS_BACKOFF)} denemeden sonra başarısız: {last_err}"
-    )
+    raise RuntimeError(f"[tts] {len(_TTS_BACKOFF)} denemeden sonra başarısız: {last_err}")
 
 def _estimate_duration(text: str) -> float:
     """Karakter sayısına göre saniye tahmini (~13 karakter/saniye Türkçe)."""
@@ -747,15 +754,13 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
 
                 logger.info(f"[video] {job_id} sahne {scene_row['scene_index']} TTS ok ({duration:.1f}s)")
 
-            except RuntimeError as e:
-                err_str = str(e)
-                if "insufficient_quota" in err_str or "kotası tükendi" in err_str:
+            except Exception as e:
+                from app.errors.registry import PipelineErrorException
+                if isinstance(e, PipelineErrorException) and e.error_code == "openai_insufficient_quota":
                     logger.error(f"[video] {job_id} kota hatası — pipeline durduruluyor")
                     _set_status(job_id, "failed", {
-                        "error_message": (
-                            "OpenAI TTS kotası tükendi. "
-                            "API kota limitinizi kontrol ettikten sonra yeniden deneyin."
-                        ),
+                        "error_code": "openai_insufficient_quota",
+                        "error_message": e.user_message,
                         "cost_tts_chars": total_tts_chars,
                     })
                     return
