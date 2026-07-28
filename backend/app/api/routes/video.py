@@ -12,6 +12,7 @@ from app.modules.content.pronunciation_dict import apply_pronunciation_dict
 from app.modules.content.quality_gates import (
     check_storyboard_quality,
     check_audio_volume,
+    check_audio_urls,
     check_video_duration,
 )
 from app.modules.content.content_dedup import check_content_duplicate, save_content_fingerprint
@@ -843,7 +844,21 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
             "cost_tts_usd": tts_cost_usd,
         }).eq("id", job_id).execute()
 
-        # ── 3. Remotion render ─────────────────────────────────
+        # ── 3. Pre-render ses kapısı (v2 §6.2) ────────────────
+        audio_errors = check_audio_urls(storyboard)
+        if audio_errors:
+            logger.error(
+                f"[video] {job_id[:8]} pre_render_audio_gate failed: {audio_errors[:3]} "
+                f"render_started=false"
+            )
+            _set_status(job_id, "failed", {
+                "error_code": "silent_audio",
+                "error_message": "Render başlatılmadı — ses dosyası eksik veya erişilemiyor: "
+                    + audio_errors[0],
+            })
+            return
+
+        # ── 4. Remotion render ─────────────────────────────────
         _run_remotion_render(job_id, storyboard)
 
     except Exception as e:

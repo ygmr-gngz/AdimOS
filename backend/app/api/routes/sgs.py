@@ -1005,6 +1005,28 @@ def _bg_konu_anlatimi(
             "scenes": scenes,
         }
 
+        # Routing doğrulaması — SplitLessonScene tekrarı ve izinsiz sahneler yakalanır
+        from app.pipelines.registry import validate_routing
+        from app.errors.registry import PipelineErrorException
+        distinct_comps = set(s.get("component", "") for s in scenes)
+        logger.info(
+            f"[sgs] konu_anlatimi routing kontrol job={job_id} "
+            f"slide_count={len(scenes)} distinct_components={len(distinct_comps)} "
+            f"components={','.join(sorted(distinct_comps))} "
+            f"durations_sec={','.join(str(s.get('duration_seconds', 0)) for s in scenes)} "
+            f"kaynak=hardcoded_sgs"
+        )
+        try:
+            validate_routing("konu_anlatimi", scenes)
+        except PipelineErrorException as rte:
+            logger.error(f"[sgs] routing_failed job={job_id} error={rte.error_code}")
+            from app.api.routes.video import _set_status as _ss
+            _ss(job_id, "failed", {
+                "error_code": rte.error_code,
+                "error_message": rte.user_message,
+            })
+            return
+
         supabase.table("video_jobs").update({
             "storyboard": storyboard,
             "updated_at": "now()",

@@ -70,7 +70,7 @@ VİDEO BİLGİSİ:
    - bullet_points: 3-5 madde, her biri max 70 karakter
    - voice_text: Kavramı detaylıca anlat, örneklerle pekiştir, sınav bağlantısı kur
      (150-220 kelime — uzun ve öğretici olsun)
-   - duration_seconds: 90
+   - duration_seconds: 0  (TTS sonrası hesaplanır — bu alanı 0 bırak)
 
 3. LessonCardScene (1-2 adet — görsel referans kartları):
    - infographic_title: Kart grubunun başlığı (max 50 karakter)
@@ -82,7 +82,7 @@ VİDEO BİLGİSİ:
      - content: Ana açıklama (max 80 karakter)
      - rule: Kural/sonuç (max 60 karakter)
    - voice_text: Kartları sırayla açıkla, aralarındaki farkı vurgula (120-180 kelime)
-   - duration_seconds: 75
+   - duration_seconds: 0  (TTS sonrası hesaplanır — bu alanı 0 bırak)
 
 4. LessonExampleScene (2-3 adet — çözümlü örnekler):
    - title: Örnek başlığı (max 50 karakter)
@@ -96,7 +96,7 @@ VİDEO BİLGİSİ:
    - explanation: Kaydın açıklaması — neden bu hesaplar (max 200 karakter)
    - voice_text: Örneği adım adım anlat, her kaydın neden yapıldığını açıkla,
      sınava özel uyarılar ekle (180-250 kelime — en detaylı anlatım burada olsun)
-   - duration_seconds: 110
+   - duration_seconds: 0  (TTS sonrası hesaplanır — bu alanı 0 bırak)
 
 5. LessonSummaryScene (1 adet — en sonda):
    - title: "{{topic}} — Özet"
@@ -104,7 +104,7 @@ VİDEO BİLGİSİ:
    - key_point: En önemli tek kuralı vurgula (max 100 karakter)
    - voice_text: Konuyu özetle, sınav odaklı kritik noktaları vurgula,
      kapanış yapabilirsin (100-140 kelime)
-   - duration_seconds: 60
+   - duration_seconds: 0  (TTS sonrası hesaplanır — bu alanı 0 bırak)
 
 ════════ SAHNE SAYISI VE EKRAN KULLANIMI KILAVUZU ════════
 {target_minutes} dakika için ZORUNLU sahne dizisi (10-18 sahne):
@@ -156,7 +156,7 @@ BU KURALLAR İHLAL EDİLİRSE İÇERİK RENDERLENMEYECEK.
       "definition": "...",
       "bullet_points": ["...", "...", "..."],
       "voice_text": "...",
-      "duration_seconds": 90
+      "duration_seconds": 0
     }},
     {{
       "component": "LessonCardScene",
@@ -166,7 +166,7 @@ BU KURALLAR İHLAL EDİLİRSE İÇERİK RENDERLENMEYECEK.
         {{"icon": "📈", "title": "...", "category": "BORÇ", "content": "...", "rule": "..."}}
       ],
       "voice_text": "...",
-      "duration_seconds": 75
+      "duration_seconds": 0
     }},
     {{
       "component": "LessonExampleScene",
@@ -178,7 +178,7 @@ BU KURALLAR İHLAL EDİLİRSE İÇERİK RENDERLENMEYECEK.
       ],
       "explanation": "...",
       "voice_text": "...",
-      "duration_seconds": 110
+      "duration_seconds": 0
     }},
     {{
       "component": "LessonSummaryScene",
@@ -186,7 +186,7 @@ BU KURALLAR İHLAL EDİLİRSE İÇERİK RENDERLENMEYECEK.
       "bullet_points": ["...", "..."],
       "key_point": "...",
       "voice_text": "...",
-      "duration_seconds": 60
+      "duration_seconds": 0
     }}
   ]
 }}

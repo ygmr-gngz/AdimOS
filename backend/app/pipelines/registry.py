@@ -32,10 +32,12 @@ CONTENT_PIPELINES: dict[str, dict] = {
             "AccountCardScene", "JournalEntryScene", "TableScene", "ComparisonScene",
             "ExampleScene", "CommonMistakeScene", "ExamTipScene", "MiniRecapScene",
             "LessonOutroScene",
-            # geriye dönük uyumluluk
+            # geriye dönük uyumluluk — lesson_storyboard.py sahneleri
             "LessonTitleScene", "LessonConceptScene", "LessonSummaryScene",
-            "LessonCardScene", "LessonExampleScene", "SplitLessonScene",
+            "LessonCardScene", "LessonExampleScene",
             "TAccountScene", "CalculationStepsScene",
+            # SGS konu anlatımı (sgs.py) — maks. 4 sahne, tek bileşen tekrarı validate_routing ile yakalanır
+            "SplitLessonScene",
         ],
         "required_scenes": ["LessonTitleScene", "LessonConceptScene"],
     },
@@ -73,6 +75,18 @@ CONTENT_PIPELINES: dict[str, dict] = {
             "MotivationStepScene", "MotivationOutroScene",
         ],
     },
+    "quiz_board": {
+        "generator": "quiz_storyboard",
+        "composition": "QuizBoardVideo",
+        "aspect": "16:9",
+        "fps": 30,
+        "duration_range": (30, 300),
+        "allowed_scenes": [
+            "QuizBoardIntroScene", "QuizBoardQuestionScene", "QuizBoardSolutionScene",
+            "QuizBoardHighlightScene", "QuizBoardOutroScene",
+        ],
+        "required_scenes": ["QuizBoardSolutionScene"],
+    },
     "infographic": {
         "generator": "infographic_storyboard",
         "composition": "InfographicVideo",
@@ -106,6 +120,8 @@ _ALIASES: dict[str, str] = {
     "motivation_reel":   "motivation",
     "shorts":            "motivation",
     "infographic":       "infographic",
+    "quiz_board":        "quiz_board",
+    "soru_cozum_tahtasi": "quiz_board",
 }
 
 
@@ -168,8 +184,8 @@ def validate_routing(content_type: str, scenes: list[dict]) -> None:
             stage="routing",
         )
 
-    # Tek tip sahne tekrarı = şablon çöküşü (MotivationScene×5 gibi)
-    if len(used_set) == 1 and len(scenes) > 2:
+    # Tek tip sahne tekrarı = şablon çöküşü (SplitLessonScene×4, MotivationScene×5 gibi)
+    if len(used_set) == 1 and len(scenes) > 1:
         raise PipelineErrorException(
             "failed_visual_validation",
             admin_detail={

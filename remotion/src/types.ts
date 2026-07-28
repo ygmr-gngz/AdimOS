@@ -1,6 +1,6 @@
 // ── Storyboard JSON tipleri ───────────────────────────────────
 
-export type VideoType = 'quiz' | 'lesson' | 'konu_anlatimi' | 'shorts' | 'motivation' | 'reel'
+export type VideoType = 'quiz' | 'lesson' | 'konu_anlatimi' | 'shorts' | 'motivation' | 'reel' | 'quiz_board'
 export type VideoFormat = '16:9' | '9:16'
 
 // Matematik ifadesi — üç ayrı sunum formatı
@@ -64,6 +64,47 @@ export type SceneComponent =
   | 'ChalkboardSolutionScene'
   // 2 Dakikalık Eğitim Reels
   | 'EducationalReelScene'
+  // QuizBoard — 16:9 soru çözüm tahtası
+  | 'QuizBoardIntroScene'
+  | 'QuizBoardQuestionScene'
+  | 'QuizBoardSolutionScene'
+  | 'QuizBoardHighlightScene'
+  | 'QuizBoardOutroScene'
+  // Motivasyon sahneleri
+  | 'MotivationHookScene'
+  | 'MotivationProblemScene'
+  | 'MotivationEmpathyScene'
+  | 'MotivationStepScene'
+  | 'MotivationFocusScene'
+  | 'MotivationOutroScene'
+  // Quiz
+  | 'QuizIntroScene'
+  | 'ThinkingTimerScene'
+  | 'AnswerRevealScene'
+  | 'QuizOutroScene'
+  // Lesson expanded
+  | 'LessonIntroScene'
+  | 'AgendaScene'
+  | 'ConceptScene'
+  | 'DefinitionCardScene'
+  | 'AccountCardScene'
+  | 'TableScene'
+  | 'ComparisonScene'
+  | 'ExampleScene'
+  | 'CommonMistakeScene'
+  | 'ExamTipScene'
+  | 'MiniRecapScene'
+  | 'LessonOutroScene'
+  // Infographic expanded
+  | 'InfographicIntroScene'
+  | 'RuleBoxScene'
+  | 'ReelCtaScene'
+  // Reel expanded
+  | 'ReelHookScene'
+  | 'ReelConceptScene'
+  | 'ReelExampleScene'
+  | 'ReelMistakeScene'
+  | 'ReelExamTipScene'
 
 export interface QuizOption {
   label: string        // A, B, C, D

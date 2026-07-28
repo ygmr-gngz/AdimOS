@@ -4,6 +4,7 @@ import { MotivationVideo, getMotivationTotalFrames } from './compositions/Motiva
 import { InfographicVideo, getInfographicTotalFrames } from './compositions/InfographicVideo'
 import { LessonVideo, getLessonTotalFrames } from './compositions/LessonVideo'
 import { EducationalReel120, getReelTotalFrames } from './compositions/EducationalReel120'
+import { QuizBoardVideo, getQuizBoardTotalFrames } from './compositions/QuizBoardVideo'
 import { StoryboardJSON } from './types'
 import { DEFAULT_BRAND, DIMENSIONS, FPS } from './brand'
 
@@ -286,6 +287,63 @@ const DEMO_INFOGRAPHIC: StoryboardJSON = {
   ],
 }
 
+// QuizBoard demo — 16:9 soru çözüm tahtası
+const DEMO_QUIZBOARD: StoryboardJSON = {
+  video_type: 'quiz_board',
+  title: 'Yasal Yedek Akçe — Soru Çözümü',
+  lesson_name: 'Şirket Muhasebesi',
+  topic: 'Yasal Yedek Akçe',
+  format: '16:9',
+  language: 'tr',
+  brand: DEFAULT_BRAND,
+  scenes: [
+    {
+      id: 1, component: 'QuizBoardIntroScene', duration_seconds: 8,
+      title: 'Yasal Yedek Akçe Sorusu',
+      subtitle: 'Şirket Muhasebesi — SGS',
+    },
+    {
+      id: 2, component: 'QuizBoardQuestionScene', duration_seconds: 20,
+      question_number: 1, total_questions: 1,
+      question_text: 'Net kârı 500.000 TL olan bir anonim şirketin yüzde beş birinci tertip yasal yedek akçesi ne kadardır?',
+      options: [
+        { label: 'A', text: '20.000 TL' },
+        { label: 'B', text: '25.000 TL' },
+        { label: 'C', text: '50.000 TL' },
+        { label: 'D', text: '100.000 TL' },
+      ],
+    },
+    {
+      id: 3, component: 'QuizBoardSolutionScene', duration_seconds: 45,
+      question_number: 1,
+      question_text: 'Net kârı 500.000 TL olan bir anonim şirketin %5 birinci tertip yasal yedek akçesi?',
+      options: [
+        { label: 'A', text: '20.000 TL' },
+        { label: 'B', text: '25.000 TL' },
+        { label: 'C', text: '50.000 TL' },
+        { label: 'D', text: '100.000 TL' },
+      ],
+      correct_label: 'B',
+      answer: 'B — 25.000 TL',
+      chalkboard_steps: [
+        { board_text: 'Yasal Yedek Akçe = Net Kâr × %5', step_type: 'solve' },
+        { board_text: '= 500.000 × 0,05', step_type: 'solve' },
+        { board_text: '= 25.000 TL', step_type: 'verification', annotation: 'TTK md. 519 — birinci tertip yasal yedek akçe' },
+      ],
+    },
+    {
+      id: 4, component: 'QuizBoardHighlightScene', duration_seconds: 12,
+      key_point: 'A.Ş. ve Ltd. Şti\'de net kârın %5\'i yasal yedek akçe olarak ayrılır.',
+      explanation: 'TTK md. 519 — sermayenin %20\'sine ulaşıncaya kadar ayrılmaya devam eder.',
+    },
+    {
+      id: 5, component: 'QuizBoardOutroScene', duration_seconds: 8,
+      title: 'Soru Çözüldü',
+      subtitle: 'Şirket Muhasebesi dersi için SGS Akademi\'yi takip edin.',
+    },
+  ],
+}
+
 export function Root() {
   const dim = DIMENSIONS['16:9']
   const dimV = DIMENSIONS['9:16']
@@ -411,6 +469,22 @@ export function Root() {
         calculateMetadata={({ props }) => {
           const sb = (props as { storyboard?: StoryboardJSON }).storyboard
           return { durationInFrames: getReelTotalFrames(sb), width: dimV.width, height: dimV.height }
+        }}
+      />
+      {/* QuizBoardVideo — 16:9 soru çözüm tahtası, büyük filigran arka plan */}
+      <Composition
+        id="QuizBoardVideo"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={QuizBoardVideo as any}
+        durationInFrames={getQuizBoardTotalFrames(DEMO_QUIZBOARD)}
+        fps={FPS}
+        width={dim.width}
+        height={dim.height}
+        defaultProps={{ storyboard: DEMO_QUIZBOARD }}
+        calculateMetadata={({ props }) => {
+          const sb = (props as { storyboard?: StoryboardJSON }).storyboard
+          const fmt = sb?.format ?? '16:9'
+          return { durationInFrames: getQuizBoardTotalFrames(sb ?? DEMO_QUIZBOARD), width: DIMENSIONS[fmt].width, height: DIMENSIONS[fmt].height }
         }}
       />
     </>

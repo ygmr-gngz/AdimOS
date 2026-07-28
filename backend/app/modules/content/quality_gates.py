@@ -141,7 +141,44 @@ def check_audio_volume(audio_bytes: bytes) -> tuple[bool, float]:
                 pass
 
 
-# ── 3. Render sonrası süre kontrolü ──────────────────────────
+# ── 3. Pre-render ses URL kapısı ─────────────────────────────
+
+def check_audio_urls(storyboard: dict) -> list[str]:
+    """
+    Render öncesi hard-fail: TTS URL'si olmayan veya boş gelen sahneleri tespit et.
+    Sadece voice_text olan sahnelerde tts_url zorunludur.
+    Returns: hata mesajlarının listesi (boş → tüm sesler OK)
+    """
+    import httpx
+    errors: list[str] = []
+    scenes = storyboard.get("scenes", [])
+    for s in scenes:
+        voice = (s.get("voice_text") or "").strip()
+        if not voice:
+            continue  # ses gerektirmeyen sahne
+        tts_url = s.get("tts_url") or s.get("audioUrl") or ""
+        scene_id = s.get("id", "?")
+        if not tts_url:
+            errors.append(f"Sahne {scene_id}: tts_url eksik (voice_text var ama ses üretilmemiş)")
+            continue
+        try:
+            r = httpx.head(tts_url, timeout=8.0, follow_redirects=True)
+            if r.status_code != 200:
+                errors.append(
+                    f"Sahne {scene_id}: tts_url HTTP {r.status_code} ({tts_url[:80]})"
+                )
+                continue
+            cl = int(r.headers.get("content-length", 0))
+            if cl > 0 and cl < 1024:
+                errors.append(
+                    f"Sahne {scene_id}: tts_url çok küçük ({cl} bytes) — sessiz TTS olabilir"
+                )
+        except Exception as exc:
+            errors.append(f"Sahne {scene_id}: tts_url erişilemiyor — {exc}")
+    return errors
+
+
+# ── 4. Render sonrası süre kontrolü ──────────────────────────
 
 def check_video_duration(
     video_url: str,

@@ -122,11 +122,38 @@ app.use(express.json({ limit: '10mb' }))
 
 const TEMPLATE_VERSION = 'quiz-board-v2'
 
-// REMOTION_PREFLIGHT_STRICT=true → altyapı hatası render'ı durdurur
-// REMOTION_PREFLIGHT_STRICT=false (varsayılan) → altyapı hatası loglanır, yerel allowlist ile devam
-// String() ile parse — "True" / " true " / "TRUE" gibi varyantları da yakalar
+// REMOTION_PREFLIGHT_STRICT=true  → altyapı hatası render'ı DURDURUR (production)
+// REMOTION_PREFLIGHT_STRICT=false → altyapı hatası loglanır, allowlist ile devam (sadece dev)
 const PREFLIGHT_STRICT =
   String(process.env.REMOTION_PREFLIGHT_STRICT ?? 'false').trim().toLowerCase() === 'true'
+
+function _describeServeUrl(raw: string | undefined) {
+  const v = (raw ?? '').trim()
+  let host = 'PARSE_FAILED'; let pathHead = '-'
+  try { const u = new URL(v); host = u.host; pathHead = u.pathname.split('/').slice(0, 4).join('/') } catch {}
+  return {
+    present:         v.length > 0,
+    length:          v.length,
+    starts_https:    v.startsWith('https://'),
+    ends_index_html: v.endsWith('/index.html'),
+    has_quotes:      /["']/.test(v),
+    has_equals:      v.includes('='),
+    has_whitespace:  /\s/.test(v),
+    has_newline:     /[\r\n]/.test(v),
+    host,
+    path_head:       pathHead,
+  }
+}
+
+// Başlangıçta env yapısını logla — değer asla yazılmaz
+console.log('[startup] serveUrl', JSON.stringify(_describeServeUrl(process.env.REMOTION_SERVE_URL)))
+console.log('[startup] functionName', JSON.stringify({
+  present:    Boolean(process.env.REMOTION_LAMBDA_FUNCTION_NAME),
+  length:     (process.env.REMOTION_LAMBDA_FUNCTION_NAME ?? '').length,
+  has_quotes: /["']/.test(process.env.REMOTION_LAMBDA_FUNCTION_NAME ?? ''),
+}))
+console.log('[startup] region', JSON.stringify({ value: process.env.AWS_REGION ?? process.env.REMOTION_REGION }))
+console.log('[startup] preflight_strict', PREFLIGHT_STRICT)
 
 const PORT            = process.env.PORT || 3001
 const LAMBDA_FUNCTION = process.env.REMOTION_LAMBDA_FUNCTION_NAME || ''
@@ -461,15 +488,17 @@ async function _doRender(
       throw err
     }
 
-    // Altyapı hatası (ağ, AWS iç hata, Lambda response parse hatası) → PREFLIGHT_STRICT'e göre karar
+    // Altyapı hatası (ağ, AWS iç hata, Lambda response parse hatası)
     if (PREFLIGHT_STRICT) {
-      throw new Error(`Composition preflight başarısız (PREFLIGHT_STRICT=true): ${err.message}`)
+      // strict=true: fallback yok — render başlamaz
+      console.error('[preflight] strict=true remote_check=failed fallback_used=false render_started=false reason=' + err.message)
+      throw new Error(`preflight_failed: ${err.message}`)
     }
+    // strict=false: allowlist ile devam — sadece dev/test ortamı
     console.warn(
-      `[lambda] preflight altyapı hatası; yerel allowlist ile devam ` +
-      `(katı mod: REMOTION_PREFLIGHT_STRICT=true). composition=${compositionId}`,
+      `[preflight] strict=false remote_check=failed fallback_used=true render_started=true composition=${compositionId}`,
     )
-    // compositionId zaten ALLOWED_COMPOSITIONS içinde doğrulandı (üstteki blok)
+    // compositionId ALLOWED_COMPOSITIONS içinde doğrulandı (üstteki blok)
   }
 
   const { renderId, bucketName } = await renderMediaOnLambda({
