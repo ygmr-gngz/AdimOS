@@ -164,6 +164,15 @@ export interface Scene {
   message?: string             // ana motivasyon mesajı
   message_author?: string      // imza (opsiyonel)
   bg_variant?: 'dark' | 'gradient'
+  narration?: string           // seslendirilecek tam metin
+  spoken_text?: string         // TTS'e gidecek normalize metin
+  audioUrl?: string            // kanonik ses URL'i (tts_url alias)
+  imageUrl?: string            // sahne arka plan görseli URL
+  image_url?: string           // eski alias
+  image_search_query?: string  // arka plan arama terimi
+  step_number?: number         // MotivationStepScene adım numarası
+  step_title?: string          // MotivationStepScene adım başlığı
+  captions?: { start: number; end: number; text: string }[]
 
   // Konu anlatımı (SplitLessonScene)
   key_points?: string[]                                   // sol panel madde listesi

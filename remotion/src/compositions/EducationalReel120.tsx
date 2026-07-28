@@ -52,10 +52,9 @@ export function EducationalReel120({ storyboard }: Props) {
   const { brand, scenes } = storyboard
 
   // Tüm sahnelerden altyazı birleştirme
-  const allCaptions = scenes.flatMap((s, si) => {
-    const captions = (s as Record<string, unknown>).captions
+  const allCaptions = scenes.flatMap((s) => {
+    const captions = s.captions
     if (!Array.isArray(captions)) return []
-    // sahne zamanlaması sonraki adımda hesaplanacak — yaklaşık offset kullan
     return captions
   })
 
@@ -84,7 +83,7 @@ export function EducationalReel120({ storyboard }: Props) {
 
       {/* Altyazı — sahne başına captions[] varsa */}
       {timings.map(({ scene, start }) => {
-        const captions = (scene as Record<string, unknown>).captions
+        const captions = scene.captions
         if (!Array.isArray(captions) || captions.length === 0) return null
         const offsetSec = start / FPS
         const shiftedCaptions = captions.map((c: { start: number; end: number; text: string }) => ({

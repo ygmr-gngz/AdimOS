@@ -334,7 +334,7 @@ export function Root() {
         calculateMetadata={({ props }) => {
           const sb = (props as { storyboard?: StoryboardJSON }).storyboard
           const fmt = sb?.format ?? '9:16'
-          return { durationInFrames: getMotivationTotalFrames(sb), width: DIMENSIONS[fmt].width, height: DIMENSIONS[fmt].height }
+          return { durationInFrames: getMotivationTotalFrames(sb ?? DEMO_MOTIVATION), width: DIMENSIONS[fmt].width, height: DIMENSIONS[fmt].height }
         }}
       />
       <Composition
@@ -349,7 +349,7 @@ export function Root() {
         calculateMetadata={({ props }) => {
           const sb = (props as { storyboard?: StoryboardJSON }).storyboard
           const fmt = sb?.format ?? '9:16'
-          return { durationInFrames: getInfographicTotalFrames(sb), width: DIMENSIONS[fmt].width, height: DIMENSIONS[fmt].height }
+          return { durationInFrames: getInfographicTotalFrames(sb ?? DEMO_INFOGRAPHIC), width: DIMENSIONS[fmt].width, height: DIMENSIONS[fmt].height }
         }}
       />
       <Composition

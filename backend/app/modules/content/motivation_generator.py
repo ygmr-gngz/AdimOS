@@ -1,70 +1,129 @@
-"""SGS motivasyon içeriği storyboard üreticisi."""
+"""
+SGS/SMMM adayları için 120 saniye motivasyon video storyboard üreticisi.
+Çıktı: component alanı dahil tam storyboard JSON.
+"""
 import logging
+import math
 from app.core.llm_client import chat_json as llm_json
 
 logger = logging.getLogger(__name__)
 
-_PLATFORM_STYLE = {
-    "reels":    "Dikey video (9:16). Hızlı geçişler. Büyük, çarpıcı metin. Duygusal müzik ritmine uygun.",
-    "shorts":   "YouTube Shorts (9:16). Enerjik tempo. Her cümle yeni bilgi. Kısa ve etkili.",
-    "carousel": "Instagram Carousel (1:1). Her slide tek mesaj. 5-7 slide. Son slide CTA.",
-    "post":     "Tek kare Instagram postu (1:1). Etkileyici başlık, açıklayıcı subtitle, CTA.",
-}
+# Türkçe kadın sesi için 2.8 kelime/saniye
+WORDS_PER_SECOND = 2.8
 
-_SYSTEM_PROMPT = """Sen SGS (Sermaye Piyasası Lisanslama Sınavları) öğrenci koçusun.
-Adım Müşavirlik adına Türkçe motivasyon içeriği üretiyorsun.
-Her zaman sıcak, samimi ve gerçekçi bir dil kullanıyorsun.
-Öğrencinin zor sürecini gerçekten anlıyor gibi konuşuyorsun, yüzeysel tebrik cümlelerinden kaçınıyorsun.
-Cümleler kısa, güçlü ve akılda kalıcı olacak."""
+
+def word_budget(seconds: int) -> tuple[int, int]:
+    lo = int(seconds * WORDS_PER_SECOND * 0.92)
+    hi = int(seconds * WORDS_PER_SECOND * 1.08)
+    return lo, hi
+
+
+# SGS/SMMM'e özgü somut motivasyon konuları
+_CONTEXT_EXAMPLES = [
+    "çalışma programı bozulduğunda geri dönmek",
+    "denemelerde düşük netle baş etmek",
+    "uzun konu listesi karşısında plan yapmak",
+    "son ay tekrar düzeni",
+    "her gün soru çözme alışkanlığı",
+    "çalışırken dikkat dağılması",
+    "ilk kez girenlerin sınav kaygısı",
+]
+
+_SYSTEM_PROMPT = """Sen SGS (Staja Giriş Sınavı) ve SMMM adaylarının koçusun.
+Adım Müşavir adına Türkçe motivasyon reels içeriği üretiyorsun.
+
+Ton: Sıcak, samimi, destekleyici. Öğretmen değil, yol arkadaşı gibi konuşuyorsun.
+Yasak: Yüzeysel klişe ("Pes etme!", "Sen yapabilirsin!"), reklam tonu, robotik okuma.
+Her cümle gerçek bir öğrencinin aklından geçiyor olabilir."""
 
 _USER_TEMPLATE = """Konu: {topic}
-Platform: {platform} — {platform_style}
-Ton: {tone}
+Hedef süre: {duration} saniye
+Kelime bütçesi: {words_lo}–{words_hi} kelime (toplam tüm narration alanları)
+Sahne sayısı: {scene_count} sahne, ortalama {avg_sec:.1f} sn/sahne
 
-5 adımlı motivasyon storyboard üret:
-1. hook — Duygusal açılış, öğrencinin dikkatini çekecek
-2. problem — Öğrencinin yaşadığı zorluğu anlayışla anlat
-3. message — Kısa, güçlü motivasyon mesajı (1-2 cümle)
-4. tip — Somut ve uygulanabilir öneri (örn: "Her gün 10 soru çöz, yavaş ama bırakma")
-5. cta — Harekete geçirici kapanış
+Aşağıdaki sahne şablonunu AYNEN uygula. Her sahne için:
+- component: tam adı (değiştirme)
+- title: ekranda büyük gösterilen kısa başlık (max 8 kelime)
+- narration: seslendirilecek Türkçe metin (ekran gösterimi için)
+- spoken_text: TTS'e gidecek kelime bütçesine uygun metin (narration ile aynı olabilir)
+- duration_seconds: önerilen sahne süresi (gerçek ses süresi + 0.5 sn)
+- image_search_query: arka plan fotoğrafı için İngilizce arama terimi
 
-JSON formatı:
+SAHNE ŞABLONU:
+1. MotivationHookScene (4–5 sn) — Güçlü ve doğrudan kanca. "Merhaba" ile başlama. İlk 2 cümlede konu netleşsin.
+2. MotivationProblemScene (8–12 sn) — Öğrencinin yaşadığı duyguyu/problemi somut tanımla.
+3. MotivationEmpathyScene (10–15 sn) — Yalnız olmadığını hissettir. Destekleyici alıntı tarzı.
+4. MotivationStepScene (5–7 sn) — Adım 1: somut, uygulanabilir öneri. step_number=1 ekle.
+5. MotivationStepScene (5–7 sn) — Adım 2: farklı somut öneri. step_number=2 ekle.
+6. MotivationStepScene (5–7 sn) — Adım 3: farklı somut öneri. step_number=3 ekle.
+7. MotivationFocusScene (8–10 sn) — Motive edici sonuç ve sınav odağı. Hedef hatırlatma.
+8. MotivationOutroScene (5–8 sn) — Kapanış. cta_text: kısa çağrı + kanal yönlendirmesi.
+
+JSON formatı (bu şemayı AYNEN kullan):
 {{
-  "title": "İçerik başlığı (max 60 karakter)",
+  "title": "Video başlığı (max 60 karakter, Türkçe)",
   "description": "Açıklama (max 120 karakter)",
-  "hashtags": ["#sgs", "#motivasyon", "#smmm"],
+  "hashtags": ["#sgs", "#smmm", "#motivasyon", "#adimmusavir"],
+  "total_word_count": <toplam kelime sayısı>,
   "scenes": [
     {{
-      "type": "hook",
-      "title": "Ekran başlığı (max 40 karakter)",
-      "narration": "Seslendirilecek Türkçe metin (2-3 cümle, toplam max 200 karakter)",
-      "display_lines": ["Ekranda gösterilecek satır 1", "satır 2", "satır 3"]
+      "id": "scene_01",
+      "component": "MotivationHookScene",
+      "title": "Başlık metni",
+      "narration": "Seslendirilecek metin. Tam cümle, noktalama ile.",
+      "spoken_text": "TTS versiyonu — rakamlar Türkçe yazılı.",
+      "duration_seconds": 5,
+      "image_search_query": "student studying motivation desk"
     }}
   ]
 }}
 
-Tüm metinler Türkçe. display_lines max 5 satır, her satır max 50 karakter."""
+step_number alanını MotivationStepScene sahnelerine ekle (1, 2, 3).
+step_title alanını MotivationStepScene sahnelerine ekle (max 6 kelime, adımın özeti).
+cta_text alanını MotivationOutroScene sahnesine ekle.
+Tüm metinler Türkçe. spoken_text'te kısaltmalar açık yazılsın (KDV→ka de ve)."""
 
 
 def generate_motivation_storyboard(
     topic: str,
+    duration: int = 120,
     platform: str = "reels",
-    tone: str = "sıcak ve samimi",
 ) -> dict:
-    platform_style = _PLATFORM_STYLE.get(platform, _PLATFORM_STYLE["reels"])
+    words_lo, words_hi = word_budget(duration)
+    scene_count = max(8, min(20, math.ceil(duration / 6)))
+    avg_sec = duration / scene_count
+
     result = llm_json(
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": _USER_TEMPLATE.format(
                 topic=topic,
-                platform=platform,
-                platform_style=platform_style,
-                tone=tone,
+                duration=duration,
+                words_lo=words_lo,
+                words_hi=words_hi,
+                scene_count=scene_count,
+                avg_sec=avg_sec,
             )},
         ],
-        temperature=0.88,
-        max_tokens=1800,
+        temperature=0.82,
+        max_tokens=3000,
         caller="motivation_generator",
     )
-    logger.info(f"[motivation] storyboard üretildi: {result.get('title')} | {len(result.get('scenes', []))} sahne")
+
+    scenes = result.get("scenes", [])
+    logger.info(
+        "[motivation] storyboard uretildi: '%s' | %d sahne | kelime: %s",
+        result.get("title"),
+        len(scenes),
+        result.get("total_word_count", "?"),
+    )
+
+    # component alanı yoksa eski tip sahneye fallback
+    for i, scene in enumerate(scenes):
+        if not scene.get("component"):
+            scene["component"] = "MotivationScene"
+        if not scene.get("id"):
+            scene["id"] = f"scene_{i + 1:02d}"
+
+    result["scenes"] = scenes
     return result

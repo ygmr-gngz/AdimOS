@@ -43,7 +43,7 @@ export function TableScene({ title, subtitle, headers, rows, highlight_col }: Ta
           {headers.map((h, i) => (
             <div key={i} style={{
               padding: `${T.space.sm}px ${T.space.md}px`,
-              fontSize: 38, fontWeight: 700, color: T.color.surface,
+              fontSize: 38, fontWeight: 700,
               textAlign: 'center',
               borderRight: i < colCount - 1 ? `1px solid ${T.color.navy700}` : undefined,
               background: i === highlight_col ? T.color.gold : undefined,
@@ -72,7 +72,7 @@ export function TableScene({ title, subtitle, headers, rows, highlight_col }: Ta
               {row.slice(0, 4).map((cell, ci) => (
                 <div key={ci} style={{
                   padding: `${T.space.sm}px ${T.space.md}px`,
-                  fontSize: 36, color: T.color.text,
+                  fontSize: 36,
                   textAlign: 'center',
                   borderRight: ci < colCount - 1 ? `1px solid ${T.color.border}` : undefined,
                   fontWeight: ci === highlight_col ? 700 : 400,

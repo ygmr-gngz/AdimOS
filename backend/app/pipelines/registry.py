@@ -58,14 +58,20 @@ CONTENT_PIPELINES: dict[str, dict] = {
         "composition": "MotivationVideo",
         "aspect": "9:16",
         "fps": 30,
-        "duration_range": (30, 90),
+        "duration_range": (30, 130),
+        "scene_count_range": (12, 20),
+        "avg_scene_seconds": (4, 7),
         "allowed_scenes": [
-            "MotivationHookScene", "MotivationProblemScene", "MotivationTurnScene",
-            "MotivationActionScene", "MotivationProofScene", "MotivationOutroScene",
+            "MotivationHookScene", "MotivationProblemScene", "MotivationEmpathyScene",
+            "MotivationTurnScene", "MotivationStepScene", "MotivationProofScene",
+            "MotivationFocusScene", "MotivationOutroScene",
             # geriye dönük uyumluluk
             "MotivationScene",
         ],
-        "required_scenes": ["MotivationScene"],
+        "required_scenes": [
+            "MotivationHookScene", "MotivationProblemScene",
+            "MotivationStepScene", "MotivationOutroScene",
+        ],
     },
     "infographic": {
         "generator": "infographic_storyboard",
