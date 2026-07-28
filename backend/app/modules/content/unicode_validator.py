@@ -1,43 +1,56 @@
 """
-Unicode doğrulama — bozuk karakter, mojibake, encoding hatası tespiti.
-Bu karakterlerden biri herhangi bir metin alanında varsa render durur.
+Unicode dogrulama - bozuk karakter, mojibake, encoding hatasi tespiti.
+Bu karakterlerden biri herhangi bir metin alaninda varsa render durur.
 """
 import unicodedata
 import re
 
-_BAD_CHARS = frozenset("□�Ä±ÅÃ§Ã¼Ã¶Ä")
+# Turkce karakterlerin Latin-1 ile yanlis decode edilmesi durumu (mojibake)
+# Her pattern: (yanlis_bytes_utf8_gorunumu, aciklama)
+_MOJIBAKE_SEQUENCES = [
+    "Ä±",   # i -> Ai (Latin-1 bozulmasi)
+    "Å",   # s -> As
+    "Ã§",   # c -> Ac
+    "Ã¼",   # u -> Au
+    "Ã¶",   # o -> Ao
+    "Ä",   # g -> Ag
+    "Ã",   # C -> AC
+    "Ã",   # U -> AU
+    "Ä°",   # I -> AI
+]
 
-_MOJIBAKE_RE = re.compile(
-    r"Ä±|ÅŸ|Ã§|Ã¼|Ã¶|ÄŸ|Ã‡|Ãœ|Ä°|Â·|â€™|â€"|â€œ|â€\x9d"
-)
+_REPLACEMENT_CHAR = "�"  # U+FFFD replacement character
+_EMPTY_BOX_CHAR   = "□"  # U+25A1 white square
 
-_REPLACEMENT_CHAR = "�"  # □
+_MOJIBAKE_RE = re.compile("|".join(re.escape(s) for s in _MOJIBAKE_SEQUENCES))
 
 
 def validate_unicode(text: str, field_name: str = "text") -> list[str]:
     """
-    Metin alanında bozuk karakter var mı kontrol eder.
-    Returns: hata mesajları listesi — boşsa OK.
+    Metin alaninda bozuk karakter var mi kontrol eder.
+    Returns: hata mesajlari listesi - bossa OK.
     """
     errors = []
 
     if _REPLACEMENT_CHAR in text:
-        errors.append(f"{field_name}: U+FFFD değiştirme karakteri içeriyor")
+        errors.append(f"{field_name}: U+FFFD degistirme karakteri iceriyor")
 
-    if "□" in text:
-        errors.append(f"{field_name}: U+25A1 boş kare karakteri içeriyor (encoding bozukluğu?)")
+    if _EMPTY_BOX_CHAR in text:
+        errors.append(f"{field_name}: U+25A1 bos kare karakteri iceriyor (encoding bozuklugu?)")
 
     if _MOJIBAKE_RE.search(text):
         sample = _MOJIBAKE_RE.search(text).group()
-        errors.append(f"{field_name}: mojibake tespit edildi ('{sample}') — UTF-8 decode hatası")
+        errors.append(
+            f"{field_name}: mojibake tespit edildi ('{sample}') — UTF-8 decode hatasi"
+        )
 
     return errors
 
 
 def validate_storyboard_unicode(storyboard: dict) -> list[str]:
     """
-    Tüm sahne metin alanlarında unicode doğrulama yapar.
-    Returns: hata mesajları listesi.
+    Tum sahne metin alanlarinda unicode dogrulama yapar.
+    Returns: hata mesajlari listesi.
     """
     errors = []
     text_fields = [
@@ -62,8 +75,8 @@ def validate_storyboard_unicode(storyboard: dict) -> list[str]:
 
 def nfc_normalize_storyboard(storyboard: dict) -> dict:
     """
-    Tüm string alanlarına NFC normalizasyonu uygular.
-    Storyboard dict'ini mutate eder ve döndürür.
+    Tum string alanlarina NFC normalizasyonu uygular.
+    Storyboard dict'ini mutate eder ve dondurur.
     """
     def _nfc(val):
         if isinstance(val, str):
