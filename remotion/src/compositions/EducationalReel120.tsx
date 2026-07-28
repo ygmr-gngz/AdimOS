@@ -1,21 +1,19 @@
 /**
  * EducationalReel120 — 2 dakikalık (120s) SGS eğitim Reels composition
  * Format: 1080×1920 (9:16), 30 fps
- * Hedef: 105–125 saniye, en az 8 sahne
- *
- * Akış:
- *   0–5s   : hook    — güçlü kanca
- *   5–20s  : context — konunun önemi
- *   20–45s : content — 1. bilgi / çözüm adımı
- *   45–70s : content — 2. bilgi / örnek
- *   70–95s : mistake — sık yapılan hata
- *   95–110s: tip     — sınav ipucu
- *   110–120s: outro  — özet + logo + yönlendirme
+ * Desteklenen sahneler: EducationalReelScene + AccountCardScene + TableScene +
+ *   RuleBoxScene + CommonMistakeScene + JournalEntryScene
  */
 import { AbsoluteFill, Sequence } from 'remotion'
 import { StoryboardJSON } from '../types'
 import { BrandOverlay } from '../components/BrandOverlay'
+import { CaptionOverlay } from '../components/CaptionOverlay'
 import { EducationalReelScene } from '../scenes/EducationalReelScene'
+import { AccountCardScene } from '../scenes/AccountCardScene'
+import { TableScene } from '../scenes/TableScene'
+import { RuleBoxScene } from '../scenes/RuleBoxScene'
+import { CommonMistakeScene } from '../scenes/CommonMistakeScene'
+import { JournalEntryScene } from '../scenes/JournalEntryScene'
 import { FPS } from '../brand'
 import { TRANSITION_FRAMES } from '../utils'
 
@@ -23,8 +21,43 @@ interface Props { storyboard: StoryboardJSON }
 
 const DEFAULT_DURATION_SECONDS = 15
 
+function ReelScene({ scene, brand }: { scene: Record<string, unknown>; brand: unknown }) {
+  const comp = scene.component as string
+  const p = scene as Record<string, unknown>
+
+  switch (comp) {
+    case 'AccountCardScene':
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return <AccountCardScene {...p as any} />
+    case 'TableScene':
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return <TableScene {...p as any} />
+    case 'RuleBoxScene':
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return <RuleBoxScene {...p as any} />
+    case 'CommonMistakeScene':
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return <CommonMistakeScene {...p as any} />
+    case 'JournalEntryScene':
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return <JournalEntryScene {...p as any} />
+    case 'EducationalReelScene':
+    default:
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return <EducationalReelScene scene={scene as any} brand={brand as any} />
+  }
+}
+
 export function EducationalReel120({ storyboard }: Props) {
   const { brand, scenes } = storyboard
+
+  // Tüm sahnelerden altyazı birleştirme
+  const allCaptions = scenes.flatMap((s, si) => {
+    const captions = (s as Record<string, unknown>).captions
+    if (!Array.isArray(captions)) return []
+    // sahne zamanlaması sonraki adımda hesaplanacak — yaklaşık offset kullan
+    return captions
+  })
 
   let cursor = 0
   const timings = scenes.map(scene => {
@@ -43,10 +76,33 @@ export function EducationalReel120({ storyboard }: Props) {
       {timings.map(({ scene, start, durationFrames }) => (
         <Sequence key={scene.id} from={start} durationInFrames={durationFrames}>
           <AbsoluteFill>
-            <EducationalReelScene scene={scene} brand={brand} />
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            <ReelScene scene={scene as any} brand={brand} />
           </AbsoluteFill>
         </Sequence>
       ))}
+
+      {/* Altyazı — sahne başına captions[] varsa */}
+      {timings.map(({ scene, start }) => {
+        const captions = (scene as Record<string, unknown>).captions
+        if (!Array.isArray(captions) || captions.length === 0) return null
+        const offsetSec = start / FPS
+        const shiftedCaptions = captions.map((c: { start: number; end: number; text: string }) => ({
+          ...c,
+          start: c.start + offsetSec,
+          end: c.end + offsetSec,
+        }))
+        return (
+          <CaptionOverlay
+            key={`cap-${scene.id}`}
+            captions={shiftedCaptions}
+            fps={FPS}
+            format="9:16"
+            enabled
+          />
+        )
+      })}
+
       {/* Logo sağ üstte, watermark + sosyal footer */}
       <BrandOverlay brand={brand} theme="dark" logoSize={120} watermarkOpacity={0.08} showFooter />
     </AbsoluteFill>
