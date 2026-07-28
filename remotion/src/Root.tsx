@@ -6,7 +6,6 @@ import { LessonVideo, getLessonTotalFrames } from './compositions/LessonVideo'
 import { EducationalReel120, getReelTotalFrames } from './compositions/EducationalReel120'
 import { StoryboardJSON } from './types'
 import { DEFAULT_BRAND, DIMENSIONS, FPS } from './brand'
-import { getTotalFrames as utils_getTotalFrames } from './utils'
 
 // Remotion Studio'da önizleme için örnek storyboard
 const DEMO_STORYBOARD: StoryboardJSON = {
@@ -384,20 +383,19 @@ export function Root() {
           return { durationInFrames: getLessonTotalFrames(sb), width: DIMENSIONS[fmt].width, height: DIMENSIONS[fmt].height }
         }}
       />
-      {/* EducationalReel — kısa eğitim içeriği (9:16, 15–45 sn) */}
+      {/* EducationalReel — EducationalReel120 ile aynı bileşen, geriye dönük uyumluluk ID'si */}
       <Composition
         id="EducationalReel"
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        component={MotivationVideo as any}
-        durationInFrames={getMotivationTotalFrames(DEMO_MOTIVATION)}
+        component={EducationalReel120 as any}
+        durationInFrames={getReelTotalFrames(DEMO_REEL)}
         fps={FPS}
         width={dimV.width}
         height={dimV.height}
-        defaultProps={{ storyboard: DEMO_MOTIVATION }}
+        defaultProps={{ storyboard: DEMO_REEL }}
         calculateMetadata={({ props }) => {
           const sb = (props as { storyboard?: StoryboardJSON }).storyboard
-          const fmt = sb?.format ?? '9:16'
-          return { durationInFrames: utils_getTotalFrames(sb), width: DIMENSIONS[fmt].width, height: DIMENSIONS[fmt].height }
+          return { durationInFrames: getReelTotalFrames(sb), width: dimV.width, height: dimV.height }
         }}
       />
       {/* EducationalReel120 — 2 dakikalık SGS eğitim Reels (9:16, ~120 sn) */}
