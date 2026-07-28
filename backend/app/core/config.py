@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     FACEBOOK_PAGE_ID: str = ""
     INSTAGRAM_BUSINESS_ACCOUNT_ID: str = ""
 
+    # TTS
+    TTS_VOICE_ID: str = "nova"           # OpenAI ses kimliği (nova | alloy | echo | fable | onyx | shimmer)
+    TTS_MODEL: str = "tts-1-hd"
+    TTS_SPEED: float = 0.93
+
+    # Remotion preflight
+    REMOTION_PREFLIGHT_STRICT: bool = False   # True → preflight başarısızsa render başlamaz
+
     # Özellik bayrağı — "false" metni yanlışlıkla truthy sayılmasın
     # Kabul edilen true değerleri: 1, true, yes, on (büyük/küçük harf fark etmez)
     # Varsayılan: kapalı (güvenli varsayılan)
