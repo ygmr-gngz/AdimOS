@@ -618,10 +618,10 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                     "üretildi (minimum 10 gerekli, ideal 12-15) — storyboard üretimini tekrar deneyin"
                 )
             total_sec = sum(s.get("duration_seconds") or 0 for s in scenes)
-            if total_sec < 1080:
+            if total_sec < 600:
                 logger.warning(
-                    f"[video] {job_id[:8]} uyarı: toplam sahne süresi {total_sec:.0f}s < 1080s (18dk). "
-                    "Storyboard kısa olabilir, TTS tahmini sonuçta süre uzayacaktır."
+                    f"[video] {job_id[:8]} uyarı: toplam sahne süresi {total_sec:.0f}s < 600s (10dk). "
+                    "Storyboard kısa olabilir."
                 )
             for i, s in enumerate(scenes, 1):
                 s["id"] = i
@@ -668,7 +668,74 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 ],
             }
 
-        # ── Storyboard kalite kontrolü (Section 14 pre-render gate) ──
+        # ── FAZ 2: Routing doğrulaması (hard fail) ───────────────
+        from app.pipelines.registry import validate_routing
+        from app.errors.registry import PipelineErrorException
+        try:
+            validate_routing(payload.type, storyboard.get("scenes", []))
+        except PipelineErrorException as rte:
+            logger.error(
+                f"[video] {job_id[:8]} routing_failed error={rte.error_code} "
+                f"detail={rte.admin_detail}"
+            )
+            _set_status(job_id, "failed", {
+                "error_code": rte.error_code,
+                "error_message": rte.user_message,
+            })
+            return
+
+        # ── FAZ 5: Unicode doğrulaması (hard fail) ───────────────
+        from app.modules.content.unicode_validator import (
+            validate_storyboard_unicode, nfc_normalize_storyboard,
+        )
+        storyboard = nfc_normalize_storyboard(storyboard)
+        unicode_errors = validate_storyboard_unicode(storyboard)
+        if unicode_errors:
+            logger.error(f"[video] {job_id[:8]} unicode_validation_failed: {unicode_errors[:3]}")
+            _set_status(job_id, "failed", {
+                "error_code": "unicode_validation_failed",
+                "error_message": "Metinde bozuk karakter tespit edildi: " + unicode_errors[0],
+            })
+            return
+
+        # ── FAZ 5: Süre doğrulaması (hard fail) ──────────────────
+        if payload.requested_duration_seconds:
+            total_sec = sum(s.get("duration_seconds") or 0 for s in storyboard.get("scenes", []))
+            tolerance = payload.duration_tolerance_seconds
+            lo = payload.requested_duration_seconds - tolerance
+            hi = payload.requested_duration_seconds + tolerance
+            if total_sec > 0 and not (lo <= total_sec <= hi):
+                logger.error(
+                    f"[video] {job_id[:8]} duration_validation_failed "
+                    f"requested={payload.requested_duration_seconds} actual={total_sec:.1f} "
+                    f"tolerance={tolerance} render_started=false"
+                )
+                _set_status(job_id, "failed", {
+                    "error_code": "duration_validation_failed",
+                    "error_message": (
+                        f"{payload.requested_duration_seconds:.0f} saniye istendi ancak "
+                        f"senaryo {total_sec:.1f} saniye üretti."
+                    ),
+                })
+                return
+
+        # ── FAZ 3: Asset doğrulaması (hard fail) ─────────────────
+        from app.modules.content.asset_validator import validate_brand_assets
+        asset_errors = validate_brand_assets(brand.get("logo_url"), job_id)
+        if asset_errors:
+            fatal = [e for e in asset_errors if e["error_code"] == "font_asset_missing"]
+            if fatal:
+                err = fatal[0]
+                _set_status(job_id, "failed", {
+                    "error_code": err["error_code"],
+                    "error_message": err["detail"],
+                })
+                return
+            # Logo hatası: sadece logla, Supabase URL fallback kullanılacak
+            for ae in asset_errors:
+                logger.warning(f"[asset] {job_id[:8]} {ae['error_code']}: {ae['detail']}")
+
+        # ── Storyboard kalite kontrolü ────────────────────────────
         quality_warnings = check_storyboard_quality(storyboard, payload.type)
         if quality_warnings:
             logger.warning(
@@ -678,7 +745,7 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 "error_message": "Kalite uyarısı: " + " | ".join(quality_warnings)
             }).eq("id", job_id).execute()
 
-        # ── İçerik parmak izi kaydet (Section 2) ──────────────────
+        # ── İçerik parmak izi kaydet ──────────────────────────────
         save_content_fingerprint(
             job_id=job_id,
             title=payload.title,
