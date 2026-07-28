@@ -939,10 +939,42 @@ def recover_pending_jobs():
 
 # ── Endpoint'ler ──────────────────────────────────────────────
 
+def _idempotency_key(payload: "CreateVideoPayload") -> str:
+    """
+    content_type + topic + title + duration → hash.
+    Aynı anahtarlı iş queued/rendering durumundaysa job_already_running döner.
+    """
+    import hashlib, json
+    data = json.dumps({
+        "type": payload.type,
+        "title": (payload.title or "").lower().strip(),
+        "topic": (payload.topic or "").lower().strip(),
+        "duration": payload.requested_duration_seconds,
+    }, sort_keys=True)
+    return hashlib.sha256(data.encode()).hexdigest()[:32]
+
+
 @router.post("/create")
 def create_video_job(payload: CreateVideoPayload, background_tasks: BackgroundTasks):
     sb = get_supabase_client()
     job_id = str(uuid.uuid4())
+
+    # ── Idempotency check: aynı iş zaten çalışıyor mu? ───────────
+    idem_key = _idempotency_key(payload)
+    existing = sb.table("video_jobs").select("id,status").eq(
+        "idempotency_key", idem_key
+    ).in_("status", ["pending", "scripting", "tts_generating", "rendering", "warmup_pinging"]).execute()
+    if existing.data:
+        running = existing.data[0]
+        logger.warning(f"[video] job_already_running idem_key={idem_key[:12]} existing={running['id'][:8]}")
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "job_already_running",
+                "message": "Bu iş zaten kuyrukta.",
+                "existing_job_id": running["id"],
+            }
+        )
 
     try:
         payload_json = payload.model_dump(mode="json")
@@ -961,6 +993,7 @@ def create_video_job(payload: CreateVideoPayload, background_tasks: BackgroundTa
             "target_duration_minutes": payload.target_duration_minutes,
             "status": "pending",
             "payload_json": payload_json,
+            "idempotency_key": idem_key,
         }).execute()
     except Exception as e:
         logger.error(f"[video] DB insert hatası: {e}", exc_info=True)
@@ -972,7 +1005,7 @@ def create_video_job(payload: CreateVideoPayload, background_tasks: BackgroundTa
 
     job = r.data[0]
     background_tasks.add_task(_run_pipeline, job_id, payload)
-    logger.info(f"[video] görev oluşturuldu: {job_id} tip={payload.type}")
+    logger.info(f"[video] görev oluşturuldu: {job_id} tip={payload.type} idem={idem_key[:12]}")
     return job
 
 
