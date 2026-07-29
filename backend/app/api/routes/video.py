@@ -501,21 +501,36 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                         f"[video] {job_id[:8]} kalite: {chalk_count}/{len(payload.questions)} "
                         "ChalkboardSolutionScene üretildi — storyboard eksik olabilir"
                     )
-        elif payload.type in ("motivation", "motivation_reel"):
+        elif payload.type in ("motivation", "motivation_reel", "shorts"):
             from app.modules.content.motivation_generator import generate_motivation_storyboard
-            platform = "reels" if payload.format == "9:16" else "shorts"
-            tone = payload.description or "sıcak ve samimi"
             topic_text = payload.topic or payload.title
-            result = generate_motivation_storyboard(topic_text, platform, tone)
+            # requested_duration_seconds → int (frontend string/None gönderebilir)
+            raw_dur = payload.requested_duration_seconds or payload.target_duration_minutes
+            if raw_dur is not None and not isinstance(raw_dur, int):
+                try:
+                    raw_dur = int(float(str(raw_dur).strip()))
+                except (ValueError, TypeError):
+                    raw_dur = None
+            # target_duration_minutes → seconds dönüşümü (dakika gelirse)
+            if raw_dur and raw_dur < 30:
+                raw_dur = raw_dur * 60
+            duration_sec: int = raw_dur if (raw_dur and 15 <= raw_dur <= 300) else 120
+            result = generate_motivation_storyboard(
+                topic=topic_text,
+                duration=duration_sec,
+                platform="reels",
+            )
             scenes = []
             for i, scene in enumerate(result.get("scenes", []), 1):
-                narration = scene.get("narration", "")
-                scenes.append({
-                    "id": i, "component": "MotivationScene", "duration_seconds": 15,
-                    "message": narration or " ".join(scene.get("display_lines", [])),
-                    "message_author": "@adimmusavir",
-                    "voice_text": narration,
-                })
+                s = dict(scene)
+                s["id"] = i
+                # component yoksa fallback
+                if not s.get("component"):
+                    s["component"] = "MotivationScene"
+                # voice_text normalizasyonu
+                if not s.get("voice_text"):
+                    s["voice_text"] = s.get("narration") or s.get("spoken_text") or ""
+                scenes.append(s)
             storyboard = {
                 "video_type": payload.type,
                 "title": result.get("title", payload.title),
@@ -540,29 +555,6 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
             storyboard["format"] = payload.format or "9:16"
             for i, s in enumerate(storyboard.get("scenes", []), 1):
                 s["id"] = i
-
-        elif payload.type in ("shorts",):
-            from app.modules.content.motivation_generator import generate_motivation_storyboard
-            topic_text = payload.topic or payload.title
-            tone = payload.description or "eğitici ve bilgilendirici"
-            result = generate_motivation_storyboard(topic_text, "reels", tone)
-            scenes = []
-            for i, scene in enumerate(result.get("scenes", []), 1):
-                narration = scene.get("narration", "")
-                scenes.append({
-                    "id": i, "component": "MotivationScene", "duration_seconds": 20,
-                    "message": narration or " ".join(scene.get("display_lines", [])),
-                    "message_author": "@adimmusavir",
-                    "voice_text": narration,
-                })
-            storyboard = {
-                "video_type": "shorts",
-                "title": result.get("title", payload.title),
-                "format": payload.format,
-                "language": "tr",
-                "brand": brand,
-                "scenes": scenes,
-            }
 
         elif payload.type in ("question_set_long", "single_question"):
             if not payload.questions:
@@ -613,10 +605,10 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 description=payload.description or "",
             )
             scenes = raw.get("scenes", [])
-            if len(scenes) < 10:
+            if len(scenes) < 8:
                 raise RuntimeError(
-                    f"Konu anlatımı kalite kontrolü başarısız: yalnızca {len(scenes)} sahne "
-                    "üretildi (minimum 10 gerekli, ideal 12-15) — storyboard üretimini tekrar deneyin"
+                    f"Konu anlatımı: yalnızca {len(scenes)} sahne üretildi "
+                    "(minimum 8 gerekli, ideal 12-15). Storyboard yeniden üretiliyor."
                 )
             total_sec = sum(s.get("duration_seconds") or 0 for s in scenes)
             if total_sec < 600:
@@ -1213,8 +1205,8 @@ def generate_infographic(payload: GenerateInfographicPayload):
 
 class GenerateMotivationPayload(BaseModel):
     topic: str
-    platform: str = "reels"        # reels | shorts | carousel | post
-    tone: str = "sıcak ve samimi"
+    duration_seconds: int = 120
+    platform: str = "reels"
     format: str = "9:16"
 
 @router.post("/generate-motivation")
@@ -1223,33 +1215,25 @@ def generate_motivation(payload: GenerateMotivationPayload):
     try:
         result = generate_motivation_storyboard(
             topic=payload.topic,
+            duration=payload.duration_seconds,
             platform=payload.platform,
-            tone=payload.tone,
         )
+        brand = _get_brand()
         scenes = []
         for i, scene in enumerate(result.get("scenes", []), 1):
-            narration = scene.get("narration", "")
-            display_lines = scene.get("display_lines", [])
-            scenes.append({
-                "id": i,
-                "component": "MotivationScene",
-                "duration_seconds": 15,
-                "message": narration or " ".join(display_lines),
-                "message_author": "@adimmusavir",
-                "voice_text": narration,
-            })
+            s = dict(scene)
+            s["id"] = i
+            if not s.get("component"):
+                s["component"] = "MotivationScene"
+            if not s.get("voice_text"):
+                s["voice_text"] = s.get("narration") or s.get("spoken_text") or ""
+            scenes.append(s)
         storyboard = {
             "video_type": "motivation",
             "title": result.get("title", payload.topic),
             "format": payload.format,
             "language": "tr",
-            "brand": {
-                "primary_color": "#0D1B3E",
-                "secondary_color": "#2B7FE0",
-                "background_color": "#08121E",
-                "font_heading": "Playfair Display",
-                "font_body": "Lato",
-            },
+            "brand": brand,
             "scenes": scenes,
         }
         return {
