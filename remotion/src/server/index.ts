@@ -509,6 +509,7 @@ async function _doRender(
     inputProps:      { storyboard },
     codec:           'h264',
     imageFormat:     'jpeg',
+    pixelFormat:     'yuv420p',
     maxRetries:      1,
     framesPerLambda,
     privacy:         'private',
