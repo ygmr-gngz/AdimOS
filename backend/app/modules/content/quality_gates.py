@@ -230,3 +230,117 @@ def check_video_duration(
         return True, None, f"ffprobe çıktısı okunamadı: {exc}"
     except Exception as exc:
         return True, None, f"ffprobe hatası: {exc}"
+
+
+# ── 5. Render sonrası postcheck ───────────────────────────────
+
+def run_postcheck(
+    video_url: str,
+    requested_seconds: Optional[float] = None,
+    tolerance_seconds: float = 15.0,
+) -> dict:
+    """
+    Render tamamlandıktan sonra 'done' işaretlemeden önce çalışır.
+    Tüm kontroller geçerse all_passed=True.
+
+    Returns: postcheck raporu
+      all_passed           : bool
+      first_failure_code   : str | None
+      first_failure_message: str | None
+      url_accessible       : bool
+      file_size_bytes      : int
+      audio_volume_db      : float | None
+      duration_check       : dict | None
+    """
+    report: dict = {
+        "all_passed": False,
+        "first_failure_code": None,
+        "first_failure_message": None,
+        "url_accessible": False,
+        "file_size_bytes": 0,
+        "audio_volume_db": None,
+        "duration_check": None,
+    }
+
+    # ── Kontrol 1: URL varlığı ─────────────────────────────────
+    if not video_url or not video_url.strip():
+        report["first_failure_code"] = "failed_visual_validation"
+        report["first_failure_message"] = "Video URL'si boş — render tamamlanmamış."
+        return report
+
+    # ── Kontrol 2: URL erişilebilirlik + dosya boyutu ──────────
+    try:
+        import httpx
+        r = httpx.head(video_url.strip(), timeout=12.0, follow_redirects=True)
+        if r.status_code != 200:
+            report["first_failure_code"] = "failed_visual_validation"
+            report["first_failure_message"] = (
+                f"Video dosyasına erişilemiyor (HTTP {r.status_code}). "
+                "Supabase Storage erişimi kontrol edin."
+            )
+            return report
+        size = int(r.headers.get("content-length", 0))
+        report["url_accessible"] = True
+        report["file_size_bytes"] = size
+        # < 200 KB = boş/kırık video (gerçek video her zaman daha büyük)
+        if 0 < size < 200_000:
+            report["first_failure_code"] = "failed_visual_validation"
+            report["first_failure_message"] = (
+                f"Video dosyası çok küçük ({size // 1024} KB) — "
+                "render tamamlanmamış veya içerik üretilmemiş."
+            )
+            return report
+    except Exception as exc:
+        logger.warning(f"[postcheck] URL erişim hatası: {exc}")
+        report["first_failure_code"] = "failed_visual_validation"
+        report["first_failure_message"] = f"Video URL'sine erişilemiyor: {str(exc)[:120]}"
+        return report
+
+    # ── Kontrol 3: ffprobe — ses seviyesi (URL üzerinden) ─────
+    try:
+        vol_result = subprocess.run(
+            [
+                "ffmpeg", "-i", video_url.strip(),
+                "-af", "volumedetect", "-f", "null", "-",
+                "-t", "60",            # ilk 60 saniyeyi kontrol et (hız için)
+            ],
+            capture_output=True, text=True, timeout=45,
+        )
+        m = re.search(r"mean_volume:\s*([-\d.]+)\s*dB", vol_result.stderr)
+        if m:
+            mean_vol = float(m.group(1))
+            report["audio_volume_db"] = mean_vol
+            # -91 dB = dijital sessizlik (mean == max → sıfır genlikli tampon)
+            if mean_vol < _MIN_VOLUME_DB:
+                report["first_failure_code"] = "failed_audio_validation"
+                report["first_failure_message"] = (
+                    f"Videoda işitilebilir ses bulunamadı "
+                    f"(ortalama {mean_vol:.0f} dB). "
+                    "TTS zinciri başarısız olmuş olabilir."
+                )
+                return report
+    except FileNotFoundError:
+        logger.debug("[postcheck] ffmpeg bulunamadı — ses kontrolü atlandı")
+    except subprocess.TimeoutExpired:
+        logger.warning("[postcheck] ffmpeg timeout — ses kontrolü atlandı")
+    except Exception as exc:
+        logger.warning(f"[postcheck] ses kontrolü hatası (atlandı): {exc}")
+
+    # ── Kontrol 4: Süre kontrolü (opsiyonel) ──────────────────
+    if requested_seconds:
+        dur_ok, actual_dur, dur_msg = check_video_duration(
+            video_url, requested_seconds, tolerance_seconds
+        )
+        report["duration_check"] = {
+            "ok": dur_ok,
+            "message": dur_msg,
+            "actual_seconds": actual_dur,
+        }
+        # Süre uyuşmazlığı uyarı değil hata — sessiz video bitti
+        if not dur_ok and actual_dur is not None:
+            report["first_failure_code"] = "duration_validation_failed"
+            report["first_failure_message"] = dur_msg
+            return report
+
+    report["all_passed"] = True
+    return report

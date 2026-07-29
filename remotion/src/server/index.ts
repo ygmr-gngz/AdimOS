@@ -178,40 +178,51 @@ const BACKEND_URL = _normalizeBackendUrl(process.env.BACKEND_URL)
 // Anahtar: "<video_type>:<format>" veya "<video_type>"
 // Değer: src/index.ts'de registerRoot ile kayıtlı composition ID
 const COMPOSITION_MAP: Record<string, string> = {
-  // ── Soru çözümü 16:9 (tek soru veya soru seti) ────────────────
+  // ── Soru çözümü (kanonik: soru_cozum) ─────────────────────────
+  'soru_cozum:16:9':          'QuizVideo',    // kanonik
+  'soru_cozum':               'QuizVideo',    // kanonik
   'soru_cozumu:16:9':         'QuizVideo',
   'quiz:16:9':                'QuizVideo',
+  'quiz':                     'QuizVideo',
   'single_question:16:9':     'QuizVideo',
   'question_set_long:16:9':   'QuizVideo',
   'question_set_long':        'QuizVideo',
   // ── Soru çözümü 9:16 (dikey kısa quiz içeriği) ───────────────
+  'soru_cozum:9:16':          'SplitQuizVerticalDemo', // kanonik
   'soru_cozumu:9:16':         'SplitQuizVerticalDemo',
   'quiz:9:16':                'SplitQuizVerticalDemo',
   'single_question:9:16':     'SplitQuizVerticalDemo',
-  // shorts ve kisa_icerik:9:16 quiz değil — eğitim kısa videosu
-  'shorts:9:16':              'EducationalReel',
-  'shorts':                   'EducationalReel',
-  'kisa_icerik:9:16':         'EducationalReel',
-  // ── Motivasyon Reels ───────────────────────────────────────────
-  'motivasyon':               'MotivationVideo',
+  // ── Motivasyon (kanonik: motivasyon) ─────────────────────────
+  'motivasyon':               'MotivationVideo',  // kanonik
+  'motivasyon:9:16':          'MotivationVideo',  // kanonik
   'motivation':               'MotivationVideo',
   'motivation_reel':          'MotivationVideo',
   'motivation_reel:9:16':     'MotivationVideo',
-  // ── Kısa eğitim içeriği (EducationalReel) ─────────────────────
+  // ── Reels/Short (kanonik: reels_short) ────────────────────────
+  'reels_short':              'EducationalReel',  // kanonik
+  'reels_short:9:16':         'EducationalReel',  // kanonik
   'educational_reel':         'EducationalReel',
   'educational_reel:9:16':    'EducationalReel',
+  'shorts:9:16':              'EducationalReel',
+  'shorts':                   'EducationalReel',
   'bilgilendirme_kisa':       'EducationalReel',
   'bilgilendirme_kisa:9:16':  'EducationalReel',
+  'kisa_icerik:9:16':         'EducationalReel',
   'kisa_icerik':              'EducationalReel',
-  // ── İnfografik animasyon ──────────────────────────────────────
+  // ── Görsel post (kanonik: gorsel_post) ────────────────────────
+  'gorsel_post':              'InfographicVideo',  // kanonik
+  'gorsel_post:9:16':         'InfographicVideo',  // kanonik
   'infografik_animasyon':     'InfographicVideo',
   'infografik':               'InfographicVideo',
   'infographic':              'InfographicVideo',
-  'lesson':                   'InfographicVideo',
-  // ── Konu anlatımı (uzun format) ───────────────────────────────
+  'infographic:9:16':         'InfographicVideo',
+  // ── Konu anlatımı (kanonik: konu_anlatimi) ───────────────────
   'konu_anlatimi':            'LessonVideo',
+  'konu_anlatimi:16:9':       'LessonVideo',
   'lesson_long':              'LessonVideo',
   'sgs_topic_video':          'LessonVideo',
+  // Eski yanlış eşleme düzeltildi: lesson → LessonVideo (eskiden InfographicVideo idi)
+  'lesson':                   'LessonVideo',
 }
 
 function resolveComposition(videoType: string, format: string): string | null {

@@ -14,6 +14,7 @@ from app.modules.content.quality_gates import (
     check_audio_volume,
     check_audio_urls,
     check_video_duration,
+    run_postcheck,
 )
 from app.modules.content.content_dedup import check_content_duplicate, save_content_fingerprint
 
@@ -73,6 +74,9 @@ class RenderCallback(BaseModel):
     status: str                            # done | failed
     video_url: Optional[str] = None
     error: Optional[str] = None
+    cost_lambda_usd: Optional[float] = None   # bridge'den gelen render maliyeti
+    render_id: Optional[str] = None
+    elapsed_seconds: Optional[int] = None
 
 
 # ── Veritabanı yardımcıları ───────────────────────────────────
@@ -1215,41 +1219,99 @@ def generate_motivation(payload: GenerateMotivationPayload):
 
 @public_router.post("/render-callback")
 def render_callback(body: RenderCallback):
-    """Remotion render servisi tamamlandığında çağırır."""
-    if body.status == "done":
-        # Section 1: süre kalite kontrolü
-        duration_note = ""
-        try:
-            sb_cb = get_supabase_client()
-            job_row = sb_cb.table("video_jobs").select(
-                "payload_json, storyboard"
-            ).eq("id", body.job_id).execute().data
-            if job_row:
-                pj = job_row[0].get("payload_json") or {}
-                req_sec  = pj.get("requested_duration_seconds")
-                tol_sec  = pj.get("duration_tolerance_seconds", 15.0)
-                if body.video_url and req_sec:
-                    dur_ok, _, dur_msg = check_video_duration(
-                        video_url=body.video_url,
-                        requested_seconds=req_sec,
-                        tolerance_seconds=tol_sec,
-                    )
-                    logger.info(f"[video] {body.job_id[:8]} {dur_msg}")
-                    if not dur_ok:
-                        duration_note = f" | Süre uyarısı: {dur_msg}"
-        except Exception as dur_exc:
-            logger.warning(f"[video] render callback süre kontrolü hatası: {dur_exc}")
+    """
+    Remotion render servisi tamamlandığında çağırır.
 
-        _set_status(body.job_id, "ready_for_review", {
-            "video_url": body.video_url,
-            "error_message": duration_note.strip(" |") if duration_note else None,
-        })
-        logger.info(f"[video] {body.job_id} render tamamlandı: {body.video_url}")
-    else:
+    P0-5: 'done' kazanılan statüdür — postcheck geçmeden verilmez.
+    P0-7: maliyet DB'ye yazılır, 0 yazan log artık oluşmaz.
+    """
+    sb_cb = get_supabase_client()
+
+    # ── Render başarısız ─────────────────────────────────────────
+    if body.status != "done":
         _set_status(body.job_id, "failed", {
-            "error_message": body.error or "Render başarısız"
+            "error_message": body.error or "Render başarısız",
+            "render_id": body.render_id,
         })
-        logger.error(f"[video] {body.job_id} render hatası: {body.error}")
+        logger.error(f"[video] {body.job_id[:8]} render_failed: {body.error}")
+        return {"ok": True}
+
+    # ── Maliyet kaydı (P0-7) ─────────────────────────────────────
+    cost_usd = body.cost_lambda_usd
+    if cost_usd is not None and cost_usd > 0:
+        try:
+            sb_cb.table("video_jobs").update({
+                "render_cost_usd": cost_usd,
+            }).eq("id", body.job_id).execute()
+            logger.info(
+                f"[video] {body.job_id[:8]} render_cost_usd=${cost_usd:.4f} "
+                f"elapsed={body.elapsed_seconds}s render_id={body.render_id}"
+            )
+        except Exception as cost_exc:
+            logger.warning(f"[video] {body.job_id[:8]} maliyet yazılamadı: {cost_exc}")
+    elif cost_usd is None:
+        logger.warning(
+            f"[video] {body.job_id[:8]} cost_lambda_usd=null — bridge maliyet bilgisi gönderemiyor"
+        )
+    # cost_usd == 0 → $0 yazmak yerine null bırak (ölçülemeyen değeri maskeleme)
+
+    # ── Postcheck (P0-5) — 'done' kazanılır, varsayılan değil ────
+    try:
+        job_row = sb_cb.table("video_jobs").select(
+            "payload_json"
+        ).eq("id", body.job_id).execute().data
+        pj = (job_row[0].get("payload_json") or {}) if job_row else {}
+        req_sec = pj.get("requested_duration_seconds")
+        tol_sec = float(pj.get("duration_tolerance_seconds") or 15.0)
+    except Exception:
+        req_sec = None
+        tol_sec = 15.0
+
+    report = run_postcheck(
+        video_url=body.video_url or "",
+        requested_seconds=req_sec,
+        tolerance_seconds=tol_sec,
+    )
+    logger.info(
+        f"[video] {body.job_id[:8]} postcheck "
+        f"passed={report['all_passed']} "
+        f"url_ok={report['url_accessible']} "
+        f"size={report['file_size_bytes']} "
+        f"vol={report.get('audio_volume_db')} "
+        f"failure={report.get('first_failure_code')}"
+    )
+
+    try:
+        sb_cb.table("video_jobs").update({
+            "postcheck_report": report,
+        }).eq("id", body.job_id).execute()
+    except Exception as pc_exc:
+        logger.warning(f"[video] {body.job_id[:8]} postcheck raporu yazılamadı: {pc_exc}")
+
+    if not report["all_passed"]:
+        _set_status(body.job_id, "failed", {
+            "error_code": report["first_failure_code"],
+            "error_message": report["first_failure_message"],
+            "video_url": body.video_url,   # video var, incelenebilir
+            "render_id": body.render_id,
+        })
+        logger.error(
+            f"[video] {body.job_id[:8]} postcheck_failed "
+            f"code={report['first_failure_code']} msg={report['first_failure_message']}"
+        )
+        return {"ok": True}
+
+    # Tüm kontroller geçti → 'done' hak edildi
+    actual_dur = (report.get("duration_check") or {}).get("actual_seconds")
+    _set_status(body.job_id, "ready_for_review", {
+        "video_url": body.video_url,
+        "actual_duration_seconds": actual_dur,
+        "render_id": body.render_id,
+    })
+    logger.info(
+        f"[video] {body.job_id[:8]} postcheck_passed → ready_for_review "
+        f"url={body.video_url} dur={actual_dur}"
+    )
     return {"ok": True}
 
 
