@@ -48,6 +48,10 @@ class PipelineErrorException(Exception):
 # ── Kayıt defteri — tüm hata kodları burada ──────────────────────
 
 REGISTRY: dict[str, dict[str, Any]] = {
+    "unknown_content_type": {
+        "retryable": False,
+        "user_message": "Bilinmeyen içerik türü.",
+    },
     "openai_insufficient_quota": {
         "retryable": False,
         "user_message": (

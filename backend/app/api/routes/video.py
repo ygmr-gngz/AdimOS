@@ -408,13 +408,27 @@ def _run_pipeline(job_id: str, payload: CreateVideoPayload):
 def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
     """Gerçek pipeline mantığı — semaphore altında çalışır."""
     import httpx
+    from app.domain.content_type import normalize_content_type, CONTENT_TYPE_LABELS
+    from app.errors.registry import PipelineErrorException
     sb = get_supabase_client()
     brand = _get_brand()
     total_tts_chars = 0
 
+    # ── 0. Tip normalizasyonu (kanonik türe çevir) ────────────────
+    try:
+        content_type = normalize_content_type(payload.type)
+    except PipelineErrorException as e:
+        logger.error(f"[video] {job_id[:8]} unknown_content_type raw={payload.type!r}")
+        _set_status(job_id, "failed", {
+            "error_code": e.error_code,
+            "error_message": e.user_message,
+        })
+        return
+    logger.info(f"[video] {job_id[:8]} content_type={content_type!r} raw={payload.type!r}")
+
     try:
         # ── -1. İçerik tekrar kontrolü (Section 2) ─────────────────
-        if payload.content_series and payload.type not in ("infographic",):
+        if payload.content_series and content_type not in ("gorsel_post", "infographic"):
             is_dup, similar_title, sim_score = check_content_duplicate(
                 title=payload.title,
                 topic=payload.topic or payload.title,
@@ -432,8 +446,8 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                     )
                 }).eq("id", job_id).execute()
 
-        # ── 0. İnfografik (TTS yok, Remotion olmadan doğrudan hazır) ──
-        if payload.type == "infographic":
+        # ── 0. İnfografik / Görsel post (TTS yok, Remotion olmadan doğrudan hazır) ──
+        if content_type == "gorsel_post":
             _set_status(job_id, "scripting")
             storyboard = payload.pre_storyboard or {}
             if not storyboard:
@@ -449,9 +463,9 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
 
         # ── 1. Senaryo ──────────────────────────────────────────
         _set_status(job_id, "scripting")
-        logger.info(f"[video] {job_id} senaryo oluşturuluyor tip={payload.type}")
+        logger.info(f"[video] {job_id} senaryo oluşturuluyor content_type={content_type}")
 
-        if payload.type == "quiz" and payload.questions:
+        if content_type == "soru_cozum" and payload.questions:
             if payload.format == "9:16":
                 # Dikey kısa quiz — SplitQuizVerticalScene kalır
                 storyboard = _build_quiz_storyboard(
@@ -501,7 +515,14 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                         f"[video] {job_id[:8]} kalite: {chalk_count}/{len(payload.questions)} "
                         "ChalkboardSolutionScene üretildi — storyboard eksik olabilir"
                     )
-        elif payload.type in ("motivation", "motivation_reel", "shorts"):
+        elif content_type == "soru_cozum" and not payload.questions:
+            # Soru çözüm — soru listesi olmadan gelen istek (panel topic-only gönderimi)
+            raise RuntimeError(
+                "Soru çözüm videosu için en az 1 soru gerekli. "
+                "Panel'de soruları ekleyin veya İçerik Otomasyonu'ndan soru seçin."
+            )
+
+        elif content_type == "motivasyon":
             from app.modules.content.motivation_generator import generate_motivation_storyboard
             topic_text = payload.topic or payload.title
             # requested_duration_seconds → int (frontend string/None gönderebilir)
@@ -540,7 +561,7 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 "scenes": scenes,
             }
 
-        elif payload.type in ("reel", "educational_reel", "bilgilendirme_kisa", "kisa_icerik"):
+        elif content_type == "reels_short":
             # EducationalReel120 — GPT storyboard + EducationalReelScene bileşeni
             from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
             storyboard = generate_educational_reel_storyboard(
@@ -556,46 +577,7 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
             for i, s in enumerate(storyboard.get("scenes", []), 1):
                 s["id"] = i
 
-        elif payload.type in ("question_set_long", "single_question"):
-            if not payload.questions:
-                raise ValueError(f"{payload.type} için en az 1 soru gerekli (questions boş)")
-            from app.modules.sgs.storyboard import generate_sgs_question_storyboard
-            questions_dict = [
-                {
-                    "question_text": q.text,
-                    "options": [{"label": o.label, "text": o.text} for o in q.options],
-                    "correct_option": q.correct_label,
-                    "explanation": q.explanation or "",
-                }
-                for q in payload.questions
-            ]
-            raw = generate_sgs_question_storyboard(
-                title=payload.title,
-                topic=payload.topic or payload.title,
-                subject=payload.lesson_name or "SGS",
-                questions=questions_dict,
-            )
-            scenes = raw.get("scenes", [])
-            for i, s in enumerate(scenes, 1):
-                s["id"] = i
-            storyboard = {
-                "video_type": payload.type,
-                "title": payload.title,
-                "lesson_name": payload.lesson_name,
-                "topic": payload.topic,
-                "format": payload.format,
-                "language": "tr",
-                "brand": brand,
-                "scenes": scenes,
-            }
-            chalk_count = sum(1 for s in scenes if s.get("component") == "ChalkboardSolutionScene")
-            if chalk_count < len(payload.questions):
-                logger.warning(
-                    f"[video] {job_id[:8]} kalite: {chalk_count}/{len(payload.questions)} "
-                    "soru sahnesi üretildi — storyboard eksik olabilir"
-                )
-
-        elif payload.type in ("konu_anlatimi", "lesson_long", "sgs_topic_video"):
+        elif content_type == "konu_anlatimi":
             from app.modules.sgs.lesson_storyboard import generate_lesson_storyboard
             raw = generate_lesson_storyboard(
                 title=payload.title,
@@ -631,41 +613,20 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
             }
 
         else:
-            topic_text = payload.topic or payload.title
-            desc_text = payload.description or ""
-            intro_voice = f"Bu videoda {topic_text} konusunu ele alacağız."
-            if desc_text:
-                intro_voice += f" {desc_text}"
-
-            storyboard = {
-                "video_type": payload.type,
-                "title": payload.title,
-                "lesson_name": payload.lesson_name,
-                "topic": payload.topic,
-                "format": payload.format,
-                "language": "tr",
-                "brand": brand,
-                "scenes": [
-                    {
-                        "id": 1, "component": "IntroScene", "duration_seconds": 8,
-                        "title": payload.title,
-                        "subtitle": payload.topic or "",
-                        "voice_text": intro_voice,
-                    },
-                    {
-                        "id": 2, "component": "OutroScene", "duration_seconds": 8,
-                        "title": "Tamamlandı",
-                        "subtitle": "Bir sonraki videoda görüşmek üzere!",
-                        "voice_text": "Videoyu izlediğiniz için teşekkürler. Başarılar!",
-                    },
-                ],
-            }
+            # Normalize edilmiş tip tanınmıyor — sessiz fallback yerine açık hata
+            logger.error(
+                f"[video] {job_id[:8]} bilinmeyen tip normalize_sonrasi={content_type!r} raw={payload.type!r}"
+            )
+            _set_status(job_id, "failed", {
+                "error_code": "unknown_content_type",
+                "error_message": f"Desteklenmeyen içerik türü: {payload.type!r}",
+            })
+            return
 
         # ── FAZ 2: Routing doğrulaması (hard fail) ───────────────
         from app.pipelines.registry import validate_routing
-        from app.errors.registry import PipelineErrorException
         try:
-            validate_routing(payload.type, storyboard.get("scenes", []))
+            validate_routing(content_type, storyboard.get("scenes", []))
         except PipelineErrorException as rte:
             logger.error(
                 f"[video] {job_id[:8]} routing_failed error={rte.error_code} "
@@ -729,7 +690,7 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 logger.warning(f"[asset] {job_id[:8]} {ae['error_code']}: {ae['detail']}")
 
         # ── Storyboard kalite kontrolü ────────────────────────────
-        quality_warnings = check_storyboard_quality(storyboard, payload.type)
+        quality_warnings = check_storyboard_quality(storyboard, content_type)
         if quality_warnings:
             logger.warning(
                 f"[video] {job_id[:8]} storyboard kalite uyarıları: {quality_warnings}"

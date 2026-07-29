@@ -103,24 +103,38 @@ CONTENT_PIPELINES: dict[str, dict] = {
     },
 }
 
-# İçerik tipi takma adları → canonical tip
+# İçerik tipi takma adları → pipeline anahtarı
+# Kanonik ContentType değerleri de buraya eklendi (domain/content_type.py ile uyum)
 _ALIASES: dict[str, str] = {
-    "reel":              "educational_reel",
+    # reel / reels_short
+    "reel":               "educational_reel",
     "bilgilendirme_kisa": "educational_reel",
-    "kisa_icerik":       "educational_reel",
-    "educational_reel":  "educational_reel",
-    "quiz":              "quiz",
-    "question_set_long": "quiz",
-    "single_question":   "quiz",
-    "lesson":            "lesson",
-    "konu_anlatimi":     "lesson",
-    "lesson_long":       "lesson",
-    "sgs_topic_video":   "lesson",
-    "motivation":        "motivation",
-    "motivation_reel":   "motivation",
-    "shorts":            "motivation",
-    "infographic":       "infographic",
-    "quiz_board":        "quiz_board",
+    "kisa_icerik":        "educational_reel",
+    "educational_reel":   "educational_reel",
+    "reels_short":        "educational_reel",   # kanonik
+    "short":              "educational_reel",
+    # quiz / soru_cozum
+    "quiz":               "quiz",
+    "question_set_long":  "quiz",
+    "single_question":    "quiz",
+    "soru_cozum":         "quiz",               # kanonik → mevcut quiz pipeline
+    "soru":               "quiz",
+    # lesson / konu_anlatimi
+    "lesson":             "lesson",
+    "konu_anlatimi":      "lesson",
+    "lesson_long":        "lesson",
+    "sgs_topic_video":    "lesson",
+    # motivation / motivasyon
+    "motivation":         "motivation",
+    "motivation_reel":    "motivation",
+    "shorts":             "motivation",
+    "motivasyon":         "motivation",         # kanonik
+    # infographic / gorsel_post
+    "infographic":        "infographic",
+    "gorsel_post":        "infographic",        # kanonik
+    "post":               "infographic",
+    # quiz_board (ayrı pipeline)
+    "quiz_board":         "quiz_board",
     "soru_cozum_tahtasi": "quiz_board",
 }
 
