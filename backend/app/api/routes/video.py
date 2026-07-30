@@ -13,7 +13,6 @@ from app.modules.content.quality_gates import (
     check_storyboard_quality,
     check_audio_volume,
     check_audio_urls,
-    check_video_duration,
     run_postcheck,
 )
 from app.modules.content.content_dedup import check_content_duplicate, save_content_fingerprint
@@ -157,6 +156,14 @@ def _tts_bytes(text: str) -> tuple[bytes, int]:
     from app.modules.content.tr_speech_normalize import tr_speech_normalize
 
     text = apply_pronunciation_dict(tr_speech_normalize(text))
+
+    # OpenAI TTS 4096 karakter sınırı — aşılırsa cümle sınırında kes
+    _TTS_MAX = 4000
+    if len(text) > _TTS_MAX:
+        cut = text[:_TTS_MAX].rfind('. ')
+        text = text[:cut + 1] if cut > _TTS_MAX // 2 else text[:_TTS_MAX]
+        logger.warning(f"[tts] metin {len(text)} kara kısaltıldı (limit {_TTS_MAX})")
+
     char_count = len(text)
     client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=60.0)
 
@@ -216,7 +223,7 @@ def _upload_tts(audio_bytes: bytes, filename: str) -> str:
 # ── Quiz storyboard üretimi ───────────────────────────────────
 
 def _build_quiz_storyboard(
-    job_id: str, title: str, lesson_name: str, topic: str,
+    title: str, lesson_name: str, topic: str,
     questions: List[QuizQuestion], format: str, brand: dict,
     description: str = "",
 ) -> dict:
@@ -411,8 +418,7 @@ def _run_pipeline(job_id: str, payload: CreateVideoPayload):
 
 def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
     """Gerçek pipeline mantığı — semaphore altında çalışır."""
-    import httpx
-    from app.domain.content_type import normalize_content_type, CONTENT_TYPE_LABELS
+    from app.domain.content_type import normalize_content_type
     from app.errors.registry import PipelineErrorException
     sb = get_supabase_client()
     brand = _get_brand()
@@ -473,7 +479,6 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
             if payload.format == "9:16":
                 # Dikey kısa quiz — SplitQuizVerticalScene kalır
                 storyboard = _build_quiz_storyboard(
-                    job_id=job_id,
                     title=payload.title,
                     lesson_name=payload.lesson_name or "",
                     topic=payload.topic or "",
@@ -656,23 +661,28 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
             })
             return
 
-        # ── FAZ 5: Süre doğrulaması (hard fail) ──────────────────
+        # ── FAZ 5: Süre doğrulaması (sadece aşırı sapma — LLM tahmini kaba) ──
+        # Frontend duration_tolerance_seconds (8s) render-sonrası postcheck içindir.
+        # Storyboard aşamasında LLM süresi TTS ile kalibre edilmemiştir; geniş tolerans kullan.
         if payload.requested_duration_seconds:
             total_sec = sum(s.get("duration_seconds") or 0 for s in storyboard.get("scenes", []))
-            tolerance = payload.duration_tolerance_seconds
-            lo = payload.requested_duration_seconds - tolerance
-            hi = payload.requested_duration_seconds + tolerance
+            req = payload.requested_duration_seconds
+            # Storyboard aşamasında %35 sapma kabul edilir (TTS sonrası uzar/kısalır)
+            pre_tolerance = max(req * 0.35, 30.0)
+            lo = req - pre_tolerance
+            hi = req + pre_tolerance
             if total_sec > 0 and not (lo <= total_sec <= hi):
                 logger.error(
                     f"[video] {job_id[:8]} duration_validation_failed "
-                    f"requested={payload.requested_duration_seconds} actual={total_sec:.1f} "
-                    f"tolerance={tolerance} render_started=false"
+                    f"requested={req} actual={total_sec:.1f} "
+                    f"pre_tolerance={pre_tolerance:.0f} render_started=false"
                 )
                 _set_status(job_id, "failed", {
                     "error_code": "duration_validation_failed",
                     "error_message": (
-                        f"{payload.requested_duration_seconds:.0f} saniye istendi ancak "
-                        f"senaryo {total_sec:.1f} saniye üretti."
+                        f"{req:.0f} saniye istendi ancak "
+                        f"senaryo {total_sec:.1f} saniye üretti "
+                        f"(izin verilen aralık {lo:.0f}–{hi:.0f}s)."
                     ),
                 })
                 return
@@ -758,8 +768,18 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                     if not vol_ok2:
                         logger.error(
                             f"[video] {job_id} sahne {scene_row['scene_index']} "
-                            f"yeniden deneme de sessiz ({mean_vol2:.1f}dB) — devam ediliyor"
+                            f"yeniden deneme de sessiz ({mean_vol2:.1f}dB) — pipeline durduruluyor"
                         )
+                        _set_status(job_id, "failed", {
+                            "error_code": "tts_generation_failed",
+                            "error_message": (
+                                f"Sahne {scene_row['scene_index'] + 1} için ses üretilemedi "
+                                f"(2 denemede de sessiz, {mean_vol2:.0f} dB). "
+                                "OpenAI TTS çıktısını kontrol edin."
+                            ),
+                            "cost_tts_chars": total_tts_chars,
+                        })
+                        return
 
                 filename = f"{job_id}_{scene_row['scene_index']}.mp3"
                 tts_url = _upload_tts(audio_bytes, filename)
@@ -1241,7 +1261,7 @@ def render_callback(body: RenderCallback):
     if cost_usd is not None and cost_usd > 0:
         try:
             sb_cb.table("video_jobs").update({
-                "render_cost_usd": cost_usd,
+                "cost_lambda_usd": cost_usd,
             }).eq("id", body.job_id).execute()
             logger.info(
                 f"[video] {body.job_id[:8]} render_cost_usd=${cost_usd:.4f} "

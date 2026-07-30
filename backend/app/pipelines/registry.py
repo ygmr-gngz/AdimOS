@@ -67,13 +67,11 @@ CONTENT_PIPELINES: dict[str, dict] = {
             "MotivationHookScene", "MotivationProblemScene", "MotivationEmpathyScene",
             "MotivationTurnScene", "MotivationStepScene", "MotivationProofScene",
             "MotivationFocusScene", "MotivationOutroScene",
-            # geriye dönük uyumluluk
+            # geriye dönük uyumluluk — LLM zaman zaman eski bileşen adı üretir
             "MotivationScene",
         ],
-        "required_scenes": [
-            "MotivationHookScene", "MotivationProblemScene",
-            "MotivationStepScene", "MotivationOutroScene",
-        ],
+        # LLM çıktısı tutarsız olduğundan minimal zorunluluk: hook var mı?
+        "required_scenes": ["MotivationHookScene"],
     },
     "quiz_board": {
         "generator": "quiz_storyboard",

@@ -23,14 +23,23 @@ _FFPROBE_TIMEOUT  = 20      # saniye
 # ── 1. Storyboard ön kontrolü ─────────────────────────────────
 
 _MIN_SCENES: dict[str, int] = {
-    "konu_anlatimi": 8,
-    "lesson_long":   8,
-    "sgs_topic_video": 8,
-    "reel":          5,
+    # kanonik adlar
+    "konu_anlatimi":    8,
+    "soru_cozum":       3,
+    "reels_short":      5,
+    "motivasyon":       1,
+    "gorsel_post":      1,
+    # pipeline anahtarları (registry.py canonical_type çıktısı)
+    "lesson":           8,
+    "quiz":             3,
     "educational_reel": 5,
-    "quiz":          3,
-    "motivation":    1,
-    "infographic":   1,
+    "motivation":       1,
+    "infographic":      1,
+    # eski takma adlar
+    "lesson_long":      8,
+    "sgs_topic_video":  8,
+    "reel":             5,
+    "quiz_board":       3,
 }
 
 def check_storyboard_quality(storyboard: dict, video_type: str) -> list[str]:
@@ -78,7 +87,7 @@ def check_storyboard_quality(storyboard: dict, video_type: str) -> list[str]:
             warnings.append(f"Sahne {s.get('id')}: EducationalReelScene için segment_type zorunlu.")
 
     # Toplam süre uyarısı (lesson için)
-    if video_type in ("konu_anlatimi", "lesson_long", "sgs_topic_video"):
+    if video_type in ("konu_anlatimi", "lesson", "lesson_long", "sgs_topic_video"):
         total_sec = sum(s.get("duration_seconds") or 0 for s in scenes if isinstance(s.get("duration_seconds"), (int, float)))
         if total_sec < 1080:
             warnings.append(

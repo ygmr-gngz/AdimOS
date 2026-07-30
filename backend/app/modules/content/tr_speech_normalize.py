@@ -92,11 +92,27 @@ def _percent_replace(m: re.Match) -> str:
 # "153 Ticari Mallar" → "yüz elli üç, ticari mallar"
 _ACCT_RE = re.compile(r"\b([1-7]\d{2})\b\s+([A-ZÇĞİÖŞÜa-zçğışöşü])")
 
+# ── Yıl (19xx / 20xx) — para/hesap kodu kuralından önce uygulanmaz
+_YEAR_RE  = re.compile(r"\b(19|20)\d{2}\b")
+
+# ── Noktalı büyük sayılar: "50.000 adet" → "elli bin adet"
+# Para kuralından SONRA çalışır (TL eki olmayanlar için)
+_BIG_NUM_RE = re.compile(r"\b(\d{1,3}(?:\.\d{3})+)\b(?!\s*(?:TL|₺|lira))", re.IGNORECASE)
+
 
 def _acct_replace(m: re.Match) -> str:
     code = int(m.group(1))
     rest = m.group(2)
     return f"{_int_tr(code)}, {rest}"
+
+
+def _year_replace(m: re.Match) -> str:
+    return _int_tr(int(m.group(0)))
+
+
+def _big_num_replace(m: re.Match) -> str:
+    val = int(m.group(1).replace(".", ""))
+    return _int_tr(val)
 
 
 # ── Yüzde işareti (pronunciation_dict ile çakışmayı önlemek için pozitif lookbehind) ─
@@ -128,6 +144,12 @@ def tr_speech_normalize(text: str) -> str:
 
     # Hesap kodları (3 haneli + harf)
     text = _ACCT_RE.sub(_acct_replace, text)
+
+    # Yıllar (19xx / 20xx) — hesap kodundan sonra, çakışmayı önlemek için
+    text = _YEAR_RE.sub(_year_replace, text)
+
+    # Noktalı büyük sayılar (para sonrası — TL eki olmayanlar)
+    text = _BIG_NUM_RE.sub(_big_num_replace, text)
 
     # Kısaltmalar
     for pattern, replacement in _ABBR_COMPILED:

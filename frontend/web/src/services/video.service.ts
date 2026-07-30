@@ -2,7 +2,12 @@ import apiClient from '@/lib/api-client'
 
 // ── Tipler ────────────────────────────────────────────────────
 
-export type VideoType = 'quiz' | 'lesson' | 'shorts' | 'motivation' | 'infographic'
+export type VideoType =
+  | 'konu_anlatimi'
+  | 'soru_cozum'
+  | 'reels_short'
+  | 'motivasyon'
+  | 'gorsel_post'
 export type VideoFormat = '16:9' | '9:16'
 export type VideoStatus =
   | 'draft'
@@ -57,8 +62,12 @@ export interface CreateVideoPayload {
   description?: string
   format: VideoFormat
   target_duration_minutes?: number
+  requested_duration_seconds?: number   // saniye cinsinden (backend kalite kapısı için zorunlu)
+  duration_tolerance_seconds?: number   // varsayılan 8 saniye
   pre_storyboard?: Record<string, unknown>
   infographic_template?: string
+  content_series?: string
+  storyboard_version?: number
   questions?: {
     text: string
     options: { label: string; text: string }[]
@@ -104,11 +113,23 @@ export const VIDEO_STATUS_COLORS: Record<VideoStatus, string> = {
 }
 
 export const VIDEO_TYPE_LABELS: Record<VideoType, string> = {
-  quiz: 'Soru Çözüm',
-  lesson: 'Ders Anlatımı',
-  shorts: 'Reels / Shorts',
-  motivation: 'Motivasyon',
-  infographic: 'Görsel Post',
+  konu_anlatimi: 'Konu Anlatımı',
+  soru_cozum:    'Soru Çözüm',
+  reels_short:   'Reels / Short',
+  motivasyon:    'Motivasyon',
+  gorsel_post:   'Görsel Post',
+}
+
+// Geriye dönük uyumluluk — eski DB kayıtları eski tip adlarıyla saklanmış olabilir
+export const VIDEO_TYPE_LABEL_FALLBACK: Record<string, string> = {
+  quiz: 'Soru Çözüm', lesson: 'Ders Anlatımı', shorts: 'Reels / Short',
+  motivation: 'Motivasyon', infographic: 'Görsel Post',
+}
+
+export function getTypeLabel(type: string): string {
+  return VIDEO_TYPE_LABELS[type as VideoType]
+    ?? VIDEO_TYPE_LABEL_FALLBACK[type]
+    ?? type
 }
 
 // ── Service ───────────────────────────────────────────────────

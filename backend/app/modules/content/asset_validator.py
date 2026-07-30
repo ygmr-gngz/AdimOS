@@ -54,7 +54,13 @@ def validate_fonts() -> tuple[bool, list[str]]:
     """
     Remotion bundle'ında woff2 font dosyaları var mı kontrol eder.
     Returns: (all_present, eksik_dosyalar)
+
+    Railway/Lambda ortamında remotion/public backend'e mount edilmez;
+    bu durumda fontlar Remotion bundle'ına dahildir — kontrol atlanır.
     """
+    if not _REMOTION_PUBLIC.exists():
+        logger.info("[asset] remotion/public dizini yok — font kontrolü atlandı (Lambda/Railway ortamı)")
+        return True, []
     missing = []
     for rel in _REQUIRED_FONTS:
         full = _REMOTION_PUBLIC / rel

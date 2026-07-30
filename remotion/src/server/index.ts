@@ -122,10 +122,10 @@ app.use(express.json({ limit: '10mb' }))
 
 const TEMPLATE_VERSION = 'quiz-board-v2'
 
-// REMOTION_PREFLIGHT_STRICT=true  → altyapı hatası render'ı DURDURUR (production)
-// REMOTION_PREFLIGHT_STRICT=false → altyapı hatası loglanır, allowlist ile devam (sadece dev)
+// REMOTION_PREFLIGHT_STRICT=true  (varsayılan) → altyapı hatası render'ı DURDURUR
+// REMOTION_PREFLIGHT_STRICT=false → altyapı hatası loglanır, allowlist ile devam (yalnızca local dev)
 const PREFLIGHT_STRICT =
-  String(process.env.REMOTION_PREFLIGHT_STRICT ?? 'false').trim().toLowerCase() === 'true'
+  String(process.env.REMOTION_PREFLIGHT_STRICT ?? 'true').trim().toLowerCase() !== 'false'
 
 function _describeServeUrl(raw: string | undefined) {
   const v = (raw ?? '').trim()
