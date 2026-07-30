@@ -16,6 +16,12 @@ class ContentType(StrEnum):
     GORSEL_POST   = "gorsel_post"
 
 
+class ContentTrack(StrEnum):
+    """Hedef kitle hattı — storyboard, hook ve CTA seçimini belirler."""
+    OGRENCI = "ogrenci"   # SGS/SMMM adayı, öğrenci
+    DANISAN = "danisan"   # KOBİ, esnaf, girişimci
+
+
 # Kullanıcı arayüzü / eski API / eski DB kayıtları → kanonik tür
 CONTENT_TYPE_ALIASES: dict[str, str] = {
     # konu_anlatimi

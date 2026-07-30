@@ -13,6 +13,7 @@ from app.modules.content.quality_gates import (
     check_storyboard_quality,
     check_audio_volume,
     check_audio_urls,
+    check_marketing_compliance,
     run_postcheck,
 )
 from app.modules.content.content_dedup import check_content_duplicate, save_content_fingerprint
@@ -64,6 +65,9 @@ class CreateVideoPayload(BaseModel):
     # İçerik tekrar engeli (Section 2)
     content_series: Optional[str] = None   # cikmis_soru | iki_dakikada_sgs | sik_hata | ...
     storyboard_version: Optional[int] = None  # yeniden oluşturma sayacı
+    # Hedef kitle hattı (Bölüm 0.1) — 'ogrenci' | 'danisan'
+    # Zorunlu alan; None ise 'ogrenci' varsayılır ve uyarı loglanır.
+    content_track: Optional[str] = None
 
 class RejectBody(BaseModel):
     reason: Optional[str] = None
@@ -713,6 +717,22 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 "error_message": "Kalite uyarısı: " + " | ".join(quality_warnings)
             }).eq("id", job_id).execute()
 
+        # ── Pazarlama uyumu (danışan hattı) — hard fail ───────────
+        job_row = sb.table("video_jobs").select("content_track").eq("id", job_id).execute()
+        job_track = (job_row.data or [{}])[0].get("content_track")
+        marketing_errors = check_marketing_compliance(storyboard, job_track)
+        if marketing_errors:
+            logger.error(f"[video] {job_id[:8]} marketing_compliance_failed: {marketing_errors[:2]}")
+            _set_status(job_id, "failed", {
+                "error_code": "marketing_compliance_failed",
+                "error_message": (
+                    "Danışan hattı içeriğinde yasak pazarlama ifadesi tespit edildi. "
+                    "TÜRMOB meslek kuralları: bilgilendirici ton zorunlu."
+                ),
+                "admin_detail": {"violations": marketing_errors},
+            })
+            return
+
         # ── İçerik parmak izi kaydet ──────────────────────────────
         save_content_fingerprint(
             job_id=job_id,
@@ -975,6 +995,11 @@ def create_video_job(payload: CreateVideoPayload, background_tasks: BackgroundTa
         raise HTTPException(status_code=422, detail=f"Payload hatası: {e}")
 
     try:
+        track = payload.content_track
+        if track not in ("ogrenci", "danisan"):
+            logger.warning(f"[video] {job_id[:8]} content_track belirtilmemiş — 'ogrenci' varsayıldı")
+            track = "ogrenci"
+
         r = sb.table("video_jobs").insert({
             "id": job_id,
             "type": payload.type,
@@ -986,6 +1011,7 @@ def create_video_job(payload: CreateVideoPayload, background_tasks: BackgroundTa
             "status": "pending",
             "payload_json": payload_json,
             "idempotency_key": idem_key,
+            "content_track": track,
         }).execute()
     except Exception as e:
         logger.error(f"[video] DB insert hatası: {e}", exc_info=True)

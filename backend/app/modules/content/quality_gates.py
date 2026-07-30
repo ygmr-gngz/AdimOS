@@ -98,7 +98,45 @@ def check_storyboard_quality(storyboard: dict, video_type: str) -> list[str]:
     return warnings
 
 
-# ── 2. TTS ses seviyesi kontrolü ──────────────────────────────
+# ── 2. Danışan hattı pazarlama uyumu ─────────────────────────
+# TÜRMOB meslek kuralları: bilgilendirici ton zorunlu, karşılaştırmalı reklam yasak.
+# Bu liste storyboard metin alanlarında taranır; eşleşme → marketing_compliance_failed.
+FORBIDDEN_MARKETING_PHRASES: list[str] = [
+    "en ucuz", "en iyi mali müşavir", "en iyi muhasebeci",
+    "kampanya", "indirim", "ücretsiz danışmanlık", "bedava danışmanlık",
+    "hemen ara", "şimdi ara", "fiyat teklifi", "fiyat al",
+    "garanti", "%100 memnuniyet", "rakiplerimiz", "rakiplerden",
+    "en avantajlı", "en uygun fiyat", "en hızlı",
+]
+
+
+def check_marketing_compliance(storyboard: dict, content_track: str | None) -> list[str]:
+    """
+    Danışan hattı içeriklerinde yasak pazarlama ifadelerini tarar.
+    Yalnızca content_track='danisan' olduğunda etkindir.
+    Returns: hata mesajlarının listesi (boş → OK)
+    """
+    if content_track != "danisan":
+        return []
+
+    errors: list[str] = []
+    scenes = storyboard.get("scenes", [])
+    text_fields = ("voice_text", "plain_text", "hook_text", "cta_text", "title_text")
+
+    for i, scene in enumerate(scenes):
+        scene_id = scene.get("id", i + 1)
+        for field in text_fields:
+            val = (scene.get(field) or "").lower()
+            for phrase in FORBIDDEN_MARKETING_PHRASES:
+                if phrase in val:
+                    errors.append(
+                        f"Sahne {scene_id} [{field}]: yasak ifade '{phrase}' — "
+                        "meslek mevzuatı: bilgilendirici ton zorunlu, reklam yasak."
+                    )
+    return errors
+
+
+# ── 3. TTS ses seviyesi kontrolü ──────────────────────────────
 
 def check_audio_volume(audio_bytes: bytes) -> tuple[bool, float]:
     """
