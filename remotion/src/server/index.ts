@@ -120,8 +120,6 @@ function _assertVersionMatch(functionName: string): void {
 const app = express()
 app.use(express.json({ limit: '10mb' }))
 
-const TEMPLATE_VERSION = 'quiz-board-v2'
-
 // REMOTION_PREFLIGHT_STRICT=true  (varsayılan) → altyapı hatası render'ı DURDURUR
 // REMOTION_PREFLIGHT_STRICT=false → altyapı hatası loglanır, allowlist ile devam (yalnızca local dev)
 const PREFLIGHT_STRICT =
@@ -484,7 +482,7 @@ async function _doRender(
         `Çözüm: npm run deploy:site → Railway REMOTION_SERVE_URL güncelle`,
       )
     }
-    console.log(`[lambda] composition doğrulandı: "${compositionId}" ✓ (template=${TEMPLATE_VERSION})`)
+    console.log(`[lambda] composition doğrulandı: "${compositionId}" ✓`)
 
   } catch (e) {
     const err = e instanceof Error ? e : new Error(String(e))
@@ -889,7 +887,6 @@ app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`[lambda] serveUrl=${SERVE_URL ? '(ayarlı)' : '(eksik)'}`)
   console.log(`[lambda] backendUrl=${BACKEND_URL}`)
   console.log(`[lambda] remotion paketi=${INSTALLED_REMOTION_VERSION}`)
-  console.log(`[lambda] template=${TEMPLATE_VERSION}`)
   const lambdaVer = _parseLambdaVersion(LAMBDA_FUNCTION)
   if (lambdaVer && lambdaVer !== INSTALLED_REMOTION_VERSION) {
     console.error(`[lambda] UYARI: Sürüm uyumsuzluğu — Lambda=${lambdaVer} paket=${INSTALLED_REMOTION_VERSION} — render'lar anında başarısız olacak`)

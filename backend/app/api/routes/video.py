@@ -4,7 +4,9 @@ import time
 import uuid
 from typing import Optional, List
 from fastapi import APIRouter, BackgroundTasks, HTTPException
-from pydantic import BaseModel
+import math
+import traceback as _traceback
+from pydantic import BaseModel, field_validator
 from openai import RateLimitError as OpenAIRateLimitError, APITimeoutError
 from app.db.supabase import get_supabase_client
 from app.core.config import settings
@@ -60,14 +62,40 @@ class CreateVideoPayload(BaseModel):
     pre_storyboard: Optional[dict] = None         # infografik önceden üretilmiş storyboard
     infographic_template: Optional[str] = None    # card_grid | comparison | process
     # Süre kalite kapısı (Section 1)
-    requested_duration_seconds: Optional[float] = None
-    duration_tolerance_seconds: float = 15.0
+    requested_duration_seconds: Optional[int] = None
+    duration_tolerance_seconds: int = 15
     # İçerik tekrar engeli (Section 2)
     content_series: Optional[str] = None   # cikmis_soru | iki_dakikada_sgs | sik_hata | ...
     storyboard_version: Optional[int] = None  # yeniden oluşturma sayacı
     # Hedef kitle hattı (Bölüm 0.1) — 'ogrenci' | 'danisan'
     # Zorunlu alan; None ise 'ogrenci' varsayılır ve uyarı loglanır.
     content_track: Optional[str] = None
+
+    @field_validator("requested_duration_seconds", "duration_tolerance_seconds", mode="before")
+    @classmethod
+    def _coerce_duration_int(cls, v):
+        if v is None:
+            return v
+        if isinstance(v, bool):
+            raise ValueError("süre bool olamaz")
+        if isinstance(v, int):
+            return v
+        if isinstance(v, float):
+            if v != math.floor(v):
+                raise ValueError(f"süre tam sayı olmalı, gelen: {v!r}")
+            return int(v)
+        if isinstance(v, str):
+            v = v.strip().replace(",", ".")
+            if not v:
+                return None
+            try:
+                f = float(v)
+            except ValueError:
+                raise ValueError(f"süre sayısal olmalı, gelen: {v!r}")
+            if f != math.floor(f):
+                raise ValueError(f"süre tam sayı olmalı, gelen: {v!r}")
+            return int(f)
+        raise ValueError(f"süre için geçersiz tip: {type(v).__name__}")
 
 class RejectBody(BaseModel):
     reason: Optional[str] = None
@@ -538,16 +566,10 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
         elif content_type == "motivasyon":
             from app.modules.content.motivation_generator import generate_motivation_storyboard
             topic_text = payload.topic or payload.title
-            # requested_duration_seconds → int (frontend string/None gönderebilir)
-            raw_dur = payload.requested_duration_seconds or payload.target_duration_minutes
-            if raw_dur is not None and not isinstance(raw_dur, int):
-                try:
-                    raw_dur = int(float(str(raw_dur).strip()))
-                except (ValueError, TypeError):
-                    raw_dur = None
-            # target_duration_minutes → seconds dönüşümü (dakika gelirse)
-            if raw_dur and raw_dur < 30:
-                raw_dur = raw_dur * 60
+            # requested_duration_seconds Pydantic validator ile int garantili
+            raw_dur = payload.requested_duration_seconds
+            if raw_dur is None and payload.target_duration_minutes:
+                raw_dur = payload.target_duration_minutes * 60
             duration_sec: int = raw_dur if (raw_dur and 15 <= raw_dur <= 300) else 120
             result = generate_motivation_storyboard(
                 topic=topic_text,

@@ -4,6 +4,8 @@
   "private": true,
   "description": "AdimOS video üretim motoru — Remotion tabanlı",
   "scripts": {
+    "copy-fonts": "node scripts/copy-fonts.mjs",
+    "prebuild": "node scripts/copy-fonts.mjs",
     "studio": "npx remotion studio src/index.ts",
     "render:quiz": "npx remotion render src/index.ts QuizVideo out/quiz.mp4",
     "build": "npx tsc -p tsconfig.server.json",
@@ -15,6 +17,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",
+    "@fontsource/noto-sans": "5.1.1",
     "@remotion/bundler": "4.0.488",
     "@remotion/lambda": "4.0.488",
     "@remotion/renderer": "4.0.488",

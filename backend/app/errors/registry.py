@@ -124,6 +124,50 @@ REGISTRY: dict[str, dict[str, Any]] = {
         "retryable": False,
         "user_message": "İş için tanımlı maliyet üst sınırı aşıldı.",
     },
+    "job_create_failed": {
+        "retryable": False,
+        "user_message": "Görev oluşturulamadı.",
+    },
+    "invalid_scene_count": {
+        "retryable": False,
+        "user_message": "İçerik türü için beklenen sahne sayısı üretilmedi.",
+    },
+    "asset_license_missing": {
+        "retryable": False,
+        "user_message": "Kullanılan görselin lisans bilgisi eksik.",
+    },
+    "image_generation_failed": {
+        "retryable": True,
+        "user_message": "Görsel üretilemedi.",
+    },
+    "image_contains_text": {
+        "retryable": False,
+        "user_message": "Üretilen görselde okunabilir metin var.",
+    },
+    "layout_overflow": {
+        "retryable": False,
+        "user_message": "İçerik ekrana sığmadı.",
+    },
+    "marketing_compliance_failed": {
+        "retryable": False,
+        "user_message": "Metin, meslek kurallarına uygun olmayan ifade içeriyor.",
+    },
+    "encoding_validation_failed": {
+        "retryable": False,
+        "user_message": "Video çıktısı yayın formatına uymuyor.",
+    },
+    "cost_tracking_broken": {
+        "retryable": False,
+        "user_message": "Render maliyeti okunamadı.",
+    },
+    "schema_drift_detected": {
+        "retryable": False,
+        "user_message": "Sistem yapılandırması tutarsız.",
+    },
+    "publish_blocked": {
+        "retryable": False,
+        "user_message": "Video yayın kalite kurallarını karşılamıyor.",
+    },
 }
 
 
