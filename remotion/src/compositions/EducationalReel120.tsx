@@ -1,8 +1,11 @@
 /**
  * EducationalReel120 — 2 dakikalık (120s) SGS eğitim Reels composition
  * Format: 1080×1920 (9:16), 30 fps
- * Desteklenen sahneler: EducationalReelScene + AccountCardScene + TableScene +
- *   RuleBoxScene + CommonMistakeScene + JournalEntryScene
+ * Desteklenen sahneler:
+ *   ReelHookScene, ReelConceptScene, ReelExampleScene, ReelMistakeScene,
+ *   ReelExamTipScene, ReelCtaScene — özel layout sahneleri (segment_type inject)
+ *   AccountCardScene, TableScene, JournalEntryScene, RuleBoxScene, CommonMistakeScene
+ *   EducationalReelScene — genel amaçlı (eski storyboard'lar için)
  */
 import { AbsoluteFill, Sequence } from 'remotion'
 import { StoryboardJSON } from '../types'
@@ -41,6 +44,22 @@ function ReelScene({ scene, brand }: { scene: Record<string, unknown>; brand: un
     case 'JournalEntryScene':
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return <JournalEntryScene {...p as any} />
+    case 'ReelHookScene':
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return <EducationalReelScene scene={{ ...scene, segment_type: 'hook' } as any} brand={brand as any} />
+    case 'ReelConceptScene':
+    case 'ReelExampleScene':
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return <EducationalReelScene scene={{ ...scene, segment_type: (scene.segment_type as string) || 'content' } as any} brand={brand as any} />
+    case 'ReelMistakeScene':
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return <EducationalReelScene scene={{ ...scene, segment_type: 'mistake' } as any} brand={brand as any} />
+    case 'ReelExamTipScene':
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return <EducationalReelScene scene={{ ...scene, segment_type: 'tip' } as any} brand={brand as any} />
+    case 'ReelCtaScene':
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return <EducationalReelScene scene={{ ...scene, segment_type: 'outro' } as any} brand={brand as any} />
     case 'EducationalReelScene':
     default:
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

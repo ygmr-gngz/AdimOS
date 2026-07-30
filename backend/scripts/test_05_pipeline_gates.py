@@ -85,7 +85,8 @@ def _():
     from app.pipelines.registry import validate_routing
     from app.errors.registry import PipelineErrorException
 
-    scenes = [{"component": "EducationalReelScene"} for _ in range(3)]
+    # ReelHookScene required_scenes'ı karşılıyor; 3 kez aynı bileşen → single_component_repeated
+    scenes = [{"component": "ReelHookScene"} for _ in range(3)]
     try:
         validate_routing("educational_reel", scenes)
         assert False, "PipelineErrorException beklendi"

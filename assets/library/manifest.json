@@ -1,0 +1,132 @@
+{
+  "_schema_version": "1.0",
+  "_comment": "Görsel kütüphane manifesti — ADIM 5 (ÖNCELİK HATTI v3 §6.2). license alanı boş olan görsel render'a giremez.",
+  "themes": {
+    "calisma_masasi": {
+      "dir": "calisma-masasi",
+      "label": "Çalışma masası",
+      "content_tracks": ["ogrenci"],
+      "target_variants": 15,
+      "tags": ["masa", "defter", "sabah", "calisma", "laptop"],
+      "subject_prompt": "A tidy wooden study desk with an open notebook, a pen, a glass of water and a closed laptop, seen from a slightly high angle. No person visible.",
+      "assets": []
+    },
+    "ogrenci_calisir": {
+      "dir": "ogrenci-calisir",
+      "label": "Öğrenci çalışıyor",
+      "content_tracks": ["ogrenci"],
+      "target_variants": 15,
+      "tags": ["ogrenci", "arkadan", "sabah", "pencere", "kitap"],
+      "subject_prompt": "A young adult seen from behind, sitting at a desk studying, soft morning light from a window on the left. Face not visible.",
+      "assets": []
+    },
+    "kitap_defter": {
+      "dir": "kitap-defter",
+      "label": "Kitap ve defter",
+      "content_tracks": ["ogrenci"],
+      "target_variants": 15,
+      "tags": ["kitap", "defter", "cay", "masa", "sessiz"],
+      "subject_prompt": "A stack of closed notebooks and a cup of tea on a wooden surface, warm side light. No readable text on covers.",
+      "assets": []
+    },
+    "takvim_plan": {
+      "dir": "takvim-plan",
+      "label": "Takvim ve plan",
+      "content_tracks": ["ogrenci"],
+      "target_variants": 15,
+      "tags": ["takvim", "plan", "kalem", "organizasyon"],
+      "subject_prompt": "A monthly paper planner on a desk with a pen resting on it, soft daylight, shallow depth of field. No readable writing.",
+      "assets": []
+    },
+    "sabah_isik": {
+      "dir": "sabah-isik",
+      "label": "Sabah ışığı",
+      "content_tracks": ["ogrenci"],
+      "target_variants": 15,
+      "tags": ["sabah", "isik", "bos", "huzur", "pencere"],
+      "subject_prompt": "An empty study corner at sunrise, warm light falling across a wooden desk and an empty chair, calm atmosphere.",
+      "assets": []
+    },
+    "ilerleme": {
+      "dir": "ilerleme",
+      "label": "İlerleme / merdiven",
+      "content_tracks": ["ogrenci"],
+      "target_variants": 15,
+      "tags": ["ilerleme", "merdiven", "yukari", "hedef", "motivasyon"],
+      "subject_prompt": "A staircase in soft daylight seen from below, clean minimal architecture, sense of upward progress.",
+      "assets": []
+    },
+    "mola": {
+      "dir": "mola",
+      "label": "Mola anı",
+      "content_tracks": ["ogrenci"],
+      "target_variants": 12,
+      "tags": ["mola", "cay", "pencere", "dinlenme", "bitki"],
+      "subject_prompt": "A window sill with a cup of tea and a plant, blurred city light outside, quiet resting mood.",
+      "assets": []
+    },
+    "yeniden_baslama": {
+      "dir": "yeniden-baslama",
+      "label": "Yeniden başlama",
+      "content_tracks": ["ogrenci"],
+      "target_variants": 12,
+      "tags": ["bos", "defter", "kalem", "sabah", "taze"],
+      "subject_prompt": "An open empty notebook page with a pen placed on it, morning light, clean and inviting, no writing on the page.",
+      "assets": []
+    },
+    "ofis_muhasebe": {
+      "dir": "ofis-muhasebe",
+      "label": "Ofis / muhasebe",
+      "content_tracks": ["danisan"],
+      "target_variants": 12,
+      "tags": ["ofis", "hesap", "klasor", "profesyonel", "laptop"],
+      "subject_prompt": "A tidy desk with a calculator, a folder and a laptop, professional office light. No visible screen content or text.",
+      "assets": []
+    },
+    "esnaf_isletme": {
+      "dir": "esnaf-isletme",
+      "label": "Esnaf / işletme",
+      "content_tracks": ["danisan"],
+      "target_variants": 12,
+      "tags": ["dukkan", "isletme", "tezgah", "sicak", "isletme"],
+      "subject_prompt": "A small shop counter interior at daytime, warm light, no signage, no visible text, no people.",
+      "assets": []
+    }
+  },
+  "style_contract": {
+    "positive": "Photorealistic editorial photograph, natural window light, warm neutral tones, shallow depth of field, calm and hopeful mood, muted color palette with deep navy and warm beige, clean uncluttered composition, vertical 2:3 framing with empty space in the upper third for text overlay, no text anywhere in the image, no logos, no brand marks, no watermarks.",
+    "negative": "Avoid: visible text, letters, numbers, signage, book titles, screen content, logos, watermarks, close-up hands with visible fingers, direct eye contact with camera, recognizable faces, exaggerated expressions, neon colors, heavy vignette, tilted horizon.",
+    "output_size": "1024x1536",
+    "target_size": "1080x1920",
+    "overlay_navy_opacity_range": [0.25, 0.40],
+    "saturation_adjustment": -8
+  },
+  "cost_caps": {
+    "motivasyon": {
+      "image_usd": 0.60,
+      "note": "7 gorsel x medium + %50 pay"
+    },
+    "reels_short": {
+      "image_usd": 0.15,
+      "note": "kart agirlikli, en fazla 2 gorsel"
+    }
+  },
+  "selection_algorithm": {
+    "steps": [
+      "scene_keywords → tag_match → candidate_pool",
+      "exclude: used in last 10 videos",
+      "exclude: already used in current video",
+      "has_face=true: at most 3 per video",
+      "deterministic: sha256(job_id + theme + index) % len(candidates)"
+    ],
+    "fallback": "asset_license_missing error if no valid candidate"
+  },
+  "quality_gates": {
+    "ocr_max_readable_chars": 3,
+    "blur_laplacian_min": 100,
+    "brightness_min": 40,
+    "brightness_max": 215,
+    "max_regenerate_attempts": 2,
+    "text_overlay_contrast_min": 4.5
+  }
+}

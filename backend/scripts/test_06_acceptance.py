@@ -144,34 +144,23 @@ def _():
 def _():
     """
     reels_short → educational_reel pipeline.
-    Generator EducationalReelScene üretiyor — bu sahne zorunlu ve izinli.
+    Güncel generator çıktısı: ReelHookScene (required) + çeşitli bileşenler.
     """
     from app.pipelines.registry import validate_routing
 
-    # Gerçek generator çıktısını simüle et: EducationalReelScene × 7 farklı segment
-    base = {"component": "EducationalReelScene"}
+    # Güncel generator çıktısını simüle et: karışık bileşenler, ReelHookScene dahil
     scenes = [
-        {**base, "segment_type": "hook"},
-        {**base, "segment_type": "context"},
-        {**base, "segment_type": "content"},
-        {**base, "segment_type": "content"},
-        {**base, "segment_type": "mistake"},
-        {**base, "segment_type": "tip"},
-        {**base, "segment_type": "outro"},
+        {"component": "ReelHookScene"},
+        {"component": "ReelConceptScene"},
+        {"component": "ReelConceptScene"},
+        {"component": "ReelMistakeScene"},
+        {"component": "ReelExamTipScene"},
+        {"component": "ReelCtaScene"},
+        {"component": "AccountCardScene"},
     ]
-    # Not: 7 sahne hepsi aynı component → single_component_repeated = True (>1 sahne, tek tip)
-    # Bu yüzden validate_routing HATA fırlatmalı (failed_visual_validation).
-    # Gerçek pipeline bunu yakalar; acceptance testi routing alias çalışmasını doğrular.
-    from app.errors.registry import PipelineErrorException
-    try:
-        validate_routing("reels_short", scenes)
-        # Eğer buraya gelirse: routing alias doğru çalışıyor (hata fırlatmadı)
-        print(f"{PASS} reels_short → educational_reel pipeline routing basarili")
-    except PipelineErrorException as e:
-        # single_component_repeated: alias çalışıyor ama görsel çeşitlilik kuralı tetiklendi
-        assert e.error_code == "failed_visual_validation", \
-            f"Beklenmeyen hata kodu: {e.error_code}"
-        print(f"{PASS} reels_short alias calisıyor, gorsel kural tetiklendi: {e.error_code}")
+    # Tüm bileşenler izinli, ReelHookScene required → hata fırlatmamalı
+    validate_routing("reels_short", scenes)
+    print(f"{PASS} reels_short → educational_reel pipeline routing basarili")
 
 
 # ── Test 6: TTS karakter sınırı kırpması ─────────────────────

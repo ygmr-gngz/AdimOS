@@ -53,7 +53,7 @@ CONTENT_PIPELINES: dict[str, dict] = {
             # geriye dönük uyumluluk — eski EducationalReelScene bazlı storyboard'lar
             "EducationalReelScene",
         ],
-        "required_scenes": ["EducationalReelScene"],
+        "required_scenes": ["ReelHookScene"],
     },
     "motivation": {
         "generator": "motivation_storyboard",

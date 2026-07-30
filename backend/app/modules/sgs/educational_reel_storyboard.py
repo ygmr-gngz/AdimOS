@@ -55,8 +55,8 @@ Storyboard JSON formatı — tam olarak 7 sahne döndür:
   "scenes": [
     {
       "id": 1,
-      "component": "EducationalReelScene",
-      "segment_type": "hook",
+      "component": "ReelHookScene",
+      "visual_source": "text_only",
       "duration_seconds": 5,
       "hook_text": "Kısa çarpıcı kanca (2 satır, maks 10 kelime)",
       "highlight_stat": "Dikkat çeken rakam/yüzde",
@@ -64,8 +64,8 @@ Storyboard JSON formatı — tam olarak 7 sahne döndür:
     },
     {
       "id": 2,
-      "component": "EducationalReelScene",
-      "segment_type": "context",
+      "component": "ReelConceptScene",
+      "visual_source": "card",
       "duration_seconds": 15,
       "title": "Neden bilmen gerekiyor?",
       "bullet_points": ["Madde 1", "Madde 2", "Madde 3"],
@@ -73,8 +73,8 @@ Storyboard JSON formatı — tam olarak 7 sahne döndür:
     },
     {
       "id": 3,
-      "component": "EducationalReelScene",
-      "segment_type": "content",
+      "component": "ReelConceptScene",
+      "visual_source": "card",
       "duration_seconds": 25,
       "title": "Ana Kural / Birinci Bilgi",
       "bullet_points": ["Madde 1", "Madde 2", "Madde 3", "Madde 4"],
@@ -82,8 +82,8 @@ Storyboard JSON formatı — tam olarak 7 sahne döndür:
     },
     {
       "id": 4,
-      "component": "EducationalReelScene",
-      "segment_type": "content",
+      "component": "ReelConceptScene",
+      "visual_source": "card",
       "duration_seconds": 25,
       "title": "İkinci Bilgi / Örnek",
       "bullet_points": ["Madde 1", "Madde 2", "Madde 3"],
@@ -91,8 +91,8 @@ Storyboard JSON formatı — tam olarak 7 sahne döndür:
     },
     {
       "id": 5,
-      "component": "EducationalReelScene",
-      "segment_type": "mistake",
+      "component": "ReelMistakeScene",
+      "visual_source": "card",
       "duration_seconds": 25,
       "title": "Dikkat!",
       "common_mistake": "Sık yapılan hatanın 1-2 cümlelik açıklaması",
@@ -100,8 +100,8 @@ Storyboard JSON formatı — tam olarak 7 sahne döndür:
     },
     {
       "id": 6,
-      "component": "EducationalReelScene",
-      "segment_type": "tip",
+      "component": "ReelExamTipScene",
+      "visual_source": "card",
       "duration_seconds": 15,
       "title": "Sınav İpucu",
       "exam_tip": "Sınava özel pratik ipucu — 1-2 cümle",
@@ -109,8 +109,8 @@ Storyboard JSON formatı — tam olarak 7 sahne döndür:
     },
     {
       "id": 7,
-      "component": "EducationalReelScene",
-      "segment_type": "outro",
+      "component": "ReelCtaScene",
+      "visual_source": "text_only",
       "duration_seconds": 10,
       "title": "Özet",
       "bullet_points": ["Özet madde 1", "Özet madde 2", "Özet madde 3"],
@@ -120,6 +120,21 @@ Storyboard JSON formatı — tam olarak 7 sahne döndür:
   ]
 }
 """
+
+# segment_type → component adı eşlemesi (post-processing fallback)
+_SEGMENT_COMPONENT: dict[str, str] = {
+    "hook":    "ReelHookScene",
+    "context": "ReelConceptScene",
+    "content": "ReelConceptScene",
+    "mistake": "ReelMistakeScene",
+    "tip":     "ReelExamTipScene",
+    "outro":   "ReelCtaScene",
+}
+_ALLOWED_COMPONENTS = set(_SEGMENT_COMPONENT.values()) | {
+    "AccountCardScene", "JournalEntryScene", "TableScene",
+    "RuleBoxScene", "CommonMistakeScene", "ReelExampleScene",
+    "EducationalReelScene",
+}
 
 
 def _apply_series_title(title: str, topic: str, content_series: str | None) -> str:
@@ -191,13 +206,18 @@ Toplam hedef süre: ~120 saniye (5+15+25+25+25+15+10 = 120).
         return obj
     scenes = _norm(scenes)
 
-    # id'leri sırayla ata, component'i zorla
+    # id'leri sırayla ata, component'i doğrula/düzelt
+    _default_types = ["hook", "context", "content", "content", "mistake", "tip", "outro"]
     for i, s in enumerate(scenes, 1):
-        s["id"]        = i
-        s["component"] = "EducationalReelScene"
+        s["id"] = i
+        # LLM bilinmeyen bileşen ürettiyse segment_type'dan türet
+        if s.get("component") not in _ALLOWED_COMPONENTS:
+            seg = s.get("segment_type") or (_default_types[i - 1] if i <= len(_default_types) else "content")
+            s["component"] = _SEGMENT_COMPONENT.get(seg, "ReelConceptScene")
+        # segment_type eksikse component'tan çıkar (reverse map)
         if not s.get("segment_type"):
-            default_types = ["hook", "context", "content", "content", "mistake", "tip", "outro"]
-            s["segment_type"] = default_types[i - 1] if i <= len(default_types) else "content"
+            _rev = {v: k for k, v in _SEGMENT_COMPONENT.items()}
+            s["segment_type"] = _rev.get(s["component"], "content")
         # voice_text eksikse basit fallback
         if not (s.get("voice_text") or "").strip():
             s["voice_text"] = s.get("hook_text") or s.get("title") or topic
