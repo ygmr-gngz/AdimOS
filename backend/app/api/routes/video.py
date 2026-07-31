@@ -687,32 +687,6 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
             })
             return
 
-        # ── FAZ 5: Süre doğrulaması (sadece aşırı sapma — LLM tahmini kaba) ──
-        # Frontend duration_tolerance_seconds (8s) render-sonrası postcheck içindir.
-        # Storyboard aşamasında LLM süresi TTS ile kalibre edilmemiştir; geniş tolerans kullan.
-        if payload.requested_duration_seconds:
-            total_sec = sum(s.get("duration_seconds") or 0 for s in storyboard.get("scenes", []))
-            req = payload.requested_duration_seconds
-            # Storyboard aşamasında %35 sapma kabul edilir (TTS sonrası uzar/kısalır)
-            pre_tolerance = max(req * 0.35, 30.0)
-            lo = req - pre_tolerance
-            hi = req + pre_tolerance
-            if total_sec > 0 and not (lo <= total_sec <= hi):
-                logger.error(
-                    f"[video] {job_id[:8]} duration_validation_failed "
-                    f"requested={req} actual={total_sec:.1f} "
-                    f"pre_tolerance={pre_tolerance:.0f} render_started=false"
-                )
-                _set_status(job_id, "failed", {
-                    "error_code": "duration_validation_failed",
-                    "error_message": (
-                        f"{req:.0f} saniye istendi ancak "
-                        f"senaryo {total_sec:.1f} saniye üretti "
-                        f"(izin verilen aralık {lo:.0f}–{hi:.0f}s)."
-                    ),
-                })
-                return
-
         # ── FAZ 3: Asset doğrulaması (hard fail) ─────────────────
         from app.modules.content.asset_validator import validate_brand_assets
         asset_errors = validate_brand_assets(brand.get("logo_url"), job_id)
@@ -881,6 +855,30 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
             "cost_tts_chars": total_tts_chars,
             "cost_tts_usd": tts_cost_usd,
         }).eq("id", job_id).execute()
+
+        # ── 2.5 TTS sonrası süre doğrulaması ─────────────────
+        # duration_seconds TTS ölçümünden (_estimate_duration) geliyor — LLM tahmini değil.
+        if payload.requested_duration_seconds:
+            tts_total_sec = sum(s.get("duration_seconds") or 0 for s in storyboard.get("scenes", []))
+            req = payload.requested_duration_seconds
+            post_tolerance = max(req * 0.25, 20.0)
+            lo = req - post_tolerance
+            hi = req + post_tolerance
+            if tts_total_sec > 0 and not (lo <= tts_total_sec <= hi):
+                logger.error(
+                    f"[video] {job_id[:8]} tts_duration_validation_failed "
+                    f"requested={req} tts_total={tts_total_sec:.1f} "
+                    f"allowed={lo:.0f}–{hi:.0f}s render_started=false"
+                )
+                _set_status(job_id, "failed", {
+                    "error_code": "duration_validation_failed",
+                    "error_message": (
+                        f"{req:.0f} saniye istendi ancak TTS tahmini "
+                        f"{tts_total_sec:.1f} saniye üretiyor "
+                        f"(izin verilen aralık {lo:.0f}–{hi:.0f}s)."
+                    ),
+                })
+                return
 
         # ── 3. Pre-render ses kapısı (v2 §6.2) ────────────────
         audio_errors = check_audio_urls(storyboard)

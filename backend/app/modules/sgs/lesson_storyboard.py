@@ -15,6 +15,58 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 _client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
+# Lesson pipeline için geçerli bileşen adları (registry.py ile senkronize)
+_VALID_COMPONENTS = frozenset({
+    "LessonTitleScene", "LessonConceptScene", "LessonCardScene",
+    "LessonExampleScene", "LessonSummaryScene",
+})
+
+# Bilinen eşdeğer adlar → kanonik bileşen (registry veya LLM kalıntısı)
+_COMPONENT_ALIASES: dict[str, str] = {
+    "LessonIntroScene":      "LessonTitleScene",
+    "AgendaScene":           "LessonConceptScene",
+    "ConceptScene":          "LessonConceptScene",
+    "DefinitionCardScene":   "LessonCardScene",
+    "AccountCardScene":      "LessonCardScene",
+    "JournalEntryScene":     "LessonExampleScene",
+    "TableScene":            "LessonCardScene",
+    "ComparisonScene":       "LessonCardScene",
+    "ExampleScene":          "LessonExampleScene",
+    "CommonMistakeScene":    "LessonConceptScene",
+    "ExamTipScene":          "LessonConceptScene",
+    "MiniRecapScene":        "LessonConceptScene",
+    "LessonOutroScene":      "LessonSummaryScene",
+    "TAccountScene":         "LessonExampleScene",
+    "CalculationStepsScene": "LessonExampleScene",
+    "SplitLessonScene":      "LessonConceptScene",
+}
+
+# Structured output şeması — component alanını enum ile kısıtla
+_COMPONENT_SCHEMA = {
+    "name": "lesson_storyboard",
+    "schema": {
+        "type": "object",
+        "properties": {
+            "scenes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "component": {
+                            "type": "string",
+                            "enum": sorted(_VALID_COMPONENTS),
+                        }
+                    },
+                    "required": ["component"],
+                    "additionalProperties": True,
+                },
+            }
+        },
+        "required": ["scenes"],
+    },
+    "strict": False,
+}
+
 _SYSTEM = """Sen Türkiye'nin en deneyimli SMMM/SGS muhasebe eğitmenlerinden birisin.
 20 yıldır bu sınavı hazırlıyorsun. Konu anlatımın: akıcı, kapsamlı, sınav odaklı.
 Her konuyu somut örneklerle, yevmiye kayıtlarıyla ve sınav ipuçlarıyla anlatırsın.
@@ -193,56 +245,94 @@ BU KURALLAR İHLAL EDİLİRSE İÇERİK RENDERLENMEYECEK.
 
 Sadece JSON döndür. Başka hiçbir metin yok."""
 
+    def _nfc(obj):
+        if isinstance(obj, str):
+            return unicodedata.normalize("NFC", obj)
+        if isinstance(obj, list):
+            return [_nfc(v) for v in obj]
+        if isinstance(obj, dict):
+            return {k: _nfc(v) for k, v in obj.items()}
+        return obj
+
+    def _apply_aliases(scenes: list) -> list:
+        for s in scenes:
+            comp = s.get("component", "")
+            if comp in _COMPONENT_ALIASES:
+                s["component"] = _COMPONENT_ALIASES[comp]
+        return scenes
+
+    def _unknown_components(scenes: list) -> list[str]:
+        return sorted({s.get("component", "") for s in scenes if s.get("component") not in _VALID_COMPONENTS})
+
     logger.info(f"[lesson-storyboard] '{topic}' konu anlatımı üretiliyor, hedef={target_minutes}dk, ders={subject}")
     try:
-        r = _client.chat.completions.create(
+        raw_resp = _client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": _SYSTEM},
                 {"role": "user", "content": prompt},
             ],
-            response_format={"type": "json_object"},
+            response_format={"type": "json_schema", "json_schema": _COMPONENT_SCHEMA},
             temperature=0.40,
             max_tokens=14000,
         )
-        result = json.loads(r.choices[0].message.content)
-        scenes = result.get("scenes", [])
-
-        # Unicode NFC normalizasyonu — Türkçe karakter bütünlüğü (ğ, ş, ü, ç, ö, ı)
-        def _nfc(obj):
-            if isinstance(obj, str):
-                return unicodedata.normalize("NFC", obj)
-            if isinstance(obj, list):
-                return [_nfc(v) for v in obj]
-            if isinstance(obj, dict):
-                return {k: _nfc(v) for k, v in obj.items()}
-            return obj
-        scenes = [_nfc(s) for s in scenes]
+        raw_content = raw_resp.choices[0].message.content
+        result = json.loads(raw_content)
+        scenes = [_nfc(s) for s in result.get("scenes", [])]
         result["scenes"] = scenes
 
-        # Bileşen adı normalizasyonu — LLM bazen bilinmeyen ad üretir
-        _VALID = {
-            "LessonTitleScene", "LessonConceptScene", "LessonCardScene",
-            "LessonExampleScene", "LessonSummaryScene",
-            "LessonIntroScene", "AgendaScene", "ConceptScene", "DefinitionCardScene",
-            "AccountCardScene", "JournalEntryScene", "TableScene", "ComparisonScene",
-            "ExampleScene", "CommonMistakeScene", "ExamTipScene", "MiniRecapScene",
-            "LessonOutroScene", "TAccountScene", "CalculationStepsScene", "SplitLessonScene",
-        }
-        for s in scenes:
-            if s.get("component") not in _VALID:
-                logger.warning(
-                    f"[lesson-storyboard] bilinmeyen bileşen: {s.get('component')!r} → LessonConceptScene"
-                )
-                s["component"] = "LessonConceptScene"
+        _apply_aliases(scenes)
+        unknown = _unknown_components(scenes)
 
-        component_counts = {}
+        if unknown:
+            logger.warning(
+                f"[lesson-storyboard] geçersiz bileşen(ler): {unknown} — şema hatası geri besleniyor"
+            )
+            retry_msg = (
+                f"Hata: Geçersiz bileşen adı kullanıldı: {unknown}. "
+                f"Yalnızca şu adlar geçerlidir: {sorted(_VALID_COMPONENTS)}. "
+                "Storyboard'u aynı içerikle ancak yalnızca bu geçerli bileşen adlarını kullanarak yeniden üret."
+            )
+            raw_resp2 = _client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": _SYSTEM},
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": raw_content},
+                    {"role": "user", "content": retry_msg},
+                ],
+                response_format={"type": "json_schema", "json_schema": _COMPONENT_SCHEMA},
+                temperature=0.40,
+                max_tokens=14000,
+            )
+            result = json.loads(raw_resp2.choices[0].message.content)
+            scenes = [_nfc(s) for s in result.get("scenes", [])]
+            result["scenes"] = scenes
+
+            _apply_aliases(scenes)
+            still_unknown = _unknown_components(scenes)
+            if still_unknown:
+                from app.errors.registry import PipelineErrorException
+                raise PipelineErrorException(
+                    "invalid_scene_for_content_type",
+                    admin_detail={
+                        "invalid_scenes": still_unknown,
+                        "content_type": "konu_anlatimi",
+                        "attempts": 2,
+                    },
+                    stage="routing",
+                )
+
+        component_counts: dict[str, int] = {}
         for s in scenes:
             c = s.get("component", "unknown")
             component_counts[c] = component_counts.get(c, 0) + 1
         logger.info(f"[lesson-storyboard] tamamlandı: {len(scenes)} sahne — {component_counts}")
         return result
     except Exception as e:
+        from app.errors.registry import PipelineErrorException
+        if isinstance(e, PipelineErrorException):
+            raise
         err_str = str(e)
         logger.error(f"[lesson-storyboard] hata: {e}", exc_info=True)
         if "429" in err_str or "quota" in err_str.lower() or "insufficient_quota" in err_str:

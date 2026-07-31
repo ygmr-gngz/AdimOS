@@ -57,7 +57,6 @@ Storyboard JSON formatı — tam olarak 7 sahne döndür:
       "id": 1,
       "component": "ReelHookScene",
       "visual_source": "text_only",
-      "duration_seconds": 0,
       "hook_text": "Kısa çarpıcı kanca (2 satır, maks 10 kelime)",
       "highlight_stat": "Dikkat çeken rakam/yüzde",
       "voice_text": "30-50 kelime — sürükleyici giriş, sürpriz bir bilgi ver"
@@ -66,7 +65,6 @@ Storyboard JSON formatı — tam olarak 7 sahne döndür:
       "id": 2,
       "component": "ReelConceptScene",
       "visual_source": "card",
-      "duration_seconds": 0,
       "title": "Neden bilmen gerekiyor?",
       "bullet_points": ["Madde 1", "Madde 2", "Madde 3"],
       "voice_text": "50-70 kelime — konunun sınavdaki önemini anlat"
@@ -75,7 +73,6 @@ Storyboard JSON formatı — tam olarak 7 sahne döndür:
       "id": 3,
       "component": "ReelConceptScene",
       "visual_source": "card",
-      "duration_seconds": 0,
       "title": "Ana Kural / Birinci Bilgi",
       "bullet_points": ["Madde 1", "Madde 2", "Madde 3", "Madde 4"],
       "voice_text": "70-80 kelime — detaylı anlatım, örneklerle pekiştir"
@@ -84,7 +81,6 @@ Storyboard JSON formatı — tam olarak 7 sahne döndür:
       "id": 4,
       "component": "ReelConceptScene",
       "visual_source": "card",
-      "duration_seconds": 0,
       "title": "İkinci Bilgi / Örnek",
       "bullet_points": ["Madde 1", "Madde 2", "Madde 3"],
       "voice_text": "70-80 kelime — ikinci detay veya somut örnek"
@@ -93,7 +89,6 @@ Storyboard JSON formatı — tam olarak 7 sahne döndür:
       "id": 5,
       "component": "ReelMistakeScene",
       "visual_source": "card",
-      "duration_seconds": 0,
       "title": "Dikkat!",
       "common_mistake": "Sık yapılan hatanın 1-2 cümlelik açıklaması",
       "voice_text": "60-70 kelime — hatayı açıkla, neden yanlış olduğunu göster"
@@ -102,7 +97,6 @@ Storyboard JSON formatı — tam olarak 7 sahne döndür:
       "id": 6,
       "component": "ReelExamTipScene",
       "visual_source": "card",
-      "duration_seconds": 0,
       "title": "Sınav İpucu",
       "exam_tip": "Sınava özel pratik ipucu — 1-2 cümle",
       "voice_text": "40-60 kelime — sınavda nasıl ayırt edeceğini anlat"
@@ -111,7 +105,6 @@ Storyboard JSON formatı — tam olarak 7 sahne döndür:
       "id": 7,
       "component": "ReelCtaScene",
       "visual_source": "text_only",
-      "duration_seconds": 0,
       "title": "Özet",
       "bullet_points": ["Özet madde 1", "Özet madde 2", "Özet madde 3"],
       "cta_text": "Daha fazla SGS sorusu için @adimmusavir'i takip et!",
