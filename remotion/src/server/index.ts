@@ -172,56 +172,30 @@ function _normalizeBackendUrl(raw: string | undefined): string {
 }
 const BACKEND_URL = _normalizeBackendUrl(process.env.BACKEND_URL)
 
-// ── Eşleme tablosu — TEK YER ────────────────────────────────────
-// Anahtar: "<video_type>:<format>" veya "<video_type>"
-// Değer: src/index.ts'de registerRoot ile kayıtlı composition ID
-const COMPOSITION_MAP: Record<string, string> = {
-  // ── Soru çözümü (kanonik: soru_cozum) ─────────────────────────
-  'soru_cozum:16:9':          'QuizVideo',    // kanonik
-  'soru_cozum':               'QuizVideo',    // kanonik
-  'soru_cozumu:16:9':         'QuizVideo',
-  'quiz:16:9':                'QuizVideo',
-  'quiz':                     'QuizVideo',
-  'single_question:16:9':     'QuizVideo',
-  'question_set_long:16:9':   'QuizVideo',
-  'question_set_long':        'QuizVideo',
-  // ── Soru çözümü 9:16 (dikey kısa quiz içeriği) ───────────────
-  'soru_cozum:9:16':          'SplitQuizVerticalDemo', // kanonik
-  'soru_cozumu:9:16':         'SplitQuizVerticalDemo',
-  'quiz:9:16':                'SplitQuizVerticalDemo',
-  'single_question:9:16':     'SplitQuizVerticalDemo',
-  // ── Motivasyon (kanonik: motivasyon) ─────────────────────────
-  'motivasyon':               'MotivationVideo',  // kanonik
-  'motivasyon:9:16':          'MotivationVideo',  // kanonik
-  'motivation':               'MotivationVideo',
-  'motivation_reel':          'MotivationVideo',
-  'motivation_reel:9:16':     'MotivationVideo',
-  // ── Reels/Short (kanonik: reels_short) ────────────────────────
-  'reels_short':              'EducationalReel',  // kanonik
-  'reels_short:9:16':         'EducationalReel',  // kanonik
-  'educational_reel':         'EducationalReel',
-  'educational_reel:9:16':    'EducationalReel',
-  'shorts:9:16':              'EducationalReel',
-  'shorts':                   'EducationalReel',
-  'bilgilendirme_kisa':       'EducationalReel',
-  'bilgilendirme_kisa:9:16':  'EducationalReel',
-  'kisa_icerik:9:16':         'EducationalReel',
-  'kisa_icerik':              'EducationalReel',
-  // ── Görsel post (kanonik: gorsel_post) ────────────────────────
-  'gorsel_post':              'InfographicVideo',  // kanonik
-  'gorsel_post:9:16':         'InfographicVideo',  // kanonik
-  'infografik_animasyon':     'InfographicVideo',
-  'infografik':               'InfographicVideo',
-  'infographic':              'InfographicVideo',
-  'infographic:9:16':         'InfographicVideo',
-  // ── Konu anlatımı (kanonik: konu_anlatimi) ───────────────────
-  'konu_anlatimi':            'LessonVideo',
-  'konu_anlatimi:16:9':       'LessonVideo',
-  'lesson_long':              'LessonVideo',
-  'sgs_topic_video':          'LessonVideo',
-  // Eski yanlış eşleme düzeltildi: lesson → LessonVideo (eskiden InfographicVideo idi)
-  'lesson':                   'LessonVideo',
+// ── İçerik tipleri — shared/content-types.json'dan türetilir ────────────────
+// Yeni tip veya alias eklemek: shared/content-types.json'u düzenle, buraya dokunma.
+interface _ContentTypeEntry {
+  canonical: string
+  compositions: Record<string, string>
+  aliases: string[]
 }
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+const _CONTENT_TYPES: { types: _ContentTypeEntry[] } = require('../../../shared/content-types.json')
+
+function _buildCompositionMap(types: _ContentTypeEntry[]): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const ct of types) {
+    for (const name of [ct.canonical, ...ct.aliases]) {
+      map[name] = ct.compositions['default']
+      for (const [aspect, compId] of Object.entries(ct.compositions)) {
+        if (aspect !== 'default') map[`${name}:${aspect}`] = compId
+      }
+    }
+  }
+  return map
+}
+
+const COMPOSITION_MAP: Record<string, string> = _buildCompositionMap(_CONTENT_TYPES.types)
 
 function resolveComposition(videoType: string, format: string): string | null {
   return (
@@ -636,7 +610,7 @@ app.post('/render', (req, res) => {
     return res.status(429).json({ error: err })
   }
 
-  // ── [lesson-props] diagnostic logging (LessonVideo / QuizVideo) ────────────────
+  // ── [lesson-props] render öncesi doğrulama — tür bazında hard fail ──────────
   {
     const scenes: any[] = storyboard.scenes ?? []
     const totalSec = scenes.reduce((sum: number, s: any) => {
@@ -668,11 +642,23 @@ app.post('/render', (req, res) => {
     if (badDurations > 0) {
       console.warn(`[lesson-props] UYARI: ${badDurations}/${scenes.length} sahnede duration_seconds geçersiz — NaN fallback devreye girecek`)
     }
-    if (totalSec < 60 && scenes.length > 0) {
-      console.warn(`[lesson-props] UYARI: toplam ${totalSec.toFixed(1)}s < 60s — içerik çok kısa`)
-    }
-    if (scenes.length < 4 && compositionId === 'LessonVideo') {
-      console.warn(`[lesson-props] UYARI: ${scenes.length} sahne — LessonVideo için minimum 8 sahne bekleniyor`)
+
+    // ── Tür bazında hard fail ─────────────────────────────────────────────────
+    if (compositionId === 'LessonVideo') {
+      if (scenes.length > 0 && scenes.length < 8) {
+        const errMsg = `LessonVideo: ${scenes.length} sahne — minimum 8 sahne gerekli`
+        console.error(`[lesson-props] HARD FAIL: ${errMsg}`)
+        return res.status(422).json({ error: 'insufficient_scene_count', message: errMsg })
+      }
+      if (totalSec > 0 && totalSec < 600) {
+        const errMsg = `LessonVideo: toplam ${totalSec.toFixed(1)}s < 600s — konu anlatımı çok kısa`
+        console.error(`[lesson-props] HARD FAIL: ${errMsg}`)
+        return res.status(422).json({ error: 'duration_validation_failed', message: errMsg })
+      }
+    } else if (scenes.length > 0 && totalSec > 0 && totalSec < 60) {
+      const errMsg = `${compositionId}: toplam ${totalSec.toFixed(1)}s < 60s — içerik çok kısa`
+      console.error(`[lesson-props] HARD FAIL: ${errMsg}`)
+      return res.status(422).json({ error: 'duration_validation_failed', message: errMsg })
     }
   }
 

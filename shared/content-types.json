@@ -1,0 +1,53 @@
+{
+  "types": [
+    {
+      "canonical": "konu_anlatimi",
+      "compositions": {
+        "default": "LessonVideo",
+        "16:9":    "LessonVideo"
+      },
+      "aliases": ["lesson", "lesson_long", "sgs_topic_video"]
+    },
+    {
+      "canonical": "soru_cozum",
+      "compositions": {
+        "default": "QuizVideo",
+        "16:9":    "QuizVideo",
+        "9:16":    "SplitQuizVerticalDemo"
+      },
+      "aliases": [
+        "quiz", "single_question", "question_set_long",
+        "soru_cozumu", "soru"
+      ]
+    },
+    {
+      "canonical": "reels_short",
+      "compositions": {
+        "default": "EducationalReel",
+        "9:16":    "EducationalReel"
+      },
+      "aliases": [
+        "reel", "educational_reel", "shorts",
+        "bilgilendirme_kisa", "kisa_icerik", "short"
+      ]
+    },
+    {
+      "canonical": "motivasyon",
+      "compositions": {
+        "default": "MotivationVideo",
+        "9:16":    "MotivationVideo"
+      },
+      "aliases": ["motivation", "motivation_reel"]
+    },
+    {
+      "canonical": "gorsel_post",
+      "compositions": {
+        "default": "InfographicVideo",
+        "9:16":    "InfographicVideo"
+      },
+      "aliases": [
+        "infographic", "infografik", "infografik_animasyon", "post"
+      ]
+    }
+  ]
+}

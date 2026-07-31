@@ -238,6 +238,47 @@ def _estimate_duration(text: str) -> float:
     """Karakter sayısına göre saniye tahmini (~13 karakter/saniye Türkçe)."""
     return max(5.0, len(text) / 13.0)
 
+
+def _ffprobe_duration(audio_bytes: bytes) -> float | None:
+    """ffprobe ile gerçek ses süresini ölçer. Hata durumunda None döner."""
+    import subprocess
+    import tempfile
+    import os
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+            tmp.write(audio_bytes)
+            tmp_path = tmp.name
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "quiet",
+                "-print_format", "json",
+                "-show_streams",
+                tmp_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+        import json as _json_probe
+        data = _json_probe.loads(result.stdout)
+        for stream in data.get("streams", []):
+            dur = stream.get("duration")
+            if dur is not None:
+                return float(dur)
+        return None
+    except Exception as exc:
+        logger.warning("[video] ffprobe ölçümü başarısız: %s", exc)
+        return None
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
 def _upload_tts(audio_bytes: bytes, filename: str) -> str:
     """TTS ses dosyasını Supabase Storage'a yükle, public URL döndür."""
     sb = get_supabase_client()
@@ -799,13 +840,27 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
 
                 filename = f"{job_id}_{scene_row['scene_index']}.mp3"
                 tts_url = _upload_tts(audio_bytes, filename)
-                duration = _estimate_duration(voice_text)
+                audio_duration = _ffprobe_duration(audio_bytes)
+                if audio_duration is not None:
+                    duration = audio_duration
+                    logger.info(
+                        "[video] %s sahne %s ffprobe=%.2fs",
+                        job_id, scene_row["scene_index"], audio_duration,
+                    )
+                else:
+                    duration = _estimate_duration(voice_text)
+                    logger.info(
+                        "[video] %s sahne %s ffprobe yok — tahmin=%.2fs",
+                        job_id, scene_row["scene_index"], duration,
+                    )
 
-                sb.table("video_scenes").update({
+                scene_update: dict = {
                     "tts_url": tts_url,
+                    "audio_duration_seconds": audio_duration,
                     "duration_seconds": duration,
                     "status": "tts_done",
-                }).eq("id", scene_row["id"]).execute()
+                }
+                sb.table("video_scenes").update(scene_update).eq("id", scene_row["id"]).execute()
 
                 for s in storyboard["scenes"]:
                     if s["id"] - 1 == scene_row["scene_index"]:
@@ -1240,9 +1295,11 @@ def regenerate_scene(scene_id: str, background_tasks: BackgroundTasks):
             audio_bytes, _ = _tts_bytes(voice_text)
             filename = f"{job_id}_{scene_index}_r{uuid.uuid4().hex[:6]}.mp3"
             tts_url = _upload_tts(audio_bytes, filename)
-            duration = _estimate_duration(voice_text)
+            audio_duration = _ffprobe_duration(audio_bytes)
+            duration = audio_duration if audio_duration is not None else _estimate_duration(voice_text)
             get_supabase_client().table("video_scenes").update({
                 "tts_url": tts_url,
+                "audio_duration_seconds": audio_duration,
                 "duration_seconds": duration,
                 "status": "tts_done",
             }).eq("id", scene_id).execute()
