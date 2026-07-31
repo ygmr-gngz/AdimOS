@@ -220,6 +220,22 @@ Sadece JSON döndür. Başka hiçbir metin yok."""
         scenes = [_nfc(s) for s in scenes]
         result["scenes"] = scenes
 
+        # Bileşen adı normalizasyonu — LLM bazen bilinmeyen ad üretir
+        _VALID = {
+            "LessonTitleScene", "LessonConceptScene", "LessonCardScene",
+            "LessonExampleScene", "LessonSummaryScene",
+            "LessonIntroScene", "AgendaScene", "ConceptScene", "DefinitionCardScene",
+            "AccountCardScene", "JournalEntryScene", "TableScene", "ComparisonScene",
+            "ExampleScene", "CommonMistakeScene", "ExamTipScene", "MiniRecapScene",
+            "LessonOutroScene", "TAccountScene", "CalculationStepsScene", "SplitLessonScene",
+        }
+        for s in scenes:
+            if s.get("component") not in _VALID:
+                logger.warning(
+                    f"[lesson-storyboard] bilinmeyen bileşen: {s.get('component')!r} → LessonConceptScene"
+                )
+                s["component"] = "LessonConceptScene"
+
         component_counts = {}
         for s in scenes:
             c = s.get("component", "unknown")

@@ -851,9 +851,28 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                         "cost_tts_chars": total_tts_chars,
                     })
                     return
-                # Diğer hatalarda sahneyi atla, devam et
-                logger.error(f"[video] {job_id} sahne {scene_row['scene_index']} TTS hatası: {e}")
-                sb.table("video_scenes").update({"status": "tts_failed"}).eq("id", scene_row["id"]).execute()
+                detail = {
+                    "exc_type": type(e).__name__,
+                    "message": str(e),
+                    "scene_index": scene_row["scene_index"],
+                }
+                logger.error(
+                    f"[video] {job_id} sahne {scene_row['scene_index']} TTS hatası: {e}",
+                    exc_info=True,
+                )
+                sb.table("video_scenes").update({
+                    "status": "tts_failed",
+                    "error_detail": detail,
+                }).eq("id", scene_row["id"]).execute()
+                _set_status(job_id, "failed", {
+                    "error_code": "tts_generation_failed",
+                    "error_message": (
+                        f"Sahne {scene_row['scene_index'] + 1} için seslendirme üretilemedi: "
+                        f"{str(e)[:200]}"
+                    ),
+                    "cost_tts_chars": total_tts_chars,
+                })
+                return
 
         # Cost tracking
         tts_cost_usd = round((total_tts_chars / 1_000_000) * 15.00, 6)
@@ -1008,6 +1027,24 @@ def create_video_job(payload: CreateVideoPayload, background_tasks: BackgroundTa
                 "message": "Bu iş zaten kuyrukta.",
                 "existing_job_id": running["id"],
             }
+        )
+
+    # Soru çözüm: soru listesi olmadan job oluşturmayı engelle
+    from app.domain.content_type import normalize_content_type as _nct
+    try:
+        _ct = _nct(payload.type)
+    except Exception:
+        _ct = payload.type
+    if _ct == "soru_cozum" and not payload.questions:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "missing_questions",
+                "message": (
+                    "Soru çözüm videosu için en az 1 soru gerekli. "
+                    "Panel'de soruları ekleyin veya İçerik Otomasyonu'ndan soru seçin."
+                ),
+            },
         )
 
     try:
