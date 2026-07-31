@@ -825,19 +825,36 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                         "cost_tts_chars": total_tts_chars,
                     })
                     return
+                import json as _json
                 detail = {
                     "exc_type": type(e).__name__,
+                    "status_code": getattr(e, "status_code", None),
                     "message": str(e),
                     "scene_index": scene_row["scene_index"],
+                    "traceback": _traceback.format_exc(),
+                }
+                # Stdout'a yapılandırılmış JSON — DB yazımı başarısız olsa bile görünür
+                _log_entry = {
+                    "event": "tts_scene_failed",
+                    "job_id": job_id,
+                    **detail,
                 }
                 logger.error(
-                    f"[video] {job_id} sahne {scene_row['scene_index']} TTS hatası: {e}",
-                    exc_info=True,
+                    "TTS_HATA %s",
+                    _json.dumps(_log_entry, ensure_ascii=False, default=str),
+                    exc_info=False,
                 )
-                sb.table("video_scenes").update({
-                    "status": "tts_failed",
-                    "error_detail": detail,
-                }).eq("id", scene_row["id"]).execute()
+                try:
+                    sb.table("video_scenes").update({
+                        "status": "tts_failed",
+                        "error_code": "tts_generation_failed",
+                        "error_detail": detail,
+                    }).eq("id", scene_row["id"]).execute()
+                except Exception as _db_err:
+                    logger.error(
+                        "[video] %s sahne %s video_scenes error_detail yazılamadı: %s",
+                        job_id, scene_row["scene_index"], _db_err,
+                    )
                 _set_status(job_id, "failed", {
                     "error_code": "tts_generation_failed",
                     "error_message": (

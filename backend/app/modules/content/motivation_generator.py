@@ -46,7 +46,6 @@ Aşağıdaki sahne şablonunu AYNEN uygula. Her sahne için:
 - title: ekranda büyük gösterilen kısa başlık (max 8 kelime)
 - narration: seslendirilecek Türkçe metin (ekran gösterimi için)
 - spoken_text: TTS'e gidecek kelime bütçesine uygun metin (narration ile aynı olabilir)
-- duration_seconds: önerilen sahne süresi (gerçek ses süresi + 0.5 sn)
 - image_search_query: arka plan fotoğrafı için İngilizce arama terimi
 
 SAHNE ŞABLONU:
@@ -72,7 +71,6 @@ JSON formatı (bu şemayı AYNEN kullan):
       "title": "Başlık metni",
       "narration": "Seslendirilecek metin. Tam cümle, noktalama ile.",
       "spoken_text": "TTS versiyonu — rakamlar Türkçe yazılı.",
-      "duration_seconds": 5,
       "image_search_query": "student studying motivation desk"
     }}
   ]
