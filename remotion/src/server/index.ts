@@ -665,7 +665,7 @@ function _validateProps(
 // ── İşlemde olan job'ların in-memory kümesi (process restart ile sıfırlanır) ──
 // DB atomik geçişi ile birlikte iki katman koruma sağlar:
 // 1. Aynı process içinde aynı job_id iki kez gelmişse anında 409 dön.
-// 2. Farklı process / restart → DB WHERE status='queued' katmanı devreye girer.
+// 2. Farklı process / restart → DB WHERE status='warmup_pinging' katmanı devreye girer.
 const _activeJobIds = new Set<string>()
 
 // ── POST /render ─────────────────────────────────────────────────
@@ -758,7 +758,7 @@ app.post('/render', (req, res) => {
 
     try {
     // ── Atomik durum geçişi: rendering — çift-render koruması ──────────────
-    // WHERE status='queued' önkoşulu: eğer başka worker zaten aldıysa
+    // WHERE status='warmup_pinging' önkoşulu: eğer başka worker zaten aldıysa
     // veya backend erken iptal ettiyse RETURNING id boş gelir → çıkış.
     try {
       const sb = _supabase()
@@ -766,12 +766,12 @@ app.post('/render', (req, res) => {
         .from('video_jobs')
         .update({ status: 'rendering', updated_at: new Date().toISOString() })
         .eq('id', job_id)
-        .eq('status', 'queued')
+        .eq('status', 'warmup_pinging')
         .select('id')
       if (!claimed || claimed.length === 0) {
         console.warn(
           `[lambda] atomik_gecis_basarisiz job=${job_id} ` +
-          `— status='queued' değil, başka worker almış olabilir; render atlanıyor`,
+          `— status='warmup_pinging' değil, başka worker almış olabilir; render atlanıyor`,
         )
         return
       }

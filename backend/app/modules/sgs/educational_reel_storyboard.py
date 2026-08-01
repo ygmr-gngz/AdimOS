@@ -162,11 +162,16 @@ def generate_educational_reel_storyboard(
 
     budget_note = ""
     if budget_seconds is not None:
-        total_heceler = round(budget_seconds * 4.8)
+        import math as _math
+        _scene_count = 7  # EducationalReel120 sabit 7 sahne
+        _total_syl = round(budget_seconds * 4.8)
+        _syl_per_scene = round(_total_syl / _scene_count)
+        _tolerance = max(3, round(_syl_per_scene * 0.15))
         budget_note = (
-            f"\nHECE BÜTÇESİ (ZORUNLU): Toplam hedef {total_heceler} hece "
-            f"({budget_seconds:.0f}s × 4.8 hece/s).\n"
-            f"Her sahne voice_text'inde 20-35 hece kullan (≈4-7 saniye anlatım).\n"
+            f"\nHECE BÜTÇESİ (ZORUNLU): Toplam {_total_syl} hece "
+            f"({budget_seconds:.0f}s × 4.8 hece/s, {_scene_count} sahne).\n"
+            f"Her sahne voice_text'inde yaklaşık {_syl_per_scene} hece kullan "
+            f"(±{_tolerance} tolerans, yani {_syl_per_scene - _tolerance}–{_syl_per_scene + _tolerance} arası).\n"
             f"Türkçede hece = metindeki ünlü harf sayısı (a,e,ı,i,o,ö,u,ü).\n"
         )
 

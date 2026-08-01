@@ -242,28 +242,44 @@ def _syllable_count(text: str) -> int:
     return sum(1 for ch in text if ch in TR_VOWELS)
 
 
+def _syllable_budget_params(budget_seconds: float, scene_count: int | None = None) -> tuple[int, int]:
+    """
+    (toplam_hece_bütçesi, sahne_başına_hece) hesaplar.
+    scene_count verilmezse ceil(budget_seconds / 6.0) kullanılır.
+    """
+    import math
+    n = scene_count if (scene_count and scene_count > 0) else math.ceil(budget_seconds / 6.0)
+    n = max(1, n)
+    total = round(budget_seconds * 4.8)
+    per_scene = round(total / n)
+    return total, per_scene
+
+
 def _check_syllable_budget(
     storyboard: dict, budget_seconds: float
 ) -> tuple[bool, str | None]:
     """
     reels_short için sahne hece bütçesi doğrulaması.
-    Bütçe = budget_seconds × 4.8 hece/s.
+    Bütçe = budget_seconds × 4.8 hece/s; sahne başına hedef süreden türetilir.
     Toplam sahne hece sayısı %20'den fazla aşarsa (False, detay) döner.
     """
-    total_budget = budget_seconds * 4.8
     scenes = storyboard.get("scenes", [])
+    total_budget, syl_per_scene = _syllable_budget_params(budget_seconds, len(scenes))
+    tolerance = max(3, round(syl_per_scene * 0.15))
+    lo, hi = syl_per_scene - tolerance, syl_per_scene + tolerance
+
     scene_details: list[str] = []
     total_syl = 0
     for s in scenes:
         syl = _syllable_count(s.get("voice_text") or "")
         total_syl += syl
-        if syl < 20 or syl > 35:
+        if syl < lo or syl > hi:
             scene_details.append(f"sahne {s.get('id', '?')}: {syl} hece")
     if total_syl > total_budget * 1.20:
         pct = (total_syl / total_budget - 1) * 100
         detail = (
             f"Hece bütçesi aşıldı: {total_syl:.0f}/{total_budget:.0f} hece "
-            f"(%{pct:.0f} fazla). Sahne başına 20-35 hece hedefle."
+            f"(%{pct:.0f} fazla). Sahne başına ~{syl_per_scene} hece (±{tolerance}) hedefle."
             + (f" Sorunlu: {'; '.join(scene_details[:4])}" if scene_details else "")
         )
         return False, detail
@@ -559,12 +575,12 @@ def _run_remotion_render(job_id: str, storyboard: dict, has_audio: bool = True) 
     with _remotion_lock:
         _remotion_consecutive_failures = 0
 
-    # Bridge atomik geçişi: status='queued' → 'rendering' (bridge tarafında kontrol edilir).
-    # Backend 'queued' yazar; bridge POST aldıktan sonra 'queued'→'rendering' günceller.
-    # Eğer iki worker aynı job'u gönderirse, ikincisi bridge'de WHERE status='queued'
+    # Bridge atomik geçişi: status='warmup_pinging' → 'rendering' (bridge tarafında kontrol edilir).
+    # Backend 'warmup_pinging' yazar; bridge POST aldıktan sonra 'warmup_pinging'→'rendering' günceller.
+    # Eğer iki worker aynı job'u gönderirse, ikincisi bridge'de WHERE status='warmup_pinging'
     # koşulunu geçemez ve render atlanır.
-    _set_status(job_id, "queued")
-    logger.info(f"[video] {job_id[:8]} Remotion render tetikleniyor (status=queued)")
+    _set_status(job_id, "warmup_pinging")
+    logger.info(f"[video] {job_id[:8]} Remotion render tetikleniyor (status=warmup_pinging)")
     try:
         resp = httpx.post(
             f"{remotion_url}/render",
@@ -1321,7 +1337,7 @@ def recover_pending_jobs():
 def _idempotency_key(payload: "CreateVideoPayload") -> str:
     """
     content_type + topic + title + duration → hash.
-    Aynı anahtarlı iş queued/rendering durumundaysa job_already_running döner.
+    Aynı anahtarlı iş warmup_pinging/rendering durumundaysa job_already_running döner.
     """
     import hashlib, json
     data = json.dumps({
