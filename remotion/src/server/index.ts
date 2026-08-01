@@ -33,7 +33,7 @@
 import express from 'express'
 import { createClient } from '@supabase/supabase-js'
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
-import { renderMediaOnLambda, getRenderProgress, getCompositionsOnLambda } from '@remotion/lambda/client'
+import { renderMediaOnLambda, getRenderProgress } from '@remotion/lambda/client'
 import WebSocket from 'ws'
 import type { RenderRequest, RenderResponse } from '../types'
 
@@ -94,7 +94,7 @@ async function _ensureBucket(): Promise<void> {
 
 // ── Yüklü remotion sürümünü oku ─────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const INSTALLED_REMOTION_VERSION: string = (() => {
+const LOCAL_REMOTION_VERSION: string = (() => {
   try { return (require('remotion/package.json') as { version: string }).version } catch { return 'unknown' }
 })()
 
@@ -108,20 +108,107 @@ function _parseLambdaVersion(functionName: string): string | null {
 function _assertVersionMatch(functionName: string): void {
   const lambdaVer = _parseLambdaVersion(functionName)
   if (!lambdaVer) return  // parse edilemedi, devam et
-  if (lambdaVer !== INSTALLED_REMOTION_VERSION) {
+  if (lambdaVer !== LOCAL_REMOTION_VERSION) {
     throw new Error(
       `Sürüm uyumsuzluğu: Lambda fonksiyon=${lambdaVer}, ` +
-      `@remotion/lambda paketi=${INSTALLED_REMOTION_VERSION}. ` +
+      `@remotion/lambda paketi=${LOCAL_REMOTION_VERSION}. ` +
       `package.json'daki remotion sürümlerini ${lambdaVer}'e sabitle, npm install çalıştır ve yeniden deploy et.`,
     )
   }
 }
 
+// ── Pipeline hata sınıfı ─────────────────────────────────────────
+class PipelineError extends Error {
+  code:   string
+  detail: Record<string, unknown>
+  constructor(code: string, detail: Record<string, unknown> = {}) {
+    super(`${code}: ${JSON.stringify(detail)}`)
+    this.code   = code
+    this.detail = detail
+    this.name   = 'PipelineError'
+  }
+}
+
+// ── Manifest tabanlı preflight ───────────────────────────────────
+// getCompositionsOnLambda çağrısı kaldırıldı; composition listesi
+// build sırasında emit-manifest.ts tarafından public/compositions.json'a yazılır
+// ve bundle ile birlikte S3'e yüklenir. Preflight bu dosyayı okur.
+type Manifest = {
+  generated_at:    string
+  remotion_version: string
+  compositions:    { id: string; aspect: string; components: string[]; required: string[] }[]
+}
+
+const _manifestCache = new Map<string, { at: number; data: Manifest }>()
+const MANIFEST_TTL_MS = 5 * 60 * 1_000   // 5 dk
+
+async function fetchManifest(serveUrl: string): Promise<Manifest> {
+  const cached = _manifestCache.get(serveUrl)
+  if (cached && Date.now() - cached.at < MANIFEST_TTL_MS) return cached.data
+
+  const base = serveUrl.replace(/\/index\.html$/, '')
+  const url  = `${base}/public/compositions.json`
+
+  let res: Response
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(8_000) })
+  } catch (e) {
+    throw new PipelineError('preflight_failed', {
+      reason: 'manifest_unreachable', url, cause: String(e),
+    })
+  }
+  if (!res.ok) {
+    throw new PipelineError('preflight_failed', {
+      reason: 'manifest_http_error', url, status: res.status,
+    })
+  }
+
+  const data = (await res.json()) as Manifest
+  if (!Array.isArray(data?.compositions) || data.compositions.length === 0) {
+    throw new PipelineError('preflight_failed', {
+      reason: 'manifest_empty_or_invalid', url,
+    })
+  }
+
+  if (data.remotion_version && data.remotion_version !== LOCAL_REMOTION_VERSION) {
+    throw new PipelineError('preflight_failed', {
+      reason: 'version_mismatch',
+      bundle: data.remotion_version, bridge: LOCAL_REMOTION_VERSION,
+    })
+  }
+
+  _manifestCache.set(serveUrl, { at: Date.now(), data })
+  return data
+}
+
+async function preflight(serveUrl: string, compositionId: string): Promise<void> {
+  const manifest = await fetchManifest(serveUrl)
+  const ids = manifest.compositions.map(c => c.id)
+  if (!ids.includes(compositionId)) {
+    throw new PipelineError('preflight_failed', {
+      reason:    'composition_not_found',
+      requested: compositionId,
+      available: ids,
+    })
+  }
+  console.log(
+    '[preflight]',
+    JSON.stringify({
+      strict:         true,
+      remote_check:   'passed',
+      source:         'manifest',
+      compositions:   ids.length,
+      composition:    compositionId,
+      render_started: true,
+    }),
+  )
+}
+
 const app = express()
 app.use(express.json({ limit: '10mb' }))
 
-// REMOTION_PREFLIGHT_STRICT=true  (varsayılan) → altyapı hatası render'ı DURDURUR
-// REMOTION_PREFLIGHT_STRICT=false → altyapı hatası loglanır, allowlist ile devam (yalnızca local dev)
+// REMOTION_PREFLIGHT_STRICT — manifest tabanlı preflight'ta her zaman true:
+// manifest okunamazsa render DURDURULUR, yerel allowlist'e düşülmez.
 const PREFLIGHT_STRICT =
   String(process.env.REMOTION_PREFLIGHT_STRICT ?? 'true').trim().toLowerCase() !== 'false'
 
@@ -406,7 +493,7 @@ async function _doRender(
     throw new Error(`İzin verilmeyen composition ID: "${compositionId}"`)
   }
 
-  // inputProps: bir kez oluştur, preflight ve render aynı nesneyi alır
+  // inputProps: bir kez oluştur, renderMediaOnLambda'ya aynı nesne gider
   const rawInputProps: unknown = { storyboard }
   const inputProps: Record<string, unknown> =
     rawInputProps === null || rawInputProps === undefined || Array.isArray(rawInputProps)
@@ -414,78 +501,10 @@ async function _doRender(
       : (rawInputProps as Record<string, unknown>)
   console.log(`[preflight] inputProps keys=${Object.keys(inputProps).join(',')}`)
 
-  // ── Lambda preflight — composition yeni bundle'da kayıtlı mı? ────────────────
-  // Altyapı hatası (ağ, AWS iç hata, response parse) ile composition eksikliğini ayır.
-  try {
-    const rawResult: unknown = await getCompositionsOnLambda({
-      region:                LAMBDA_REGION,
-      functionName:          LAMBDA_FUNCTION,
-      serveUrl:              SERVE_URL,
-      inputProps,
-      timeoutInMilliseconds: 30_000,
-    })
-
-    // Dönüş tipini logla — hassas veri yok
-    console.log(`[preflight] response type=${Array.isArray(rawResult) ? 'array' : typeof rawResult}`)
-
-    // Remotion 4.x doğrudan dizi döndürür; wrapped obje formatını da destekle
-    let allComps: Array<{ id: string }>
-    if (Array.isArray(rawResult)) {
-      allComps = rawResult as Array<{ id: string }>
-    } else if (
-      rawResult !== null &&
-      typeof rawResult === 'object' &&
-      Array.isArray((rawResult as Record<string, unknown>).compositions)
-    ) {
-      allComps = (rawResult as Record<string, unknown>).compositions as Array<{ id: string }>
-      console.log('[preflight] wrapped response (.compositions) şekli')
-    } else {
-      if (rawResult !== null && typeof rawResult === 'object') {
-        console.log(`[preflight] response keys=${Object.keys(rawResult as object).join(',')}`)
-      }
-      throw new Error(
-        `getCompositionsOnLambda beklenen composition dizisini döndürmedi (type=${typeof rawResult})`,
-      )
-    }
-
-    const ids = allComps
-      .filter((item): item is { id: string } =>
-        Boolean(item) && typeof (item as Record<string, unknown>).id === 'string',
-      )
-      .map(item => item.id)
-
-    if (!ids.includes(compositionId)) {
-      throw new Error(
-        `Composition bulunamadı: "${compositionId}". ` +
-        `Bundle'da mevcut: [${ids.join(', ')}]. ` +
-        `Çözüm: npm run deploy:site → Railway REMOTION_SERVE_URL güncelle`,
-      )
-    }
-    console.log(`[preflight] composition doğrulandı: "${compositionId}" fallback_used=false render_started=true`)
-
-  } catch (e) {
-    const err = e instanceof Error ? e : new Error(String(e))
-    console.error(`[preflight] HATA: ${err.message}`)
-    console.error(`[preflight] stack: ${err.stack ?? 'stack yok'}`)
-
-    // Composition gerçekten eksik veya API beklenen format dışı dönüş yaptı → her zaman fail
-    if (
-      err.message.includes('Composition bulunamadı') ||
-      err.message.includes('döndürmedi')
-    ) {
-      throw err
-    }
-
-    // Altyapı hatası (ağ, AWS iç hata, Lambda response parse hatası)
-    if (PREFLIGHT_STRICT) {
-      console.error('[preflight] strict=true remote_check=failed fallback_used=false render_started=false reason=' + err.message)
-      throw new Error(`preflight_failed: ${err.message}`)
-    }
-    // strict=false: allowlist ile devam — sadece dev/test ortamı
-    console.warn(
-      `[preflight] strict=false remote_check=failed fallback_used=true render_started=true composition=${compositionId}`,
-    )
-  }
+  // ── Manifest tabanlı preflight ────────────────────────────────────────────────
+  // Composition listesi public/compositions.json'dan okunur (bundle içinde).
+  // Başarısızlık → PipelineError throw → renderMediaOnLambda çağrılmaz.
+  await preflight(SERVE_URL, compositionId)
 
   const { renderId, bucketName } = await renderMediaOnLambda({
     region:          LAMBDA_REGION,
@@ -978,10 +997,10 @@ app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`[lambda] region=${LAMBDA_REGION}`)
   console.log(`[lambda] serveUrl=${SERVE_URL ? '(ayarlı)' : '(eksik)'}`)
   console.log(`[lambda] backendUrl=${BACKEND_URL}`)
-  console.log(`[lambda] remotion paketi=${INSTALLED_REMOTION_VERSION}`)
+  console.log(`[lambda] remotion paketi=${LOCAL_REMOTION_VERSION}`)
   const lambdaVer = _parseLambdaVersion(LAMBDA_FUNCTION)
-  if (lambdaVer && lambdaVer !== INSTALLED_REMOTION_VERSION) {
-    console.error(`[lambda] UYARI: Sürüm uyumsuzluğu — Lambda=${lambdaVer} paket=${INSTALLED_REMOTION_VERSION} — render'lar anında başarısız olacak`)
+  if (lambdaVer && lambdaVer !== LOCAL_REMOTION_VERSION) {
+    console.error(`[lambda] UYARI: Sürüm uyumsuzluğu — Lambda=${lambdaVer} paket=${LOCAL_REMOTION_VERSION} — render'lar anında başarısız olacak`)
   } else if (lambdaVer) {
     console.log(`[lambda] sürüm eşleşiyor: ${lambdaVer} ✓`)
   }
