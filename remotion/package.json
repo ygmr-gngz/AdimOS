@@ -7,12 +7,13 @@
     "copy-fonts": "node scripts/copy-fonts.mjs",
     "sync:content-types": "tsx scripts/sync-content-types.ts",
     "check:content-types": "tsx scripts/sync-content-types.ts --check",
-    "prebuild": "node scripts/copy-fonts.mjs",
+    "prebuild": "node scripts/copy-fonts.mjs && npx tsx scripts/emit-manifest.ts",
     "studio": "npx remotion studio src/index.ts",
     "render:quiz": "npx remotion render src/index.ts QuizVideo out/quiz.mp4",
     "build": "npx tsc -p tsconfig.server.json",
     "start": "node dist/server/index.js",
-    "deploy:site": "tsx scripts/deploy-site.ts"
+    "deploy:site": "npm run prebuild && tsx scripts/deploy-site.ts",
+    "sites:create": "npm run prebuild && npx remotion lambda sites create --site-name=adimos-remotion --region=eu-central-1 src/index.ts"
   },
   "engines": {
     "node": ">=22"

@@ -1,0 +1,127 @@
+{
+  "generated_at": "2026-08-01T17:28:47.452Z",
+  "remotion_version": "4.0.488",
+  "compositions": [
+    {
+      "id": "LessonVideo",
+      "aspect": "16:9",
+      "components": [
+        "LessonTitleScene",
+        "LessonConceptScene",
+        "LessonCardScene",
+        "LessonExampleScene",
+        "LessonSummaryScene",
+        "AccountCardScene",
+        "TableScene",
+        "JournalEntryScene",
+        "RuleBoxScene",
+        "CommonMistakeScene",
+        "SplitLessonScene"
+      ],
+      "required": [
+        "component",
+        "duration_seconds"
+      ]
+    },
+    {
+      "id": "QuizVideo",
+      "aspect": "16:9",
+      "components": [
+        "IntroScene",
+        "QuestionScene",
+        "ThinkingScene",
+        "OptionAnalysisScene",
+        "CorrectAnswerScene",
+        "KeyPointScene",
+        "OutroScene",
+        "ChalkboardSolutionScene",
+        "SplitQuizScene",
+        "TAccountScene",
+        "CalculationStepsScene",
+        "JournalEntryScene"
+      ],
+      "required": [
+        "component",
+        "duration_seconds"
+      ]
+    },
+    {
+      "id": "SplitQuizVerticalDemo",
+      "aspect": "9:16",
+      "components": [
+        "SplitQuizVerticalScene"
+      ],
+      "required": [
+        "component",
+        "duration_seconds"
+      ]
+    },
+    {
+      "id": "EducationalReel",
+      "aspect": "9:16",
+      "components": [
+        "EducationalReelScene",
+        "ReelHookScene",
+        "ReelConceptScene",
+        "ReelExampleScene",
+        "ReelMistakeScene",
+        "ReelExamTipScene",
+        "ReelCtaScene",
+        "AccountCardScene",
+        "TableScene",
+        "JournalEntryScene",
+        "RuleBoxScene",
+        "CommonMistakeScene"
+      ],
+      "required": [
+        "component",
+        "duration_seconds"
+      ]
+    },
+    {
+      "id": "MotivationVideo",
+      "aspect": "9:16",
+      "components": [
+        "MotivationHookScene",
+        "MotivationProblemScene",
+        "MotivationEmpathyScene",
+        "MotivationStepScene",
+        "MotivationFocusScene",
+        "MotivationOutroScene",
+        "MotivationScene"
+      ],
+      "required": [
+        "component",
+        "duration_seconds"
+      ]
+    },
+    {
+      "id": "InfographicVideo",
+      "aspect": "9:16",
+      "components": [
+        "InfographicCardGridScene",
+        "InfographicComparisonScene",
+        "InfographicProcessScene"
+      ],
+      "required": [
+        "component",
+        "duration_seconds"
+      ]
+    },
+    {
+      "id": "QuizBoardVideo",
+      "aspect": "16:9",
+      "components": [
+        "QuizBoardIntroScene",
+        "QuizBoardQuestionScene",
+        "QuizBoardSolutionScene",
+        "QuizBoardHighlightScene",
+        "QuizBoardOutroScene"
+      ],
+      "required": [
+        "component",
+        "duration_seconds"
+      ]
+    }
+  ]
+}

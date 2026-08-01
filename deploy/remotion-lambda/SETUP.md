@@ -88,11 +88,10 @@ Function deployed: remotion-render-4-0-272-mem3072mb-disk2048mb-240sec
 ```bash
 cd remotion
 
-npx remotion lambda sites create \
-  --site-name=adimos-remotion \
-  --region=eu-central-1 \
-  src/index.ts
+npm run sites:create
 ```
+
+> `sites:create` önce `npm run prebuild` çalıştırır (fontları kopyalar, `public/compositions.json` üretir), sonra `remotion lambda sites create` ile bundle'ı S3'e yükler. Bu adım atlanırsa (ör. doğrudan `npx remotion lambda sites create` çalıştırılırsa) `public/compositions.json` ve node_modules'den kopyalanan bazı fontlar üretilmemiş olabilir ve S3'teki bundle'da eksik kalır.
 
 **Çıktıdan not al:**
 ```
