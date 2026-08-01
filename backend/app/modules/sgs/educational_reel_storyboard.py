@@ -145,6 +145,8 @@ def generate_educational_reel_storyboard(
     content_series: str | None = None,
     description: str = "",
     brand: dict | None = None,
+    budget_seconds: float | None = None,
+    syllable_feedback: str | None = None,
 ) -> dict:
     """
     EducationalReel120 composition için 7 sahnelik storyboard üretir.
@@ -158,14 +160,26 @@ def generate_educational_reel_storyboard(
 
     desc_note = f"Ek bağlam / yönetmen notu: {description}\n" if description else ""
 
+    budget_note = ""
+    if budget_seconds is not None:
+        total_heceler = round(budget_seconds * 4.8)
+        budget_note = (
+            f"\nHECE BÜTÇESİ (ZORUNLU): Toplam hedef {total_heceler} hece "
+            f"({budget_seconds:.0f}s × 4.8 hece/s).\n"
+            f"Her sahne voice_text'inde 20-35 hece kullan (≈4-7 saniye anlatım).\n"
+            f"Türkçede hece = metindeki ünlü harf sayısı (a,e,ı,i,o,ö,u,ü).\n"
+        )
+
+    feedback_note = ""
+    if syllable_feedback:
+        feedback_note = f"\nDÜZELTME GEREKLİ (önceki üretimden): {syllable_feedback}\n"
+
     prompt = f"""Aşağıdaki SGS konusu için 7 sahnelik EducationalReel120 storyboard üret.
 
 Konu: {topic}
 Ders / Alan: {subject}
 Video başlığı: {title}
-{series_label}{desc_note}
-Toplam hedef süre: ~120 saniye (7 sahne, her biri için voice_text uzunluğuna göre TTS belirlenir).
-
+{series_label}{desc_note}{budget_note}{feedback_note}
 {_SCENE_SCHEMA}
 
 ÖNEMLİ: Tam olarak 7 sahne üret. Her sahnede voice_text zorunlu. Sadece JSON döndür.

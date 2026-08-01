@@ -234,9 +234,120 @@ def _tts_bytes(text: str) -> tuple[bytes, int]:
 
     raise RuntimeError(f"[tts] {len(_TTS_BACKOFF)} denemeden sonra başarısız: {last_err}")
 
-def _estimate_duration(text: str) -> float:
-    """Karakter sayısına göre saniye tahmini (~13 karakter/saniye Türkçe)."""
-    return max(5.0, len(text) / 13.0)
+# ── Hece bütçesi yardımcıları ─────────────────────────────────────────────────
+TR_VOWELS: frozenset[str] = frozenset("aeıioöuüAEIİOÖUÜ")
+
+
+def _syllable_count(text: str) -> int:
+    return sum(1 for ch in text if ch in TR_VOWELS)
+
+
+def _check_syllable_budget(
+    storyboard: dict, budget_seconds: float
+) -> tuple[bool, str | None]:
+    """
+    reels_short için sahne hece bütçesi doğrulaması.
+    Bütçe = budget_seconds × 4.8 hece/s.
+    Toplam sahne hece sayısı %20'den fazla aşarsa (False, detay) döner.
+    """
+    total_budget = budget_seconds * 4.8
+    scenes = storyboard.get("scenes", [])
+    scene_details: list[str] = []
+    total_syl = 0
+    for s in scenes:
+        syl = _syllable_count(s.get("voice_text") or "")
+        total_syl += syl
+        if syl < 20 or syl > 35:
+            scene_details.append(f"sahne {s.get('id', '?')}: {syl} hece")
+    if total_syl > total_budget * 1.20:
+        pct = (total_syl / total_budget - 1) * 100
+        detail = (
+            f"Hece bütçesi aşıldı: {total_syl:.0f}/{total_budget:.0f} hece "
+            f"(%{pct:.0f} fazla). Sahne başına 20-35 hece hedefle."
+            + (f" Sorunlu: {'; '.join(scene_details[:4])}" if scene_details else "")
+        )
+        return False, detail
+    return True, None
+
+
+def _regen_storyboard_for_duration(
+    content_type: str,
+    payload,
+    brand: dict,
+    corrected_seconds: float,
+    correction_hint: str,
+) -> dict | None:
+    """
+    Süre düzeltmesiyle storyboard yeniden üretir.
+    Desteklenmeyen içerik tipleri için None döner.
+    """
+    if content_type == "reels_short":
+        from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
+        sb_new = generate_educational_reel_storyboard(
+            title=payload.title,
+            topic=payload.topic or payload.title,
+            subject=payload.lesson_name or "SGS",
+            content_series=payload.content_series,
+            description=payload.description or "",
+            brand=brand,
+            budget_seconds=corrected_seconds,
+            syllable_feedback=correction_hint,
+        )
+        sb_new["format"] = payload.format or "9:16"
+        for i, s in enumerate(sb_new.get("scenes", []), 1):
+            s["id"] = i
+        return sb_new
+
+    elif content_type == "motivasyon":
+        from app.modules.content.motivation_generator import generate_motivation_storyboard
+        result = generate_motivation_storyboard(
+            topic=payload.topic or payload.title,
+            duration=max(15, int(corrected_seconds)),
+            platform="reels",
+        )
+        scenes = []
+        for i, scene in enumerate(result.get("scenes", []), 1):
+            s = dict(scene)
+            s["id"] = i
+            if not s.get("component"):
+                s["component"] = "MotivationScene"
+            if not s.get("voice_text"):
+                s["voice_text"] = s.get("narration") or s.get("spoken_text") or ""
+            scenes.append(s)
+        return {
+            "video_type": payload.type,
+            "title": result.get("title", payload.title),
+            "format": payload.format,
+            "language": "tr",
+            "brand": brand,
+            "scenes": scenes,
+        }
+
+    elif content_type == "konu_anlatimi":
+        from app.modules.sgs.lesson_storyboard import generate_lesson_storyboard
+        corrected_min = max(1.0, corrected_seconds / 60.0)
+        raw = generate_lesson_storyboard(
+            title=payload.title,
+            topic=payload.topic or payload.title,
+            subject=payload.lesson_name or "SGS",
+            target_minutes=corrected_min,
+            description=payload.description or "",
+        )
+        scenes = raw.get("scenes", [])
+        for i, s in enumerate(scenes, 1):
+            s["id"] = i
+        return {
+            "video_type": "konu_anlatimi",
+            "title": payload.title,
+            "lesson_name": payload.lesson_name,
+            "topic": payload.topic,
+            "format": payload.format,
+            "language": "tr",
+            "brand": brand,
+            "scenes": scenes,
+        }
+
+    return None  # soru_cozum / gorsel_post — yeniden üretim desteklenmiyor
 
 
 def _ffprobe_duration(audio_bytes: bytes) -> tuple[float | None, str | None]:
@@ -649,6 +760,7 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
         elif content_type == "reels_short":
             # EducationalReel120 — GPT storyboard + EducationalReelScene bileşeni
             from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
+            _reel_budget_sec = float(payload.requested_duration_seconds or 120)
             storyboard = generate_educational_reel_storyboard(
                 title=payload.title,
                 topic=payload.topic or payload.title,
@@ -656,11 +768,38 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 content_series=payload.content_series,
                 description=payload.description or "",
                 brand=brand,
+                budget_seconds=_reel_budget_sec,
             )
-            # format override
             storyboard["format"] = payload.format or "9:16"
             for i, s in enumerate(storyboard.get("scenes", []), 1):
                 s["id"] = i
+
+            # ── Hece bütçesi kontrolü — TTS'den önce, 1 yeniden deneme ──────
+            _syl_ok, _syl_detail = _check_syllable_budget(storyboard, _reel_budget_sec)
+            if not _syl_ok:
+                logger.warning(
+                    "[video] %s hece bütçesi aşıldı — 1 yeniden deneme: %s",
+                    job_id[:8], _syl_detail,
+                )
+                storyboard = generate_educational_reel_storyboard(
+                    title=payload.title,
+                    topic=payload.topic or payload.title,
+                    subject=payload.lesson_name or "SGS",
+                    content_series=payload.content_series,
+                    description=payload.description or "",
+                    brand=brand,
+                    budget_seconds=_reel_budget_sec,
+                    syllable_feedback=_syl_detail,
+                )
+                storyboard["format"] = payload.format or "9:16"
+                for i, s in enumerate(storyboard.get("scenes", []), 1):
+                    s["id"] = i
+                _syl_ok2, _syl_detail2 = _check_syllable_budget(storyboard, _reel_budget_sec)
+                if not _syl_ok2:
+                    logger.warning(
+                        "[video] %s 2. deneme sonrası hece aşımı devam ediyor: %s — devam edildi",
+                        job_id[:8], _syl_detail2,
+                    )
 
         elif content_type == "konu_anlatimi":
             from app.modules.sgs.lesson_storyboard import generate_lesson_storyboard
@@ -786,216 +925,268 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
             content_series=payload.content_series,
         )
 
-        sb.table("video_jobs").update({"storyboard": storyboard, "updated_at": "now()"}).eq("id", job_id).execute()
+        # ── 2. TTS + süre kapalı döngüsü (maks 2 yeniden üretim) ───────────
+        # Her turda: storyboard → sahne kayıtları → TTS → süre doğrulaması.
+        # Süre tolerans dışındaysa storyboard düzeltme ipucuyla yeniden üretilir.
+        _dur_correction_hint: str | None = None
+        _dur_corrected_sec: float = float(payload.requested_duration_seconds or 0)
 
-        scene_records = [
-            {
-                "job_id": job_id,
-                "scene_index": s["id"] - 1,
-                "component": s["component"],
-                "duration_seconds": s.get("duration_seconds", 10),
-                "data": s,
-                "voice_text": s.get("voice_text"),
-                "status": "pending",
-            }
-            for s in storyboard["scenes"]
-        ]
-        sb.table("video_scenes").insert(scene_records).execute()
+        for _dur_turn in range(3):  # tur 0 = orijinal, tur 1-2 = yeniden üretim
+            if _dur_turn > 0:
+                logger.info(
+                    "[video] %s duration döngüsü tur=%d yeniden üretim başlıyor: %s",
+                    job_id[:8], _dur_turn, _dur_correction_hint,
+                )
+                _new_sb = _regen_storyboard_for_duration(
+                    content_type, payload, brand,
+                    _dur_corrected_sec, _dur_correction_hint or "",
+                )
+                if _new_sb is None:
+                    _set_status(job_id, "failed", {
+                        "error_code": "duration_validation_failed",
+                        "error_message": (
+                            f"Süre toleransı 2 turda geçilemedi ve bu içerik tipi "
+                            f"({content_type}) için otomatik yeniden üretim desteklenmiyor."
+                        ),
+                    })
+                    return
+                storyboard = _new_sb
+                sb.table("video_scenes").delete().eq("job_id", job_id).execute()
+                total_tts_chars = 0
 
-        # ── 2. TTS ─────────────────────────────────────────────
-        _set_status(job_id, "tts_generating")
-        logger.info(f"[video] {job_id} TTS başlıyor ({len(storyboard['scenes'])} sahne)")
+            sb.table("video_jobs").update({"storyboard": storyboard, "updated_at": "now()"}).eq("id", job_id).execute()
 
-        scenes_in_db = (
-            sb.table("video_scenes")
-            .select("*").eq("job_id", job_id).order("scene_index")
-            .execute().data or []
-        )
+            scene_records = [
+                {
+                    "job_id": job_id,
+                    "scene_index": s["id"] - 1,
+                    "component": s["component"],
+                    "duration_seconds": s.get("duration_seconds", 10),
+                    "data": s,
+                    "voice_text": s.get("voice_text"),
+                    "status": "pending",
+                }
+                for s in storyboard["scenes"]
+            ]
+            sb.table("video_scenes").insert(scene_records).execute()
 
-        for scene_row in scenes_in_db:
-            voice_text = (scene_row.get("voice_text") or "").strip()
-            if not voice_text:
-                continue
-            try:
-                audio_bytes, char_count = _tts_bytes(voice_text)
-                total_tts_chars += char_count
+            _set_status(job_id, "tts_generating")
+            logger.info(
+                "[video] %s TTS başlıyor tur=%d (%d sahne)",
+                job_id, _dur_turn, len(storyboard["scenes"]),
+            )
 
-                # Section 6: ses seviyesi kontrolü — sessiz TTS yeniden üretilir
-                vol_ok, mean_vol = check_audio_volume(audio_bytes)
-                if not vol_ok:
-                    logger.warning(
-                        f"[video] {job_id} sahne {scene_row['scene_index']} "
-                        f"sessiz TTS ({mean_vol:.1f}dB) — yeniden üretiliyor"
-                    )
-                    audio_bytes, char_count2 = _tts_bytes(voice_text)
-                    total_tts_chars += char_count2
-                    vol_ok2, mean_vol2 = check_audio_volume(audio_bytes)
-                    if not vol_ok2:
-                        logger.error(
-                            f"[video] {job_id} sahne {scene_row['scene_index']} "
-                            f"yeniden deneme de sessiz ({mean_vol2:.1f}dB) — pipeline durduruluyor"
+            scenes_in_db = (
+                sb.table("video_scenes")
+                .select("*").eq("job_id", job_id).order("scene_index")
+                .execute().data or []
+            )
+
+            _tts_hard_fail = False
+            for scene_row in scenes_in_db:
+                voice_text = (scene_row.get("voice_text") or "").strip()
+                if not voice_text:
+                    continue
+                try:
+                    audio_bytes, char_count = _tts_bytes(voice_text)
+                    total_tts_chars += char_count
+
+                    # ses seviyesi kontrolü — sessiz TTS yeniden üretilir
+                    vol_ok, mean_vol = check_audio_volume(audio_bytes)
+                    if not vol_ok:
+                        logger.warning(
+                            "[video] %s sahne %s sessiz TTS (%.1fdB) — yeniden üretiliyor",
+                            job_id, scene_row["scene_index"], mean_vol,
                         )
-                        _set_status(job_id, "failed", {
-                            "error_code": "tts_generation_failed",
-                            "error_message": (
-                                f"Sahne {scene_row['scene_index'] + 1} için ses üretilemedi "
-                                f"(2 denemede de sessiz, {mean_vol2:.0f} dB). "
-                                "OpenAI TTS çıktısını kontrol edin."
+                        audio_bytes, char_count2 = _tts_bytes(voice_text)
+                        total_tts_chars += char_count2
+                        vol_ok2, mean_vol2 = check_audio_volume(audio_bytes)
+                        if not vol_ok2:
+                            logger.error(
+                                "[video] %s sahne %s yeniden deneme de sessiz (%.1fdB) — durduruluyor",
+                                job_id, scene_row["scene_index"], mean_vol2,
+                            )
+                            _set_status(job_id, "failed", {
+                                "error_code": "tts_generation_failed",
+                                "error_message": (
+                                    f"Sahne {scene_row['scene_index'] + 1} için ses üretilemedi "
+                                    f"(2 denemede de sessiz, {mean_vol2:.0f} dB). "
+                                    "OpenAI TTS çıktısını kontrol edin."
+                                ),
+                                "cost_tts_chars": total_tts_chars,
+                            })
+                            _tts_hard_fail = True
+                            break
+
+                    filename = f"{job_id}_{scene_row['scene_index']}.mp3"
+                    tts_url = _upload_tts(audio_bytes, filename)
+                    audio_duration, ffprobe_err = _ffprobe_duration(audio_bytes)
+
+                    if audio_duration is not None:
+                        duration_source = "ffprobe"
+                        duration = audio_duration
+                        scene_update: dict = {
+                            "tts_url": tts_url,
+                            "audio_duration_seconds": audio_duration,
+                            "duration_seconds": duration,
+                            "duration_source": duration_source,
+                            "status": "tts_done",
+                        }
+                        logger.info(
+                            "[video] %s sahne %s ffprobe=%.2fs duration_source=ffprobe",
+                            job_id, scene_row["scene_index"], audio_duration,
+                        )
+                    else:
+                        # "estimated" yolu yok — hard fail
+                        scene_update = {
+                            "tts_url": tts_url,
+                            "duration_source": "missing",
+                            "measurement_error": ffprobe_err or "ffprobe başarısız",
+                            "status": "tts_failed",
+                            "error_code": "failed_audio_validation",
+                        }
+                        sb.table("video_scenes").update(scene_update).eq("id", scene_row["id"]).execute()
+                        logger.error(
+                            "[video] %s sahne %s ffprobe başarısız — failed_audio_validation: %s",
+                            job_id, scene_row["scene_index"], ffprobe_err,
+                        )
+                        from app.errors.registry import PipelineErrorException
+                        raise PipelineErrorException(
+                            error_code="failed_audio_validation",
+                            user_message=(
+                                f"Sahne {scene_row['scene_index'] + 1} ses süresi ölçülemedi "
+                                f"(ffprobe başarısız). Render başlatılmadı."
                             ),
+                            admin_detail={
+                                "scene_index": scene_row["scene_index"],
+                                "ffprobe_error": ffprobe_err,
+                                "duration_source": "missing",
+                            },
+                        )
+
+                    sb.table("video_scenes").update(scene_update).eq("id", scene_row["id"]).execute()
+
+                    for s in storyboard["scenes"]:
+                        if s["id"] - 1 == scene_row["scene_index"]:
+                            s["tts_url"] = tts_url
+                            s["duration_seconds"] = duration
+                            s["duration_source"] = duration_source
+                            break
+
+                    logger.info(
+                        "[video] %s sahne %s TTS ok (%.1fs duration_source=%s)",
+                        job_id, scene_row["scene_index"], duration, duration_source,
+                    )
+
+                except Exception as e:
+                    from app.errors.registry import PipelineErrorException
+                    if isinstance(e, PipelineErrorException) and e.error_code == "openai_insufficient_quota":
+                        logger.error("[video] %s kota hatası — pipeline durduruluyor", job_id)
+                        _set_status(job_id, "failed", {
+                            "error_code": "openai_insufficient_quota",
+                            "error_message": e.user_message,
                             "cost_tts_chars": total_tts_chars,
+                        })
+                        _tts_hard_fail = True
+                        break
+                    if isinstance(e, PipelineErrorException) and e.error_code == "failed_audio_validation":
+                        _set_status(job_id, "failed", {
+                            "error_code": "failed_audio_validation",
+                            "error_message": e.user_message,
+                            "admin_detail": e.admin_detail,
+                            "cost_tts_chars": total_tts_chars,
+                        })
+                        _tts_hard_fail = True
+                        break
+                    import json as _json
+                    detail = {
+                        "exc_type": type(e).__name__,
+                        "status_code": getattr(e, "status_code", None),
+                        "message": str(e),
+                        "scene_index": scene_row["scene_index"],
+                        "traceback": _traceback.format_exc(),
+                    }
+                    _log_entry = {"event": "tts_scene_failed", "job_id": job_id, **detail}
+                    logger.error(
+                        "TTS_HATA %s",
+                        _json.dumps(_log_entry, ensure_ascii=False, default=str),
+                        exc_info=False,
+                    )
+                    try:
+                        sb.table("video_scenes").update({
+                            "status": "tts_failed",
+                            "error_code": "tts_generation_failed",
+                            "error_detail": detail,
+                        }).eq("id", scene_row["id"]).execute()
+                    except Exception as _db_err:
+                        logger.error(
+                            "[video] %s sahne %s video_scenes error_detail yazılamadı: %s",
+                            job_id, scene_row["scene_index"], _db_err,
+                        )
+                    _set_status(job_id, "failed", {
+                        "error_code": "tts_generation_failed",
+                        "error_message": (
+                            f"Sahne {scene_row['scene_index'] + 1} için seslendirme üretilemedi: "
+                            f"{str(e)[:200]}"
+                        ),
+                        "cost_tts_chars": total_tts_chars,
+                    })
+                    _tts_hard_fail = True
+                    break
+
+            if _tts_hard_fail:
+                return  # TTS hard fail — durum zaten ayarlandı, yeniden deneme yok
+
+            # Cost tracking
+            tts_cost_usd = round((total_tts_chars / 1_000_000) * 15.00, 6)
+            sb.table("video_jobs").update({
+                "storyboard": storyboard,
+                "cost_tts_chars": total_tts_chars,
+                "cost_tts_usd": tts_cost_usd,
+            }).eq("id", job_id).execute()
+
+            # ── Süre doğrulaması (döngü kontrolü) ────────────────────────────
+            if payload.requested_duration_seconds:
+                tts_total_sec = sum(
+                    s.get("duration_seconds") or 0 for s in storyboard.get("scenes", [])
+                )
+                req = payload.requested_duration_seconds
+                post_tolerance = max(req * 0.25, 20.0)
+                lo = req - post_tolerance
+                hi = req + post_tolerance
+                if tts_total_sec > 0 and not (lo <= tts_total_sec <= hi):
+                    deviation = tts_total_sec - req
+                    pct = abs(deviation / req) * 100
+                    logger.warning(
+                        "[video] %s duration_retry_loop tur=%d ölçülen=%.1fs hedef=%ds sapma=%%%d",
+                        job_id[:8], _dur_turn, tts_total_sec, req, pct,
+                    )
+                    if _dur_turn < 2:
+                        direction = "kısalt" if deviation > 0 else "uzat"
+                        _dur_correction_hint = (
+                            f"ÖNEMLİ DÜZELTME: Önceki storyboard ölçülen süre {tts_total_sec:.1f}s, "
+                            f"hedef {req:.0f}s. voice_text içeriklerini %{pct:.0f} oranında {direction}. "
+                            f"Sahne başına {'20-25' if deviation > 0 else '28-35'} hece kullan."
+                        )
+                        # Ölçek faktörü: req / tts_total_sec oranıyla düzelt, ±%50 sınırla
+                        scale = req / tts_total_sec if tts_total_sec > 0 else 1.0
+                        _dur_corrected_sec = float(req) * scale
+                        _dur_corrected_sec = max(
+                            min(_dur_corrected_sec, float(req) * 1.5), float(req) * 0.5
+                        )
+                        continue  # storyboard yeniden üret
+                    else:
+                        _set_status(job_id, "failed", {
+                            "error_code": "duration_validation_failed",
+                            "error_message": (
+                                f"{req:.0f} saniye istendi ancak 2 turdan sonra "
+                                f"hâlâ {tts_total_sec:.1f}s üretiliyor "
+                                f"(izin verilen aralık {lo:.0f}–{hi:.0f}s)."
+                            ),
                         })
                         return
 
-                filename = f"{job_id}_{scene_row['scene_index']}.mp3"
-                tts_url = _upload_tts(audio_bytes, filename)
-                audio_duration, ffprobe_err = _ffprobe_duration(audio_bytes)
-
-                if audio_duration is not None:
-                    duration_source = "ffprobe"
-                    duration = audio_duration
-                    scene_update: dict = {
-                        "tts_url": tts_url,
-                        "audio_duration_seconds": audio_duration,
-                        "duration_seconds": duration,
-                        "duration_source": duration_source,
-                        "status": "tts_done",
-                    }
-                    logger.info(
-                        "[video] %s sahne %s ffprobe=%.2fs duration_source=ffprobe",
-                        job_id, scene_row["scene_index"], audio_duration,
-                    )
-                else:
-                    # "estimated" yolu yok — hard fail
-                    scene_update = {
-                        "tts_url": tts_url,
-                        "duration_source": "missing",
-                        "measurement_error": ffprobe_err or "ffprobe başarısız",
-                        "status": "tts_failed",
-                        "error_code": "failed_audio_validation",
-                    }
-                    sb.table("video_scenes").update(scene_update).eq("id", scene_row["id"]).execute()
-                    logger.error(
-                        "[video] %s sahne %s ffprobe başarısız — failed_audio_validation: %s",
-                        job_id, scene_row["scene_index"], ffprobe_err,
-                    )
-                    from app.errors.registry import PipelineErrorException
-                    raise PipelineErrorException(
-                        error_code="failed_audio_validation",
-                        user_message=(
-                            f"Sahne {scene_row['scene_index'] + 1} ses süresi ölçülemedi "
-                            f"(ffprobe başarısız). Render başlatılmadı."
-                        ),
-                        admin_detail={
-                            "scene_index": scene_row["scene_index"],
-                            "ffprobe_error": ffprobe_err,
-                            "duration_source": "missing",
-                        },
-                    )
-
-                sb.table("video_scenes").update(scene_update).eq("id", scene_row["id"]).execute()
-
-                for s in storyboard["scenes"]:
-                    if s["id"] - 1 == scene_row["scene_index"]:
-                        s["tts_url"] = tts_url
-                        s["duration_seconds"] = duration
-                        s["duration_source"] = duration_source
-                        break
-
-                logger.info(
-                    "[video] %s sahne %s TTS ok (%.1fs duration_source=%s)",
-                    job_id, scene_row["scene_index"], duration, duration_source,
-                )
-
-            except Exception as e:
-                from app.errors.registry import PipelineErrorException
-                if isinstance(e, PipelineErrorException) and e.error_code == "openai_insufficient_quota":
-                    logger.error(f"[video] {job_id} kota hatası — pipeline durduruluyor")
-                    _set_status(job_id, "failed", {
-                        "error_code": "openai_insufficient_quota",
-                        "error_message": e.user_message,
-                        "cost_tts_chars": total_tts_chars,
-                    })
-                    return
-                if isinstance(e, PipelineErrorException) and e.error_code == "failed_audio_validation":
-                    # video_scenes zaten yukarıda güncellendi
-                    _set_status(job_id, "failed", {
-                        "error_code": "failed_audio_validation",
-                        "error_message": e.user_message,
-                        "admin_detail": e.admin_detail,
-                        "cost_tts_chars": total_tts_chars,
-                    })
-                    return
-                import json as _json
-                detail = {
-                    "exc_type": type(e).__name__,
-                    "status_code": getattr(e, "status_code", None),
-                    "message": str(e),
-                    "scene_index": scene_row["scene_index"],
-                    "traceback": _traceback.format_exc(),
-                }
-                # Stdout'a yapılandırılmış JSON — DB yazımı başarısız olsa bile görünür
-                _log_entry = {
-                    "event": "tts_scene_failed",
-                    "job_id": job_id,
-                    **detail,
-                }
-                logger.error(
-                    "TTS_HATA %s",
-                    _json.dumps(_log_entry, ensure_ascii=False, default=str),
-                    exc_info=False,
-                )
-                try:
-                    sb.table("video_scenes").update({
-                        "status": "tts_failed",
-                        "error_code": "tts_generation_failed",
-                        "error_detail": detail,
-                    }).eq("id", scene_row["id"]).execute()
-                except Exception as _db_err:
-                    logger.error(
-                        "[video] %s sahne %s video_scenes error_detail yazılamadı: %s",
-                        job_id, scene_row["scene_index"], _db_err,
-                    )
-                _set_status(job_id, "failed", {
-                    "error_code": "tts_generation_failed",
-                    "error_message": (
-                        f"Sahne {scene_row['scene_index'] + 1} için seslendirme üretilemedi: "
-                        f"{str(e)[:200]}"
-                    ),
-                    "cost_tts_chars": total_tts_chars,
-                })
-                return
-
-        # Cost tracking
-        tts_cost_usd = round((total_tts_chars / 1_000_000) * 15.00, 6)
-        sb.table("video_jobs").update({
-            "storyboard": storyboard,
-            "cost_tts_chars": total_tts_chars,
-            "cost_tts_usd": tts_cost_usd,
-        }).eq("id", job_id).execute()
-
-        # ── 2.5 TTS sonrası süre doğrulaması ─────────────────
-        # duration_seconds yalnızca ffprobe ölçümünden gelir — tahmin yolu yoktur.
-        if payload.requested_duration_seconds:
-            tts_total_sec = sum(s.get("duration_seconds") or 0 for s in storyboard.get("scenes", []))
-            req = payload.requested_duration_seconds
-            post_tolerance = max(req * 0.25, 20.0)
-            lo = req - post_tolerance
-            hi = req + post_tolerance
-            if tts_total_sec > 0 and not (lo <= tts_total_sec <= hi):
-                logger.error(
-                    f"[video] {job_id[:8]} tts_duration_validation_failed "
-                    f"requested={req} tts_total={tts_total_sec:.1f} "
-                    f"allowed={lo:.0f}–{hi:.0f}s render_started=false"
-                )
-                _set_status(job_id, "failed", {
-                    "error_code": "duration_validation_failed",
-                    "error_message": (
-                        f"{req:.0f} saniye istendi ancak TTS tahmini "
-                        f"{tts_total_sec:.1f} saniye üretiyor "
-                        f"(izin verilen aralık {lo:.0f}–{hi:.0f}s)."
-                    ),
-                })
-                return
+            break  # tolerans içinde veya süre kısıtı yok — döngüden çık
 
         # ── 3. Pre-render ses kapısı (v2 §6.2) ────────────────
         audio_errors = check_audio_urls(storyboard)
