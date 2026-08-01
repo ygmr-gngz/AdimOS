@@ -1,49 +1,140 @@
 /**
  * Tasarım token'ları — tüm sahneler sadece bu değerleri kullanır.
- * Hex kodu doğrudan sahne koduna yazılmaz.
+ * Hex kodu ve çıplak piksel değeri doğrudan sahne koduna yazılamaz.
+ * Değerler referans infografikten piksel düzeyinde ölçülmüştür.
  */
 export const T = {
   color: {
-    navy900:   "#0B2545",   // ana koyu zemin, başlık bloğu, footer
-    navy700:   "#15355F",
-    navy500:   "#2C6FB5",   // bilgi mavisi (Aktif rozet)
-    surface:   "#FFFFFF",   // kart zemini
-    canvas:    "#F4F6FA",   // sayfa zemini
-    quizFrame: "#A3DBFA",   // QuizBoardVideo çerçeve
-    quizBar:   "#9DE1FF",   // QuizBoardVideo ilerleme çubuğu
+    // ── Marka lacivertleri ─────────────────────────────────────────
+    navy900:   "#001645",   // ana marka lacivertı, başlık, koyu blok, footer
+    navy800:   "#0A0E21",   // footer bandı
+    navy700:   "#173277",   // Gelir (G) rozeti
+    navy500:   "#1B458C",   // ikincil mavi
+
+    // ── Hesap niteliği renkleri (DEĞİŞTİRİLEMEZ) ──────────────────
+    green700:  "#1E4B2F",   // AKTİF (A) — Borç artar, Alacak azalır
+    purple700: "#491C74",   // PASİF (P) — Borç azalır, Alacak artar
+    orange600: "#BD6246",   // GİDER (Gi) — Borç artar, Alacak azalır
+    gold500:   "#BF8D4B",   // alt başlık, ayraç, vurgu
+
+    // ── Anlam renkleri ─────────────────────────────────────────────
+    crimson:   "#CE425C",   // uyarı, yanlış kayıt, hata
+    answerRed: "#D32F2F",   // yanlış cevap vurgusu (quiz)
+
+    // ── Quiz özel ─────────────────────────────────────────────────
+    quizFrame: "#A3DBFA",   // QuizBoardVideo dış çerçeve
+    quizBar:   "#9DE1FF",   // QuizBoardVideo üst bar
     quizCard:  "#FDFDFB",   // QuizBoardVideo kart zemini
-    gold:      "#E8B04B",   // vurgu / alt başlık / CTA çizgisi
-    green:     "#2E7D5B",   // Aktif (A)
-    purple:    "#6B4C9A",   // Pasif (P)
-    blue:      "#2C6FB5",   // Gelir (G)
-    orange:    "#E2703A",   // Gider (Gi)
-    danger:    "#C0392B",   // sık yapılan hata
-    answerRed: "#D32F2F",   // yanlış cevap vurgusu
+
+    // ── Yüzeyler ──────────────────────────────────────────────────
+    surface:   "#FBFBFB",   // kart zemini
+    canvas:    "#FEFEFE",   // sayfa zemini
+    border:    "#E1E7F0",   // kenar çizgisi
+
+    // ── Metin ────────────────────────────────────────────────────
     text:      "#1B2A41",
     muted:     "#5B6B82",
-    border:    "#E1E7F0",
   },
-  radius: { card: 24, quizCard: 28, badge: 999, chip: 12 },
-  shadow: { card: "0 8px 24px rgba(11,37,69,0.10)" },
-  space:  { xs: 8, sm: 16, md: 24, lg: 40, xl: 64 },
+
+  // ── Hesap niteliği → renk (DEĞİŞTİRİLEMEZ) ──────────────────────
+  // Borç/Alacak cümlesi bu fonksiyondan türetilir, LLM yazamaz.
+  natureColor: (nature: "A" | "P" | "G" | "Gi" | string): string => {
+    switch (nature) {
+      case "A":  return "#1E4B2F"   // Aktif
+      case "P":  return "#491C74"   // Pasif
+      case "G":  return "#173277"   // Gelir
+      case "Gi": return "#BD6246"   // Gider
+      default:   return "#5B6B82"
+    }
+  },
+
+  // ── Hesap niteliği → Borç/Alacak kuralı (props'tan gelmez) ───────
+  natureRule: (nature: "A" | "P" | "G" | "Gi" | string): string => {
+    switch (nature) {
+      case "A":  return "Borç artar, Alacak azalır."
+      case "P":  return "Borç azalır, Alacak artar."
+      case "G":  return "Borç azalır, Alacak artar."
+      case "Gi": return "Borç artar, Alacak azalır."
+      default:   return ""
+    }
+  },
+
+  // ── Köşe yarıçapları ─────────────────────────────────────────────
+  radius: {
+    card:      28,
+    cardLg:    24,
+    badge:     999,
+    chip:      16,
+    tip:       16,
+    codeBadge: 10,
+  },
+
+  // ── Gölge ────────────────────────────────────────────────────────
+  shadow: {
+    card: "0 8px 24px rgba(0,22,69,0.10)",
+  },
+
+  // ── Boşluk ───────────────────────────────────────────────────────
+  space: { xs: 8, sm: 16, md: 24, lg: 40, xl: 64 },
+
+  // ── Font yüzleri ─────────────────────────────────────────────────
   font: {
     display: "'Noto Sans', sans-serif",
     body:    "'Noto Sans', sans-serif",
     math:    "'KaTeXMain', 'KaTeX_Main', serif",
   },
-  size9x16: { title: 92, subtitle: 58, body: 46, caption: 62, code: 40 },
-  size16x9: { title: 76, subtitle: 48, body: 38, caption: 40, code: 34 },
-  safe9x16: { top: 220, bottom: 320, x: 72 },
-  safe16x9: { top: 60,  bottom: 90,  x: 80 },
 
-  // Hesap niteliği → renk
-  natureColor: (nature: "A" | "P" | "G" | "Gi" | string): string => {
-    switch (nature) {
-      case "A":  return "#2E7D5B"  // Aktif — yeşil
-      case "P":  return "#6B4C9A"  // Pasif — mor
-      case "G":  return "#2C6FB5"  // Gelir — mavi
-      case "Gi": return "#E2703A"  // Gider — turuncu
-      default:   return "#5B6B82"
-    }
+  // ── Layout 9:16 (1080×1920) ──────────────────────────────────────
+  layout9x16: {
+    // Güvenli alanlar
+    safeTop:    220,
+    safeBottom: 320,
+    safeX:      72,
+    // Kart
+    cardW:      936,
+    cardPad:    40,
+    cardRadius: 28,
+    // Tipografi
+    codeBadgeFont: 56,
+    titleFont:     48,
+    natureBadge:   56,
+    labelFont:     34,
+    bodyFont:      38,
+    entryFont:     34,
+    captionFont:   30,
+    // Düzen
+    sectionGap:  20,
+    iconSize:    28,
+    entryIndent: 48,
   },
+
+  // ── Layout 16:9 (1920×1080) ──────────────────────────────────────
+  layout16x9: {
+    // Güvenli alanlar
+    safeTop:    60,
+    safeBottom: 90,
+    safeX:      80,
+    // Kart
+    cardW:      1180,
+    cardPad:    32,
+    cardRadius: 24,
+    // Tipografi
+    codeBadgeFont: 40,
+    titleFont:     34,
+    natureBadge:   40,
+    labelFont:     24,
+    bodyFont:      27,
+    entryFont:     25,
+    captionFont:   22,
+    // Düzen
+    sectionGap:  16,
+    iconSize:    22,
+    entryIndent: 34,
+  },
+
+  // ── Geriye dönük uyumluluk (eski sahneler için) ──────────────────
+  safe9x16:  { top: 220, bottom: 320, x: 72 },
+  safe16x9:  { top: 60,  bottom: 90,  x: 80 },
+  size9x16:  { title: 48, subtitle: 38, body: 38, caption: 30, code: 56 },
+  size16x9:  { title: 34, subtitle: 26, body: 27, caption: 22, code: 40 },
 } as const

@@ -6,7 +6,7 @@
         "default": "LessonVideo",
         "16:9":    "LessonVideo"
       },
-      "aliases": ["lesson", "lesson_long", "sgs_topic_video"]
+      "aliases": ["lesson", "lesson_long", "sgs_topic_video", "ders"]
     },
     {
       "canonical": "soru_cozum",
@@ -27,8 +27,8 @@
         "9:16":    "EducationalReel"
       },
       "aliases": [
-        "reel", "educational_reel", "shorts",
-        "bilgilendirme_kisa", "kisa_icerik", "short"
+        "reel", "reels", "educational_reel", "shorts", "short",
+        "youtube_short", "bilgilendirme_kisa", "kisa_icerik"
       ]
     },
     {
@@ -37,7 +37,7 @@
         "default": "MotivationVideo",
         "9:16":    "MotivationVideo"
       },
-      "aliases": ["motivation", "motivation_reel"]
+      "aliases": ["motivation", "motivation_reel", "motive"]
     },
     {
       "canonical": "gorsel_post",

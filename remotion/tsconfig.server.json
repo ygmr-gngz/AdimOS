@@ -10,6 +10,7 @@
   },
   "include": [
     "src/server/**/*",
+    "src/generated/**/*",
     "src/utils.ts",
     "src/types.ts",
     "src/brand.ts"

@@ -239,8 +239,11 @@ def _estimate_duration(text: str) -> float:
     return max(5.0, len(text) / 13.0)
 
 
-def _ffprobe_duration(audio_bytes: bytes) -> float | None:
-    """ffprobe ile gerçek ses süresini ölçer. Hata durumunda None döner."""
+def _ffprobe_duration(audio_bytes: bytes) -> tuple[float | None, str | None]:
+    """ffprobe ile gerçek ses süresini ölçer.
+    Dönüş: (saniye, None) — başarı | (None, hata_mesajı) — başarısızlık.
+    "estimated" yolu yoktur; hata_mesajı duration_source="missing" yazarken kaydedilir.
+    """
     import subprocess
     import tempfile
     import os
@@ -261,17 +264,19 @@ def _ffprobe_duration(audio_bytes: bytes) -> float | None:
             timeout=10,
         )
         if result.returncode != 0:
-            return None
+            err = f"ffprobe returncode={result.returncode} stderr={result.stderr[:200]}"
+            return None, err
         import json as _json_probe
         data = _json_probe.loads(result.stdout)
         for stream in data.get("streams", []):
             dur = stream.get("duration")
             if dur is not None:
-                return float(dur)
-        return None
+                return float(dur), None
+        return None, "ffprobe: akışlarda 'duration' alanı bulunamadı"
     except Exception as exc:
+        err = f"{type(exc).__name__}: {exc}"
         logger.warning("[video] ffprobe ölçümü başarısız: %s", exc)
-        return None
+        return None, err
     finally:
         if tmp_path:
             try:
@@ -443,8 +448,12 @@ def _run_remotion_render(job_id: str, storyboard: dict, has_audio: bool = True) 
     with _remotion_lock:
         _remotion_consecutive_failures = 0
 
-    _set_status(job_id, "rendering")
-    logger.info(f"[video] {job_id[:8]} Remotion render tetikleniyor")
+    # Bridge atomik geçişi: status='queued' → 'rendering' (bridge tarafında kontrol edilir).
+    # Backend 'queued' yazar; bridge POST aldıktan sonra 'queued'→'rendering' günceller.
+    # Eğer iki worker aynı job'u gönderirse, ikincisi bridge'de WHERE status='queued'
+    # koşulunu geçemez ve render atlanır.
+    _set_status(job_id, "queued")
+    logger.info(f"[video] {job_id[:8]} Remotion render tetikleniyor (status=queued)")
     try:
         resp = httpx.post(
             f"{remotion_url}/render",
@@ -685,7 +694,6 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 "language": "tr",
                 "brand": brand,
                 "scenes": scenes,
-                "duration_target_minutes": payload.target_duration_minutes or 20,
             }
 
         else:
@@ -840,35 +848,63 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
 
                 filename = f"{job_id}_{scene_row['scene_index']}.mp3"
                 tts_url = _upload_tts(audio_bytes, filename)
-                audio_duration = _ffprobe_duration(audio_bytes)
+                audio_duration, ffprobe_err = _ffprobe_duration(audio_bytes)
+
                 if audio_duration is not None:
+                    duration_source = "ffprobe"
                     duration = audio_duration
+                    scene_update: dict = {
+                        "tts_url": tts_url,
+                        "audio_duration_seconds": audio_duration,
+                        "duration_seconds": duration,
+                        "duration_source": duration_source,
+                        "status": "tts_done",
+                    }
                     logger.info(
-                        "[video] %s sahne %s ffprobe=%.2fs",
+                        "[video] %s sahne %s ffprobe=%.2fs duration_source=ffprobe",
                         job_id, scene_row["scene_index"], audio_duration,
                     )
                 else:
-                    duration = _estimate_duration(voice_text)
-                    logger.info(
-                        "[video] %s sahne %s ffprobe yok — tahmin=%.2fs",
-                        job_id, scene_row["scene_index"], duration,
+                    # "estimated" yolu yok — hard fail
+                    scene_update = {
+                        "tts_url": tts_url,
+                        "duration_source": "missing",
+                        "measurement_error": ffprobe_err or "ffprobe başarısız",
+                        "status": "tts_failed",
+                        "error_code": "failed_audio_validation",
+                    }
+                    sb.table("video_scenes").update(scene_update).eq("id", scene_row["id"]).execute()
+                    logger.error(
+                        "[video] %s sahne %s ffprobe başarısız — failed_audio_validation: %s",
+                        job_id, scene_row["scene_index"], ffprobe_err,
+                    )
+                    from app.errors.registry import PipelineErrorException
+                    raise PipelineErrorException(
+                        error_code="failed_audio_validation",
+                        user_message=(
+                            f"Sahne {scene_row['scene_index'] + 1} ses süresi ölçülemedi "
+                            f"(ffprobe başarısız). Render başlatılmadı."
+                        ),
+                        admin_detail={
+                            "scene_index": scene_row["scene_index"],
+                            "ffprobe_error": ffprobe_err,
+                            "duration_source": "missing",
+                        },
                     )
 
-                scene_update: dict = {
-                    "tts_url": tts_url,
-                    "audio_duration_seconds": audio_duration,
-                    "duration_seconds": duration,
-                    "status": "tts_done",
-                }
                 sb.table("video_scenes").update(scene_update).eq("id", scene_row["id"]).execute()
 
                 for s in storyboard["scenes"]:
                     if s["id"] - 1 == scene_row["scene_index"]:
                         s["tts_url"] = tts_url
                         s["duration_seconds"] = duration
+                        s["duration_source"] = duration_source
                         break
 
-                logger.info(f"[video] {job_id} sahne {scene_row['scene_index']} TTS ok ({duration:.1f}s)")
+                logger.info(
+                    "[video] %s sahne %s TTS ok (%.1fs duration_source=%s)",
+                    job_id, scene_row["scene_index"], duration, duration_source,
+                )
 
             except Exception as e:
                 from app.errors.registry import PipelineErrorException
@@ -877,6 +913,15 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                     _set_status(job_id, "failed", {
                         "error_code": "openai_insufficient_quota",
                         "error_message": e.user_message,
+                        "cost_tts_chars": total_tts_chars,
+                    })
+                    return
+                if isinstance(e, PipelineErrorException) and e.error_code == "failed_audio_validation":
+                    # video_scenes zaten yukarıda güncellendi
+                    _set_status(job_id, "failed", {
+                        "error_code": "failed_audio_validation",
+                        "error_message": e.user_message,
+                        "admin_detail": e.admin_detail,
                         "cost_tts_chars": total_tts_chars,
                     })
                     return
@@ -929,7 +974,7 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
         }).eq("id", job_id).execute()
 
         # ── 2.5 TTS sonrası süre doğrulaması ─────────────────
-        # duration_seconds TTS ölçümünden (_estimate_duration) geliyor — LLM tahmini değil.
+        # duration_seconds yalnızca ffprobe ölçümünden gelir — tahmin yolu yoktur.
         if payload.requested_duration_seconds:
             tts_total_sec = sum(s.get("duration_seconds") or 0 for s in storyboard.get("scenes", []))
             req = payload.requested_duration_seconds
@@ -963,6 +1008,26 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 "error_code": "silent_audio",
                 "error_message": "Render başlatılmadı — ses dosyası eksik veya erişilemiyor: "
                     + audio_errors[0],
+            })
+            return
+
+        # ── 3b. duration_source kapısı — yalnızca ffprobe ölçümlü sahneler ──
+        unmeasured = [
+            i for i, s in enumerate(storyboard.get("scenes", []))
+            if s.get("duration_source") != "ffprobe"
+        ]
+        if unmeasured:
+            logger.error(
+                f"[video] {job_id[:8]} duration_source_gate: "
+                f"{len(unmeasured)} sahne ffprobe ile ölçülmemiş, render bloklandı: {unmeasured}"
+            )
+            _set_status(job_id, "failed", {
+                "error_code": "failed_audio_validation",
+                "error_message": (
+                    f"{len(unmeasured)} sahnenin ses süresi ffprobe ile ölçülemedi. "
+                    "Render başlatılmadı."
+                ),
+                "admin_detail": {"unmeasured_scene_indexes": unmeasured},
             })
             return
 
@@ -1295,15 +1360,27 @@ def regenerate_scene(scene_id: str, background_tasks: BackgroundTasks):
             audio_bytes, _ = _tts_bytes(voice_text)
             filename = f"{job_id}_{scene_index}_r{uuid.uuid4().hex[:6]}.mp3"
             tts_url = _upload_tts(audio_bytes, filename)
-            audio_duration = _ffprobe_duration(audio_bytes)
-            duration = audio_duration if audio_duration is not None else _estimate_duration(voice_text)
-            get_supabase_client().table("video_scenes").update({
-                "tts_url": tts_url,
-                "audio_duration_seconds": audio_duration,
-                "duration_seconds": duration,
-                "status": "tts_done",
-            }).eq("id", scene_id).execute()
-            logger.info(f"[video] sahne {scene_id} yeniden üretildi")
+            audio_duration, ffprobe_err = _ffprobe_duration(audio_bytes)
+            if audio_duration is not None:
+                get_supabase_client().table("video_scenes").update({
+                    "tts_url": tts_url,
+                    "audio_duration_seconds": audio_duration,
+                    "duration_seconds": audio_duration,
+                    "duration_source": "ffprobe",
+                    "status": "tts_done",
+                }).eq("id", scene_id).execute()
+                logger.info(f"[video] sahne {scene_id} yeniden üretildi (ffprobe={audio_duration:.2f}s)")
+            else:
+                get_supabase_client().table("video_scenes").update({
+                    "tts_url": tts_url,
+                    "duration_source": "missing",
+                    "measurement_error": ffprobe_err or "ffprobe başarısız",
+                    "status": "tts_failed",
+                    "error_code": "failed_audio_validation",
+                }).eq("id", scene_id).execute()
+                logger.error(
+                    f"[video] sahne {scene_id} yeniden üretim: ffprobe başarısız — {ffprobe_err}"
+                )
         except Exception as e:
             logger.error(f"[video] sahne {scene_id} yeniden üretim hatası: {e}")
             get_supabase_client().table("video_scenes").update(

@@ -172,85 +172,81 @@ function _normalizeBackendUrl(raw: string | undefined): string {
 }
 const BACKEND_URL = _normalizeBackendUrl(process.env.BACKEND_URL)
 
-// ── İçerik tipleri — shared/content-types.json'dan türetilir ────────────────
-// Yeni tip veya alias eklemek: shared/content-types.json'u düzenle, buraya dokunma.
-interface _ContentTypeEntry {
-  canonical: string
-  compositions: Record<string, string>
-  aliases: string[]
-}
-// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-const _CONTENT_TYPES: { types: _ContentTypeEntry[] } = require('../../../shared/content-types.json')
-
-function _buildCompositionMap(types: _ContentTypeEntry[]): Record<string, string> {
-  const map: Record<string, string> = {}
-  for (const ct of types) {
-    for (const name of [ct.canonical, ...ct.aliases]) {
-      map[name] = ct.compositions['default']
-      for (const [aspect, compId] of Object.entries(ct.compositions)) {
-        if (aspect !== 'default') map[`${name}:${aspect}`] = compId
-      }
+// ── İçerik tipleri — src/generated/content-types.ts (statik TypeScript) ─────────────────
+// Docker build context remotion/ olduğu için shared/ JSON'ı runtime require edilemez.
+// shared/content-types.json değiştiğinde: npm run sync:content-types && npm run build
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { CONTENT_TYPE_ALIASES, COMPOSITION_MAP } = (() => {
+  try {
+    return require('../generated/content-types') as {
+      CONTENT_TYPE_ALIASES: Record<string, string>
+      COMPOSITION_MAP: Record<string, string>
     }
+  } catch (e) {
+    console.error('[startup] KRİTİK: generated content-types bulunamadı, sync script çalıştırılmamış olabilir')
+    console.error('[startup] Çözüm: cd remotion && npm run sync:content-types && npm run build')
+    console.error('[startup] Hata:', String(e))
+    process.exit(1)
   }
-  return map
-}
+})()
 
-const COMPOSITION_MAP: Record<string, string> = _buildCompositionMap(_CONTENT_TYPES.types)
-
-function resolveComposition(videoType: string, format: string): string | null {
-  return (
-    COMPOSITION_MAP[`${videoType}:${format}`] ??
-    COMPOSITION_MAP[videoType] ??
+function resolveComposition(rawType: string, format: string): { compositionId: string | null; normalized: string } {
+  const lower = (rawType ?? '').trim().toLowerCase()
+  const normalized = (CONTENT_TYPE_ALIASES as Record<string, string>)[lower] ?? lower
+  const compositionId =
+    (COMPOSITION_MAP as Record<string, string>)[`${normalized}:${format}`] ??
+    (COMPOSITION_MAP as Record<string, string>)[normalized] ??
     null
-  )
+  return { compositionId, normalized }
 }
 
-// COMPOSITION_MAP'teki tüm geçerli ID'leri içerir — altyapı hatası durumunda fallback allowlist
-const ALLOWED_COMPOSITIONS = new Set(Object.values(COMPOSITION_MAP))
+// COMPOSITION_MAP'teki tüm geçerli composition ID'leri — preflight allowlist
+const ALLOWED_COMPOSITIONS = new Set(Object.values(COMPOSITION_MAP as Record<string, string>))
 
-// ── Toplam kare tahmini ──────────────────────────────────────────
+// ── Toplam kare hesabı — tek kaynak: sahne ölçüm toplamı ──────────────────────
+// total_frames girdi olarak geliyorsa yalnızca ±%2 doğrulaması için kullanılır;
+// hesabın kaynağı olamaz.
 function estimateTotalFrames(storyboard: any, jobId?: string): number {
   const tag = jobId ? ` job=${jobId}` : ''
+  const scenes: any[] = Array.isArray(storyboard?.scenes) ? storyboard.scenes : []
 
-  if (storyboard?.total_frames) {
-    const v = storyboard.total_frames
-    console.log(`[lambda] frames${tag} kaynak=total_frames değer=${v}`)
-    return v
-  }
-  if (storyboard?.duration_seconds) {
-    const v = Math.ceil(storyboard.duration_seconds * FPS)
-    console.log(`[lambda] frames${tag} kaynak=duration_seconds değer=${v} (${storyboard.duration_seconds}s)`)
-    return v
-  }
-  if (storyboard?.duration_target_minutes) {
-    const v = Math.ceil(storyboard.duration_target_minutes * 60 * FPS)
-    console.log(`[lambda] frames${tag} kaynak=duration_target_minutes değer=${v} (${storyboard.duration_target_minutes}dk)`)
-    return v
-  }
-  if (Array.isArray(storyboard?.scenes) && storyboard.scenes.length > 0) {
-    const scenes = storyboard.scenes
-    const totalSec = scenes.reduce(
-      (acc: number, s: any) => acc + (s.duration_seconds ?? s.duration ?? 5),
-      0,
+  const total = scenes.reduce((acc: number, s: any) => {
+    const v = Number(s.duration_seconds)
+    return acc + (Number.isFinite(v) ? v : 0)
+  }, 0)
+
+  if (!Number.isFinite(total) || total <= 0) {
+    throw new Error(
+      `duration_validation_failed: geçersiz sahne süreleri` +
+      ` (sahne=${scenes.length} toplam=${total})${tag}`,
     )
-    if (totalSec > 0) {
-      const v = Math.ceil(totalSec * FPS)
-      const avgSec = (totalSec / scenes.length).toFixed(1)
-      console.log(
-        `[lambda] frames${tag} kaynak=scene_sum sahne=${scenes.length} toplamSn=${totalSec.toFixed(1)}` +
-        ` ortalamaSn/sahne=${avgSec} değer=${v}`,
-      )
-      if (totalSec < 60) {
-        console.warn(
-          `[lambda] UYARI${tag}: toplam sahne süresi ${totalSec.toFixed(1)}s < 60s. ` +
-          `Backend'de her sahneye gerçek duration_seconds gönderilmeli (TTS süresi veya hedef).`
+  }
+
+  const frames = Math.round(total * FPS)
+  console.log(
+    `[lambda] frames${tag} kaynak=scene_sum_measured` +
+    ` sahne=${scenes.length} toplamSn=${total.toFixed(2)} fps=${FPS} değer=${frames}`,
+  )
+
+  // total_frames yalnızca doğrulama kapısı — %2 sapma → hata
+  if (storyboard?.total_frames != null) {
+    const provided = Number(storyboard.total_frames)
+    if (Number.isFinite(provided) && provided > 0) {
+      const diff = Math.abs(provided - frames) / frames
+      if (diff > 0.02) {
+        throw new Error(
+          `duration_validation_failed: total_frames uyuşmazlığı` +
+          ` girdi=${provided} hesaplanan=${frames}` +
+          ` sapma=${(diff * 100).toFixed(1)}% (izin=%2)${tag}`,
         )
       }
-      return v
+      console.log(
+        `[lambda] frames${tag} total_frames_check girdi=${provided} hesaplanan=${frames} ✓`,
+      )
     }
   }
-  console.log(`[lambda] frames${tag} kaynak=fallback değer=3600`)
-  return 3_600 // varsayılan 2 dk
+
+  return frames
 }
 
 // ── Günlük maliyet takibi ────────────────────────────────────────
@@ -410,18 +406,27 @@ async function _doRender(
     throw new Error(`İzin verilmeyen composition ID: "${compositionId}"`)
   }
 
+  // inputProps: bir kez oluştur, preflight ve render aynı nesneyi alır
+  const rawInputProps: unknown = { storyboard }
+  const inputProps: Record<string, unknown> =
+    rawInputProps === null || rawInputProps === undefined || Array.isArray(rawInputProps)
+      ? {}
+      : (rawInputProps as Record<string, unknown>)
+  console.log(`[preflight] inputProps keys=${Object.keys(inputProps).join(',')}`)
+
   // ── Lambda preflight — composition yeni bundle'da kayıtlı mı? ────────────────
   // Altyapı hatası (ağ, AWS iç hata, response parse) ile composition eksikliğini ayır.
   try {
     const rawResult: unknown = await getCompositionsOnLambda({
-      region:       LAMBDA_REGION,
-      functionName: LAMBDA_FUNCTION,
-      serveUrl:     SERVE_URL,
-      inputProps:   {},
+      region:                LAMBDA_REGION,
+      functionName:          LAMBDA_FUNCTION,
+      serveUrl:              SERVE_URL,
+      inputProps,
+      timeoutInMilliseconds: 30_000,
     })
 
     // Dönüş tipini logla — hassas veri yok
-    console.log(`[lambda] preflight response type=${Array.isArray(rawResult) ? 'array' : typeof rawResult}`)
+    console.log(`[preflight] response type=${Array.isArray(rawResult) ? 'array' : typeof rawResult}`)
 
     // Remotion 4.x doğrudan dizi döndürür; wrapped obje formatını da destekle
     let allComps: Array<{ id: string }>
@@ -433,10 +438,10 @@ async function _doRender(
       Array.isArray((rawResult as Record<string, unknown>).compositions)
     ) {
       allComps = (rawResult as Record<string, unknown>).compositions as Array<{ id: string }>
-      console.log('[lambda] preflight: wrapped response (.compositions) şekli')
+      console.log('[preflight] wrapped response (.compositions) şekli')
     } else {
       if (rawResult !== null && typeof rawResult === 'object') {
-        console.log(`[lambda] preflight response keys=${Object.keys(rawResult as object).join(',')}`)
+        console.log(`[preflight] response keys=${Object.keys(rawResult as object).join(',')}`)
       }
       throw new Error(
         `getCompositionsOnLambda beklenen composition dizisini döndürmedi (type=${typeof rawResult})`,
@@ -452,16 +457,16 @@ async function _doRender(
     if (!ids.includes(compositionId)) {
       throw new Error(
         `Composition bulunamadı: "${compositionId}". ` +
-        `Bundle'da mevcut: ${ids.join(', ')}. ` +
+        `Bundle'da mevcut: [${ids.join(', ')}]. ` +
         `Çözüm: npm run deploy:site → Railway REMOTION_SERVE_URL güncelle`,
       )
     }
-    console.log(`[lambda] composition doğrulandı: "${compositionId}" ✓`)
+    console.log(`[preflight] composition doğrulandı: "${compositionId}" fallback_used=false render_started=true`)
 
   } catch (e) {
     const err = e instanceof Error ? e : new Error(String(e))
-    console.error(`[lambda] composition preflight HATA: ${err.message}`)
-    console.error(`[lambda] composition preflight stack: ${err.stack ?? 'stack yok'}`)
+    console.error(`[preflight] HATA: ${err.message}`)
+    console.error(`[preflight] stack: ${err.stack ?? 'stack yok'}`)
 
     // Composition gerçekten eksik veya API beklenen format dışı dönüş yaptı → her zaman fail
     if (
@@ -473,7 +478,6 @@ async function _doRender(
 
     // Altyapı hatası (ağ, AWS iç hata, Lambda response parse hatası)
     if (PREFLIGHT_STRICT) {
-      // strict=true: fallback yok — render başlamaz
       console.error('[preflight] strict=true remote_check=failed fallback_used=false render_started=false reason=' + err.message)
       throw new Error(`preflight_failed: ${err.message}`)
     }
@@ -481,7 +485,6 @@ async function _doRender(
     console.warn(
       `[preflight] strict=false remote_check=failed fallback_used=true render_started=true composition=${compositionId}`,
     )
-    // compositionId ALLOWED_COMPOSITIONS içinde doğrulandı (üstteki blok)
   }
 
   const { renderId, bucketName } = await renderMediaOnLambda({
@@ -489,7 +492,7 @@ async function _doRender(
     functionName:    LAMBDA_FUNCTION,
     serveUrl:        SERVE_URL,
     composition:     compositionId,
-    inputProps:      { storyboard },
+    inputProps,
     codec:           'h264',
     imageFormat:     'jpeg',
     pixelFormat:     'yuv420p',
@@ -569,12 +572,114 @@ async function _doRender(
   return { renderId, bucketName, outputFile, costUsd }
 }
 
+// ── Tür bazında props doğrulama (per-type builders) ──────────────
+
+function _sceneSummary(storyboard: any, compositionId: string, job_id: string, prefix: string) {
+  const scenes: any[] = storyboard.scenes ?? []
+  const totalSec = scenes.reduce((sum: number, s: any) => {
+    const d = Number(s.duration_seconds)
+    return sum + (isFinite(d) ? d : 0)
+  }, 0)
+  const audioReady   = scenes.filter((s: any) => s.tts_url).length
+  const ffprobeCount = scenes.filter((s: any) => s.duration_source === 'ffprobe').length
+  const captionCount = scenes.filter((s: any) => Array.isArray(s.captions) && s.captions.length > 0).length
+  const badDurations = scenes.filter((s: any) => {
+    const d = Number(s.duration_seconds)
+    return !isFinite(d) || d <= 0
+  }).length
+
+  console.log(
+    `[${prefix}] job=${job_id} composition=${compositionId}` +
+    ` scenes=${scenes.length} measured_total_sec=${totalSec.toFixed(2)}` +
+    ` audio_ready=${audioReady}/${scenes.length}` +
+    ` duration_source=ffprobe:${ffprobeCount}` +
+    ` captions=${captionCount}/${scenes.length}`,
+  )
+  if (badDurations > 0) {
+    console.error(`[${prefix}] ${badDurations}/${scenes.length} sahnede duration_seconds geçersiz`)
+  }
+  return { scenes, totalSec }
+}
+
+function _toleranceCheck(storyboard: any, compositionId: string, totalSec: number, prefix: string): { error: string; message: string } | null {
+  const requested = Number(storyboard.requested_duration_seconds)
+  if (!requested || totalSec <= 0) return null
+  const tolerance = Number(storyboard.duration_tolerance_seconds ?? 8)
+  const lo = requested - tolerance
+  const hi = requested + tolerance
+  if (totalSec < lo || totalSec > hi) {
+    const msg = `${compositionId}: istek=${requested}s ±${tolerance}s gerçek=${totalSec.toFixed(2)}s izin=${lo.toFixed(0)}–${hi.toFixed(0)}s`
+    console.error(`[${prefix}] HARD FAIL duration_validation_failed: ${msg}`)
+    return { error: 'duration_validation_failed', message: msg }
+  }
+  return null
+}
+
+function _validateProps(
+  storyboard: any, compositionId: string, normalizedType: string, job_id: string,
+): { error: string; message: string } | null {
+
+  switch (compositionId) {
+    case 'LessonVideo': {
+      const { scenes, totalSec } = _sceneSummary(storyboard, compositionId, job_id, 'lesson-props')
+      if (scenes.length > 0 && scenes.length < 8) {
+        const msg = `LessonVideo: ${scenes.length} sahne — minimum 8 sahne gerekli`
+        console.error(`[lesson-props] HARD FAIL insufficient_scene_count: ${msg}`)
+        return { error: 'insufficient_scene_count', message: msg }
+      }
+      return _toleranceCheck(storyboard, compositionId, totalSec, 'lesson-props')
+    }
+    case 'QuizVideo':
+    case 'SplitQuizVerticalDemo': {
+      const { totalSec } = _sceneSummary(storyboard, compositionId, job_id, 'quizboard-props')
+      return _toleranceCheck(storyboard, compositionId, totalSec, 'quizboard-props')
+    }
+    case 'EducationalReel':
+    case 'EducationalReel120': {
+      const { scenes, totalSec } = _sceneSummary(storyboard, compositionId, job_id, 'reel-props')
+      if (scenes.length > 0 && totalSec > 0) {
+        const tolErr = _toleranceCheck(storyboard, compositionId, totalSec, 'reel-props')
+        if (tolErr) return tolErr
+      }
+      return null
+    }
+    case 'MotivationVideo': {
+      const { totalSec } = _sceneSummary(storyboard, compositionId, job_id, 'motivation-props')
+      return _toleranceCheck(storyboard, compositionId, totalSec, 'motivation-props')
+    }
+    case 'InfographicVideo': {
+      const { totalSec } = _sceneSummary(storyboard, compositionId, job_id, 'infographic-props')
+      return _toleranceCheck(storyboard, compositionId, totalSec, 'infographic-props')
+    }
+    case 'QuizBoardVideo': {
+      const { totalSec } = _sceneSummary(storyboard, compositionId, job_id, 'quizboard-props')
+      return _toleranceCheck(storyboard, compositionId, totalSec, 'quizboard-props')
+    }
+    default: {
+      _sceneSummary(storyboard, compositionId, job_id, 'props')
+      return null
+    }
+  }
+}
+
+// ── İşlemde olan job'ların in-memory kümesi (process restart ile sıfırlanır) ──
+// DB atomik geçişi ile birlikte iki katman koruma sağlar:
+// 1. Aynı process içinde aynı job_id iki kez gelmişse anında 409 dön.
+// 2. Farklı process / restart → DB WHERE status='queued' katmanı devreye girer.
+const _activeJobIds = new Set<string>()
+
 // ── POST /render ─────────────────────────────────────────────────
 app.post('/render', (req, res) => {
   const { job_id, storyboard } = req.body as RenderRequest
 
   if (!job_id || !storyboard) {
     return res.status(400).json({ error: 'job_id ve storyboard gerekli' })
+  }
+
+  // İn-memory çift-render koruması
+  if (_activeJobIds.has(job_id)) {
+    console.warn(`[lambda] duplicate_render_blocked job=${job_id} — zaten işlemde`)
+    return res.status(409).json({ error: 'job_already_active', job_id })
   }
 
   if (!LAMBDA_FUNCTION || !SERVE_URL) {
@@ -588,17 +693,22 @@ app.post('/render', (req, res) => {
     })
   }
 
-  const videoType     = storyboard.video_type ?? 'quiz'
-  const videoFormat   = storyboard.format      ?? '16:9'
-  const compositionId = resolveComposition(videoType, videoFormat)
+  const rawType       = String(storyboard.video_type ?? 'quiz')
+  const videoFormat   = storyboard.format ?? '16:9'
+  const { compositionId, normalized: normalizedType } = resolveComposition(rawType, videoFormat)
+
+  if (rawType !== normalizedType) {
+    console.warn(`[lambda] type_normalized raw=${rawType} → ${normalizedType}`)
+  }
+  console.log(`[lambda] type raw=${rawType} normalized=${normalizedType} composition=${compositionId ?? 'null'}`)
 
   if (!compositionId) {
-    const validTypes = [...new Set(Object.keys(COMPOSITION_MAP).map(k => k.split(':')[0]))]
+    const validTypes = [...new Set(Object.keys(COMPOSITION_MAP as Record<string, string>).map(k => k.split(':')[0]))]
     const err =
-      `Bilinmeyen iş tipi: "${videoType}" (format: ${videoFormat}). ` +
-      `Geçerli tipler: ${validTypes.join(', ')}`
+      `Bilinmeyen iş tipi: "${rawType}" (format: ${videoFormat}). ` +
+      `Geçerli tipler: ${validTypes.sort().join(', ')}`
     console.error(`[lambda] ${err}`)
-    return res.status(422).json({ error: err })
+    return res.status(422).json({ error: 'unknown_content_type', message: err })
   }
 
   if (_isGuardrailHit()) {
@@ -610,64 +720,25 @@ app.post('/render', (req, res) => {
     return res.status(429).json({ error: err })
   }
 
-  // ── [lesson-props] render öncesi doğrulama — tür bazında hard fail ──────────
-  {
-    const scenes: any[] = storyboard.scenes ?? []
-    const totalSec = scenes.reduce((sum: number, s: any) => {
-      const d = Number(s.duration_seconds)
-      return sum + (isFinite(d) ? d : 0)
-    }, 0)
-    console.log(
-      `[lesson-props] job=${job_id} composition=${compositionId}` +
-      ` title_present=${Boolean(storyboard.title)}` +
-      ` brand_present=${Boolean(storyboard.brand)}` +
-      ` scene_count=${scenes.length}` +
-      ` total_duration_sec=${totalSec.toFixed(1)}`,
-    )
-    if (scenes.length > 0) {
-      const components = scenes.map((s: any) => s.component ?? 'MISSING').join(',')
-      console.log(`[lesson-props] components=${components}`)
-      const durations = scenes.map((s: any) => {
-        const d = s.duration_seconds
-        if (d === undefined || d === null) return 'MISSING'
-        const n = Number(d)
-        return isNaN(n) ? 'NaN' : String(Math.round(n))
-      }).join(',')
-      console.log(`[lesson-props] durations_sec=${durations}`)
-    }
-    const badDurations = scenes.filter((s: any) => {
-      const d = Number(s.duration_seconds)
-      return !isFinite(d) || d <= 0
-    }).length
-    if (badDurations > 0) {
-      console.warn(`[lesson-props] UYARI: ${badDurations}/${scenes.length} sahnede duration_seconds geçersiz — NaN fallback devreye girecek`)
-    }
-
-    // ── Tür bazında hard fail ─────────────────────────────────────────────────
-    if (compositionId === 'LessonVideo') {
-      if (scenes.length > 0 && scenes.length < 8) {
-        const errMsg = `LessonVideo: ${scenes.length} sahne — minimum 8 sahne gerekli`
-        console.error(`[lesson-props] HARD FAIL: ${errMsg}`)
-        return res.status(422).json({ error: 'insufficient_scene_count', message: errMsg })
-      }
-      if (totalSec > 0 && totalSec < 600) {
-        const errMsg = `LessonVideo: toplam ${totalSec.toFixed(1)}s < 600s — konu anlatımı çok kısa`
-        console.error(`[lesson-props] HARD FAIL: ${errMsg}`)
-        return res.status(422).json({ error: 'duration_validation_failed', message: errMsg })
-      }
-    } else if (scenes.length > 0 && totalSec > 0 && totalSec < 60) {
-      const errMsg = `${compositionId}: toplam ${totalSec.toFixed(1)}s < 60s — içerik çok kısa`
-      console.error(`[lesson-props] HARD FAIL: ${errMsg}`)
-      return res.status(422).json({ error: 'duration_validation_failed', message: errMsg })
-    }
+  // ── Tür bazında props doğrulaması (hard fail) ─────────────────────────────
+  const _propsErr = _validateProps(storyboard, compositionId, normalizedType, job_id)
+  if (_propsErr) {
+    return res.status(422).json(_propsErr)
   }
 
-  const totalFrames     = estimateTotalFrames(storyboard, job_id)
+  let totalFrames: number
+  try {
+    totalFrames = estimateTotalFrames(storyboard, job_id)
+  } catch (durErr: any) {
+    console.error(`[lambda] duration_validation_failed job=${job_id}: ${durErr.message}`)
+    return res.status(422).json({ error: 'duration_validation_failed', message: durErr.message })
+  }
+
   const framesPerLambda = Math.max(20, Math.ceil(totalFrames / MAX_CONCURRENT))
   const queuePos        = _renderQueue.length
 
   console.log(
-    `[lambda] kuyruğa alındı: job=${job_id} type=${videoType} format=${videoFormat}` +
+    `[lambda] kuyruğa alındı: job=${job_id} type=${normalizedType} format=${videoFormat}` +
     ` composition=${compositionId} frames≈${totalFrames} fpl=${framesPerLambda}` +
     ` maxConcurrent=${MAX_CONCURRENT} sıra=${queuePos}`,
   )
@@ -679,9 +750,39 @@ app.post('/render', (req, res) => {
     composition_id: compositionId,
   } satisfies RenderResponse & { queue_position: number; composition_id: string })
 
+  _activeJobIds.add(job_id)
+
   _renderQueue.push(async () => {
     const t0           = Date.now()
     const totalElapsed = () => Math.round((Date.now() - t0) / 1_000)
+
+    try {
+    // ── Atomik durum geçişi: rendering — çift-render koruması ──────────────
+    // WHERE status='queued' önkoşulu: eğer başka worker zaten aldıysa
+    // veya backend erken iptal ettiyse RETURNING id boş gelir → çıkış.
+    try {
+      const sb = _supabase()
+      const { data: claimed } = await sb
+        .from('video_jobs')
+        .update({ status: 'rendering', updated_at: new Date().toISOString() })
+        .eq('id', job_id)
+        .eq('status', 'queued')
+        .select('id')
+      if (!claimed || claimed.length === 0) {
+        console.warn(
+          `[lambda] atomik_gecis_basarisiz job=${job_id} ` +
+          `— status='queued' değil, başka worker almış olabilir; render atlanıyor`,
+        )
+        return
+      }
+      console.log(`[lambda] atomik_gecis_ok job=${job_id} → rendering`)
+    } catch (sbErr: any) {
+      // Supabase erişilemez durumdaysa render devam etsin ama uyar
+      console.warn(
+        `[lambda] atomik_gecis_hata job=${job_id}: ${sbErr.message} ` +
+        `— Supabase kontrol atlandı, render devam edecek`,
+      )
+    }
 
     try {
       const result = await _doRender(
@@ -763,6 +864,11 @@ app.post('/render', (req, res) => {
         error:          `${friendly} (${totalElapsed()}s sonra)`,
         composition_id: compositionId,
       })
+    }
+
+    } finally {
+      // Her durumda (başarı, hata, atomik_gecis_basarisiz) job kümesinden çıkar
+      _activeJobIds.delete(job_id)
     }
   })
 
