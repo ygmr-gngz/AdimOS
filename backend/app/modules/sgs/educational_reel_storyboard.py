@@ -49,7 +49,7 @@ KURALLAR:
 """
 
 _SCENE_SCHEMA = """
-Storyboard JSON formatı — tam olarak 7 sahne döndür:
+Storyboard JSON formatı (sahne sayısı prompt'ta belirtilir):
 
 {
   "scenes": [
@@ -147,11 +147,14 @@ def generate_educational_reel_storyboard(
     brand: dict | None = None,
     budget_seconds: float | None = None,
     syllable_feedback: str | None = None,
+    scene_count: int | None = None,
 ) -> dict:
     """
-    EducationalReel120 composition için 7 sahnelik storyboard üretir.
+    EducationalReel120 composition için storyboard üretir.
+    scene_count verilmezse ceil(budget_seconds / 8.0) ile hesaplanır.
     Döner: tam storyboard dict (video_type, scenes, brand vb.)
     """
+    import math as _math
     from app.modules.content.pronunciation_dict import latex_to_spoken_turkish
 
     series_label = ""
@@ -162,24 +165,29 @@ def generate_educational_reel_storyboard(
 
     budget_note = ""
     if budget_seconds is not None:
-        import math as _math
-        _scene_count = 7  # EducationalReel120 sabit 7 sahne
+        _sc = scene_count if (scene_count and scene_count > 0) else _math.ceil(budget_seconds / 8.0)
+        _sc = max(1, _sc)
         _total_syl = round(budget_seconds * 4.8)
-        _syl_per_scene = round(_total_syl / _scene_count)
+        _syl_per_scene = round(_total_syl / _sc)
         _tolerance = max(3, round(_syl_per_scene * 0.15))
         budget_note = (
             f"\nHECE BÜTÇESİ (ZORUNLU): Toplam {_total_syl} hece "
-            f"({budget_seconds:.0f}s × 4.8 hece/s, {_scene_count} sahne).\n"
+            f"({budget_seconds:.0f}s × 4.8 hece/s, {_sc} sahne).\n"
             f"Her sahne voice_text'inde yaklaşık {_syl_per_scene} hece kullan "
             f"(±{_tolerance} tolerans, yani {_syl_per_scene - _tolerance}–{_syl_per_scene + _tolerance} arası).\n"
             f"Türkçede hece = metindeki ünlü harf sayısı (a,e,ı,i,o,ö,u,ü).\n"
         )
+    else:
+        _sc = scene_count if (scene_count and scene_count > 0) else 7
+
+    _sc_min = _sc - 2
+    _sc_max = _sc + 3
 
     feedback_note = ""
     if syllable_feedback:
         feedback_note = f"\nDÜZELTME GEREKLİ (önceki üretimden): {syllable_feedback}\n"
 
-    prompt = f"""Aşağıdaki SGS konusu için 7 sahnelik EducationalReel120 storyboard üret.
+    prompt = f"""Aşağıdaki SGS konusu için EducationalReel120 storyboard üret.
 
 Konu: {topic}
 Ders / Alan: {subject}
@@ -187,7 +195,7 @@ Video başlığı: {title}
 {series_label}{desc_note}{budget_note}{feedback_note}
 {_SCENE_SCHEMA}
 
-ÖNEMLİ: Tam olarak 7 sahne üret. Her sahnede voice_text zorunlu. Sadece JSON döndür.
+ÖNEMLİ: {_sc_min}–{_sc_max} sahne üret (ideal: {_sc}). Her sahnede voice_text zorunlu. Sadece JSON döndür.
 """
 
     try:

@@ -242,17 +242,20 @@ def _syllable_count(text: str) -> int:
     return sum(1 for ch in text if ch in TR_VOWELS)
 
 
-def _syllable_budget_params(budget_seconds: float, scene_count: int | None = None) -> tuple[int, int]:
+def _syllable_budget_params(
+    budget_seconds: float, scene_count: int | None = None
+) -> tuple[int, int, int]:
     """
-    (toplam_hece_bütçesi, sahne_başına_hece) hesaplar.
-    scene_count verilmezse ceil(budget_seconds / 6.0) kullanılır.
+    (toplam_hece_bütçesi, sahne_başına_hece, sahne_sayısı) hesaplar.
+    scene_count verilmezse ceil(budget_seconds / 8.0) kullanılır.
+    8.0 = ortalama sahne süresi saniye cinsinden (tek değişim noktası).
     """
     import math
-    n = scene_count if (scene_count and scene_count > 0) else math.ceil(budget_seconds / 6.0)
+    n = scene_count if (scene_count and scene_count > 0) else math.ceil(budget_seconds / 8.0)
     n = max(1, n)
     total = round(budget_seconds * 4.8)
     per_scene = round(total / n)
-    return total, per_scene
+    return total, per_scene, n
 
 
 def _check_syllable_budget(
@@ -264,7 +267,7 @@ def _check_syllable_budget(
     Toplam sahne hece sayısı %20'den fazla aşarsa (False, detay) döner.
     """
     scenes = storyboard.get("scenes", [])
-    total_budget, syl_per_scene = _syllable_budget_params(budget_seconds, len(scenes))
+    total_budget, syl_per_scene, _ = _syllable_budget_params(budget_seconds, len(scenes))
     tolerance = max(3, round(syl_per_scene * 0.15))
     lo, hi = syl_per_scene - tolerance, syl_per_scene + tolerance
 
@@ -299,6 +302,7 @@ def _regen_storyboard_for_duration(
     """
     if content_type == "reels_short":
         from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
+        _, _, _regen_sc = _syllable_budget_params(corrected_seconds)
         sb_new = generate_educational_reel_storyboard(
             title=payload.title,
             topic=payload.topic or payload.title,
@@ -308,6 +312,7 @@ def _regen_storyboard_for_duration(
             brand=brand,
             budget_seconds=corrected_seconds,
             syllable_feedback=correction_hint,
+            scene_count=_regen_sc,
         )
         sb_new["format"] = payload.format or "9:16"
         for i, s in enumerate(sb_new.get("scenes", []), 1):
@@ -777,6 +782,7 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
             # EducationalReel120 — GPT storyboard + EducationalReelScene bileşeni
             from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
             _reel_budget_sec = float(payload.requested_duration_seconds or 120)
+            _, _, _reel_sc = _syllable_budget_params(_reel_budget_sec)
             storyboard = generate_educational_reel_storyboard(
                 title=payload.title,
                 topic=payload.topic or payload.title,
@@ -785,6 +791,7 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                 description=payload.description or "",
                 brand=brand,
                 budget_seconds=_reel_budget_sec,
+                scene_count=_reel_sc,
             )
             storyboard["format"] = payload.format or "9:16"
             for i, s in enumerate(storyboard.get("scenes", []), 1):
@@ -806,6 +813,7 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                     brand=brand,
                     budget_seconds=_reel_budget_sec,
                     syllable_feedback=_syl_detail,
+                    scene_count=_reel_sc,
                 )
                 storyboard["format"] = payload.format or "9:16"
                 for i, s in enumerate(storyboard.get("scenes", []), 1):
@@ -1832,6 +1840,8 @@ def preview_storyboard(payload: PreviewPayload):
     try:
         if payload.type in ("reel", "educational_reel"):
             from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
+            _prev_budget = float(payload.requested_duration_seconds or 120)
+            _, _, _prev_sc = _syllable_budget_params(_prev_budget)
             storyboard = generate_educational_reel_storyboard(
                 title=payload.title,
                 topic=payload.topic or payload.title,
@@ -1839,6 +1849,8 @@ def preview_storyboard(payload: PreviewPayload):
                 content_series=payload.content_series,
                 description=payload.description or "",
                 brand=brand,
+                budget_seconds=_prev_budget,
+                scene_count=_prev_sc,
             )
         elif payload.type in ("konu_anlatimi", "lesson_long", "sgs_topic_video"):
             from app.modules.sgs.lesson_storyboard import generate_lesson_storyboard
