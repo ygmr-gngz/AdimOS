@@ -611,10 +611,21 @@ def _run_remotion_render(job_id: str, storyboard: dict, has_audio: bool = True) 
 
 # ── Arkaplan pipeline ─────────────────────────────────────────
 
-def _run_pipeline(job_id: str, payload: CreateVideoPayload):
+def _run_pipeline(
+    job_id: str,
+    payload: CreateVideoPayload,
+    _seed_corrected_sec: float | None = None,
+    _seed_hint: str | None = None,
+    _seed_turn: int = 0,
+):
     """
     Storyboard → TTS → Remotion render pipeline'ı.
     Eşzamanlı çalışma _pipeline_semaphore ile sınırlandırılır.
+
+    _seed_* parametreleri yalnızca render-sonrası süre kapalı döngüsü
+    (bkz. render_callback) tarafından kullanılır: postcheck ölçülen gerçek
+    süreyle storyboard'u yeniden ürettirmek için mevcut süre döngüsünü
+    (bkz. _run_pipeline_inner) belirli bir turdan başlatır.
     """
     acquired = _pipeline_semaphore.acquire(timeout=600)
     if not acquired:
@@ -625,12 +636,18 @@ def _run_pipeline(job_id: str, payload: CreateVideoPayload):
         return
 
     try:
-        _run_pipeline_inner(job_id, payload)
+        _run_pipeline_inner(job_id, payload, _seed_corrected_sec, _seed_hint, _seed_turn)
     finally:
         _pipeline_semaphore.release()
 
 
-def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
+def _run_pipeline_inner(
+    job_id: str,
+    payload: CreateVideoPayload,
+    _seed_corrected_sec: float | None = None,
+    _seed_hint: str | None = None,
+    _seed_turn: int = 0,
+):
     """Gerçek pipeline mantığı — semaphore altında çalışır."""
     from app.domain.content_type import normalize_content_type
     from app.errors.registry import PipelineErrorException
@@ -952,10 +969,21 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
         # ── 2. TTS + süre kapalı döngüsü (maks 2 yeniden üretim) ───────────
         # Her turda: storyboard → sahne kayıtları → TTS → süre doğrulaması.
         # Süre tolerans dışındaysa storyboard düzeltme ipucuyla yeniden üretilir.
-        _dur_correction_hint: str | None = None
-        _dur_corrected_sec: float = float(payload.requested_duration_seconds or 0)
+        # _seed_* doluysa bu çağrı render-sonrası kapalı döngüden (render_callback)
+        # tetiklenmiştir — gerçek ölçülen süreyle hesaplanmış düzeltme burada devralınır.
+        _dur_correction_hint: str | None = _seed_hint
+        _dur_corrected_sec: float = (
+            _seed_corrected_sec if _seed_corrected_sec is not None
+            else float(payload.requested_duration_seconds or 0)
+        )
+        # Tolerans tek kaynaktan hesaplanır — hem bu döngüde hem Remotion'a
+        # gönderilen storyboard'da (aşağıda) aynı değer kullanılır.
+        _dur_tolerance_sec: float | None = (
+            max(payload.requested_duration_seconds * 0.25, 20.0)
+            if payload.requested_duration_seconds else None
+        )
 
-        for _dur_turn in range(3):  # tur 0 = orijinal, tur 1-2 = yeniden üretim
+        for _dur_turn in range(_seed_turn, 3):  # tur 0 = orijinal, tur 1-2 = yeniden üretim
             if _dur_turn > 0:
                 logger.info(
                     "[video] %s duration döngüsü tur=%d yeniden üretim başlıyor: %s",
@@ -1175,7 +1203,7 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                     s.get("duration_seconds") or 0 for s in storyboard.get("scenes", [])
                 )
                 req = payload.requested_duration_seconds
-                post_tolerance = max(req * 0.25, 20.0)
+                post_tolerance = _dur_tolerance_sec
                 lo = req - post_tolerance
                 hi = req + post_tolerance
                 if tts_total_sec > 0 and not (lo <= tts_total_sec <= hi):
@@ -1211,6 +1239,14 @@ def _run_pipeline_inner(job_id: str, payload: CreateVideoPayload):
                         return
 
             break  # tolerans içinde veya süre kısıtı yok — döngüden çık
+
+        # Remotion tarafındaki hard-fail kapısı (_toleranceCheck, server/index.ts)
+        # bu iki alanı storyboard üzerinden okur — Python'daki tek kaynaktan besleniyor.
+        # Alanlar yoksa (requested_duration_seconds boş) Remotion kapısı no-op kalır,
+        # tıpkı bu döngünün de atlanması gibi (bilinçli, süre kısıtı olmayan içerikler için).
+        if payload.requested_duration_seconds:
+            storyboard["requested_duration_seconds"] = payload.requested_duration_seconds
+            storyboard["duration_tolerance_seconds"] = _dur_tolerance_sec
 
         # ── 3. Pre-render ses kapısı (v2 §6.2) ────────────────
         audio_errors = check_audio_urls(storyboard)
@@ -1506,14 +1542,13 @@ def reject_job(job_id: str, body: RejectBody = RejectBody()):
     return {"message": "Video reddedildi"}
 
 
-@router.post("/jobs/{job_id}/regenerate")
-def regenerate_job(job_id: str, background_tasks: BackgroundTasks):
-    job = _get_job(job_id)
-    sb = get_supabase_client()
-    sb.table("video_scenes").delete().eq("job_id", job_id).execute()
-    _set_status(job_id, "pending", {"storyboard": None, "video_url": None, "error_message": None})
-
-    # payload_json öncelikli — yoksa storyboard'dan geri çıkar
+def _rebuild_payload_from_job(job: dict) -> "CreateVideoPayload":
+    """
+    payload_json'dan (öncelikli) veya job satırından CreateVideoPayload yeniden kurar.
+    Tek kaynak: hem manuel /regenerate hem render-sonrası süre kapalı döngüsü
+    (render_callback) bu fonksiyonu kullanır — requested_duration_seconds ve
+    duration_tolerance_seconds dahil TÜM alanlar korunur.
+    """
     raw = job.get("payload_json") or {}
     if raw:
         questions_raw = None
@@ -1527,35 +1562,51 @@ def regenerate_job(job_id: str, background_tasks: BackgroundTasks):
                 )
                 for q in raw["questions"]
             ]
-        rebuilt = CreateVideoPayload(
-            type=raw.get("type", job["type"]),
-            title=raw.get("title", job["title"]),
+        return CreateVideoPayload(
+            type=raw.get("type", job.get("type")),
+            title=raw.get("title", job.get("title")),
             lesson_name=raw.get("lesson_name", job.get("lesson_name")),
             topic=raw.get("topic", job.get("topic")),
             description=raw.get("description"),
             format=raw.get("format", job.get("format", "16:9")),
             target_duration_minutes=raw.get("target_duration_minutes", job.get("target_duration_minutes")),
             questions=questions_raw,
+            requested_duration_seconds=raw.get("requested_duration_seconds"),
+            duration_tolerance_seconds=raw.get("duration_tolerance_seconds") or 15,
+            content_series=raw.get("content_series"),
+            content_track=raw.get("content_track"),
+            infographic_template=raw.get("infographic_template"),
+            pre_storyboard=raw.get("pre_storyboard"),
         )
-    else:
-        # Fallback: storyboard'dan soruları çıkar
-        storyboard = job.get("storyboard") or {}
-        questions_raw = []
-        for scene in storyboard.get("scenes", []):
-            if scene.get("component") == "QuestionScene":
-                questions_raw.append(QuizQuestion(
-                    text=scene.get("question_text", ""),
-                    options=[QuizOption(**o) for o in scene.get("options", [])],
-                    correct_label=scene.get("correct_label", "A"),
-                ))
-        rebuilt = CreateVideoPayload(
-            type=job["type"], title=job["title"],
-            lesson_name=job.get("lesson_name"), topic=job.get("topic"),
-            format=job.get("format", "16:9"),
-            target_duration_minutes=job.get("target_duration_minutes"),
-            questions=questions_raw or None,
-        )
+    # Fallback: storyboard'dan soruları çıkar (payload_json yoksa — eski işler)
+    storyboard = job.get("storyboard") or {}
+    questions_raw = []
+    for scene in storyboard.get("scenes", []):
+        if scene.get("component") == "QuestionScene":
+            questions_raw.append(QuizQuestion(
+                text=scene.get("question_text", ""),
+                options=[QuizOption(**o) for o in scene.get("options", [])],
+                correct_label=scene.get("correct_label", "A"),
+            ))
+    return CreateVideoPayload(
+        type=job["type"], title=job["title"],
+        lesson_name=job.get("lesson_name"), topic=job.get("topic"),
+        format=job.get("format", "16:9"),
+        target_duration_minutes=job.get("target_duration_minutes"),
+        questions=questions_raw or None,
+        requested_duration_seconds=job.get("requested_duration_seconds"),
+        duration_tolerance_seconds=job.get("duration_tolerance_seconds") or 15,
+    )
 
+
+@router.post("/jobs/{job_id}/regenerate")
+def regenerate_job(job_id: str, background_tasks: BackgroundTasks):
+    job = _get_job(job_id)
+    sb = get_supabase_client()
+    sb.table("video_scenes").delete().eq("job_id", job_id).execute()
+    _set_status(job_id, "pending", {"storyboard": None, "video_url": None, "error_message": None})
+
+    rebuilt = _rebuild_payload_from_job(job)
     background_tasks.add_task(_run_pipeline, job_id, rebuilt)
     return {"message": "Yeniden üretim başlatıldı", "job_id": job_id}
 
@@ -1686,8 +1737,11 @@ def generate_motivation(payload: GenerateMotivationPayload):
 
 # ── Render callback ───────────────────────────────────────────
 
+_MAX_POSTRENDER_DURATION_TURNS = 2  # render-sonrası süre kapalı döngüsü — en fazla 2 yeniden üretim
+
+
 @public_router.post("/render-callback")
-def render_callback(body: RenderCallback):
+def render_callback(body: RenderCallback, background_tasks: BackgroundTasks):
     """
     Remotion render servisi tamamlandığında çağırır.
 
@@ -1727,12 +1781,16 @@ def render_callback(body: RenderCallback):
     # ── Postcheck (P0-5) — 'done' kazanılır, varsayılan değil ────
     try:
         job_row = sb_cb.table("video_jobs").select(
-            "payload_json"
+            "payload_json, admin_detail, type, title, lesson_name, topic, "
+            "format, target_duration_minutes, storyboard"
         ).eq("id", body.job_id).execute().data
-        pj = (job_row[0].get("payload_json") or {}) if job_row else {}
+        job_full = job_row[0] if job_row else {}
+        pj = job_full.get("payload_json") or {}
         req_sec = pj.get("requested_duration_seconds")
         tol_sec = float(pj.get("duration_tolerance_seconds") or 15.0)
     except Exception:
+        job_full = {}
+        pj = {}
         req_sec = None
         tol_sec = 15.0
 
@@ -1758,6 +1816,67 @@ def render_callback(body: RenderCallback):
         logger.warning(f"[video] {body.job_id[:8]} postcheck raporu yazılamadı: {pc_exc}")
 
     if not report["all_passed"]:
+        # ── Render-sonrası süre kapalı döngüsü ────────────────────────────
+        # Postcheck'in ffprobe ile ölçtüğü GERÇEK süre, pre-render TTS toplamından
+        # sapmış olabilir (bkz. P1 doğrulama: job d9907932, tts-toplamı toleransı
+        # geçmişti ama render 109.2s çıktı). Bu durumda storyboard'u ölçülen
+        # gerçek sapmayla yeniden ürettirip en fazla _MAX_POSTRENDER_DURATION_TURNS
+        # kez yeniden render dene — hemen failed yazıp durma.
+        dur_check = report.get("duration_check") or {}
+        if (
+            report["first_failure_code"] == "duration_validation_failed"
+            and dur_check.get("actual_seconds")
+            and req_sec
+        ):
+            admin_detail = job_full.get("admin_detail") or {}
+            turn = int(admin_detail.get("duration_postrender_turn", 0))
+            if turn < _MAX_POSTRENDER_DURATION_TURNS:
+                actual = float(dur_check["actual_seconds"])
+                deviation = actual - req_sec
+                pct = abs(deviation / req_sec) * 100
+                scale = req_sec / actual if actual else 1.0
+                corrected_sec = max(min(req_sec * scale, req_sec * 1.5), req_sec * 0.5)
+                direction = "kısalt" if deviation > 0 else "uzat"
+                hint = (
+                    f"ÖNEMLİ DÜZELTME: Render edilmiş videonun ffprobe ile ölçülen gerçek "
+                    f"süresi {actual:.1f}s, hedef {req_sec:.0f}s. voice_text içeriklerini "
+                    f"%{pct:.0f} oranında {direction}. Sahne başına "
+                    f"{'20-25' if deviation > 0 else '28-35'} hece kullan."
+                )
+                next_turn = turn + 1
+                logger.warning(
+                    "[duration-loop] job=%s tur=%d/%d render_sonrasi=true hedef=%.0fs "
+                    "ölçülen=%.1fs sapma=%.1fs bütçe_saniye=%.1f",
+                    body.job_id[:8], next_turn, _MAX_POSTRENDER_DURATION_TURNS,
+                    req_sec, actual, deviation, corrected_sec,
+                )
+                sb_cb.table("video_jobs").update({
+                    "admin_detail": {**admin_detail, "duration_postrender_turn": next_turn},
+                }).eq("id", body.job_id).execute()
+                sb_cb.table("video_scenes").delete().eq("job_id", body.job_id).execute()
+                _set_status(body.job_id, "pending", {
+                    "video_url": None, "postcheck_report": report, "error_message": None,
+                })
+                rebuilt = _rebuild_payload_from_job({**job_full, "id": body.job_id})
+                # _seed_turn=2: storyboard'u bu düzeltmeyle bir kez yeniden üret,
+                # TTS ölçümü de toleransı geçerse render'a devam et; geçmezse
+                # (turn 2'de yeniden deneme hakkı olmadığından) hemen hard-fail —
+                # ikinci bir gereksiz Lambda render'ı denenmez.
+                background_tasks.add_task(
+                    _run_pipeline, body.job_id, rebuilt, corrected_sec, hint, 2,
+                )
+                logger.info(
+                    "[duration-loop] job=%s tur=%d yeniden üretim + render tetiklendi",
+                    body.job_id[:8], next_turn,
+                )
+                return {"ok": True}
+            else:
+                logger.error(
+                    "[duration-loop] job=%s tur hakkı tükendi (%d/%d) — "
+                    "duration_validation_failed ile durduruluyor",
+                    body.job_id[:8], turn, _MAX_POSTRENDER_DURATION_TURNS,
+                )
+
         _set_status(body.job_id, "failed", {
             "error_code": report["first_failure_code"],
             "error_message": report["first_failure_message"],
