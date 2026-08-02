@@ -289,7 +289,7 @@ def _check_syllable_budget(
     return True, None
 
 
-def _regen_storyboard_for_duration(
+def _generate_storyboard_for_regen(
     content_type: str,
     payload,
     brand: dict,
@@ -297,8 +297,9 @@ def _regen_storyboard_for_duration(
     correction_hint: str,
 ) -> dict | None:
     """
-    Süre düzeltmesiyle storyboard yeniden üretir.
+    Tek bir üretim denemesi — hece bütçesi doğrulaması yapmaz.
     Desteklenmeyen içerik tipleri için None döner.
+    _regen_storyboard_for_duration tarafından (gerekirse 2 kez) çağrılır.
     """
     if content_type == "reels_short":
         from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
@@ -369,6 +370,58 @@ def _regen_storyboard_for_duration(
         }
 
     return None  # soru_cozum / gorsel_post — yeniden üretim desteklenmiyor
+
+
+def _regen_storyboard_for_duration(
+    content_type: str,
+    payload,
+    brand: dict,
+    corrected_seconds: float,
+    correction_hint: str,
+    turn: int = 0,
+) -> tuple[dict | None, dict | None]:
+    """
+    Süre düzeltmesiyle storyboard yeniden üretir, ardından hece bütçesini
+    doğrular (en fazla 2 deneme). Bu doğrulama reels_short/motivasyon/
+    konu_anlatimi — _generate_storyboard_for_regen'in desteklediği TÜM
+    tiplerde uygulanır, yalnızca reels_short'a özel değildir.
+
+    Döner: (storyboard, None)                       → başarı
+           (None, None)                              → içerik tipi desteklenmiyor
+           (None, {"reason": ..., ...})               → 2 denemede de hece bütçesi
+                                                          aşıldı — çağıran job'u
+                                                          TTS'e göndermeden durdurmalı
+    """
+    sb_new = _generate_storyboard_for_regen(content_type, payload, brand, corrected_seconds, correction_hint)
+    if sb_new is None:
+        return None, None
+
+    feedback = correction_hint
+    for attempt in (1, 2):
+        scenes = sb_new.get("scenes", [])
+        total_budget, _, _ = _syllable_budget_params(corrected_seconds, len(scenes))
+        actual_syl = sum(_syllable_count(s.get("voice_text") or "") for s in scenes)
+        pct = ((actual_syl / total_budget) - 1) * 100 if total_budget else 0.0
+        ok, detail = _check_syllable_budget(sb_new, corrected_seconds)
+        logger.warning(
+            "[syllable-budget] tur=%d hedef_hece=%d üretilen_hece=%d sapma=%%%.0f deneme=%d/2",
+            turn, total_budget, actual_syl, pct, attempt,
+        )
+        if ok:
+            return sb_new, None
+        if attempt == 1:
+            feedback = detail or feedback
+            sb_new = _generate_storyboard_for_regen(content_type, payload, brand, corrected_seconds, feedback)
+            if sb_new is None:
+                return None, None
+
+    # 2 deneme sonunda hâlâ aşılıyor — sessizce TTS'e gönderilmez (çağıran durdurur).
+    return None, {
+        "reason": "syllable_budget_exceeded_after_regen",
+        "target_syllables": total_budget,
+        "actual_syllables": actual_syl,
+        "deviation_pct": round(pct, 1),
+    }
 
 
 def _ffprobe_duration(audio_bytes: bytes) -> tuple[float | None, str | None]:
@@ -989,10 +1042,29 @@ def _run_pipeline_inner(
                     "[video] %s duration döngüsü tur=%d yeniden üretim başlıyor: %s",
                     job_id[:8], _dur_turn, _dur_correction_hint,
                 )
-                _new_sb = _regen_storyboard_for_duration(
+                _new_sb, _budget_exceeded = _regen_storyboard_for_duration(
                     content_type, payload, brand,
                     _dur_corrected_sec, _dur_correction_hint or "",
+                    turn=_dur_turn,
                 )
+                if _budget_exceeded is not None:
+                    logger.error(
+                        "[syllable-budget] %s job durduruldu — 2 denemede de bütçe aşıldı: %s",
+                        job_id[:8], _budget_exceeded,
+                    )
+                    _set_status(job_id, "failed", {
+                        "error_code": "duration_validation_failed",
+                        "error_message": (
+                            f"Storyboard yeniden üretiminde hece bütçesi 2 denemede de aşıldı "
+                            f"(hedef {_budget_exceeded['target_syllables']} hece, "
+                            f"üretilen {_budget_exceeded['actual_syllables']} hece, "
+                            f"%{_budget_exceeded['deviation_pct']:.0f} fazla). "
+                            "TTS'e gönderilmedi."
+                        ),
+                        "admin_detail": {"budget_exceeded": _budget_exceeded},
+                        "quality_report": {"budget_exceeded": _budget_exceeded},
+                    })
+                    return
                 if _new_sb is None:
                     _set_status(job_id, "failed", {
                         "error_code": "duration_validation_failed",
