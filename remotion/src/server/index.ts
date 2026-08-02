@@ -36,7 +36,7 @@ import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 import { renderMediaOnLambda, getRenderProgress } from '@remotion/lambda/client'
 import WebSocket from 'ws'
 import type { RenderRequest, RenderResponse } from '../types'
-import { TRANSITION_FRAMES } from '../utils'
+import { TRANSITION_FRAMES, resolveSceneDurationSeconds } from '../utils'
 
 // ── Supabase client (modül düzeyinde bir kere oluştur) ───────────
 // Node 20'de native WebSocket yok; ws paketi transport olarak verilir.
@@ -305,17 +305,15 @@ function estimateTotalFrames(storyboard: any, jobId?: string): number {
   const tag = jobId ? ` job=${jobId}` : ''
   const scenes: any[] = Array.isArray(storyboard?.scenes) ? storyboard.scenes : []
 
-  const sceneSum = scenes.reduce((acc: number, s: any) => {
-    const v = Number(s.duration_seconds)
-    return acc + (Number.isFinite(v) ? v : 0)
-  }, 0)
-
-  if (!Number.isFinite(sceneSum) || sceneSum <= 0) {
-    throw new Error(
-      `duration_validation_failed: geçersiz sahne süreleri` +
-      ` (sahne=${scenes.length} toplam=${sceneSum})${tag}`,
-    )
+  if (scenes.length === 0) {
+    throw new Error(`duration_validation_failed: sahne yok${tag}`)
   }
+
+  // M9: sahne başına geçersiz duration_seconds artık 0'a sessizce düşmüyor —
+  // ilk geçersiz sahnede hemen hata (bkz. resolveSceneDurationSeconds, utils.ts).
+  const sceneSum = scenes.reduce((acc: number, s: any) => {
+    return acc + resolveSceneDurationSeconds(s.duration_seconds, s.id)
+  }, 0)
 
   const total = sceneSum + scenes.length * TRANSITION_SECONDS
   const frames = Math.round(total * FPS)
@@ -486,7 +484,9 @@ interface RenderResult {
   renderId:   string
   bucketName: string
   outputFile: string
-  costUsd:    number
+  // M6: null = costs.accruedSoFar hiç geçerli okunamadı (cost_tracking_broken) —
+  // 0 ile karıştırılmaz. "0" yalnızca gerçekten $0 ölçüldüyse kullanılır.
+  costUsd:    number | null
 }
 
 async function _doRender(
@@ -526,6 +526,14 @@ async function _doRender(
     codec:           'h264',
     imageFormat:     'jpeg',
     pixelFormat:     'yuv420p',
+    // M5: colorSpace verilmezse Remotion'ın DEFAULT_COLOR_SPACE'i 'default'
+    // olur ve -color_range tv EKLENMEZ (bkz. @remotion/renderer/dist/
+    // ffmpeg-args.js — bu bayrak yalnızca 'btu709'/'bt2020-ncl' için
+    // ekleniyor). JPEG ara kareler doğası gereği full-range olduğundan
+    // encoder pix_fmt'i yuvj420p (full-range) olarak etiketliyor — pixelFormat
+    // 'yuv420p' istense bile. 'bt709' zorlamak -color_range tv ekletir,
+    // standart (limited-range) yuv420p çıktısı garantilenir.
+    colorSpace:      'bt709',
     maxRetries:      1,
     framesPerLambda,
     privacy:         'private',
@@ -538,7 +546,9 @@ async function _doRender(
 
   const pollStart               = Date.now()
   let outputFile: string | null = null
-  let costUsd                   = 0
+  // M6: null = henüz hiç geçerli costs.accruedSoFar okunamadı. Sayı değilse
+  // 0 yazılmaz — cost_tracking_broken olarak yukarı taşınır.
+  let costUsd: number | null    = null
   let lastProgressTime          = Date.now()
   let lastPct                   = -1
   let lastCallbackPct           = -1
@@ -606,17 +616,16 @@ async function _doRender(
 
 function _sceneSummary(storyboard: any, compositionId: string, job_id: string, prefix: string) {
   const scenes: any[] = storyboard.scenes ?? []
+  // M9: geçersiz duration_seconds artık 0'a sessizce düşmüyor — bu noktada
+  // (render'a hemen girmeden önce) backend'in duration_source kapısı zaten
+  // her sahnenin ffprobe ile ölçüldüğünü garanti etmiş olmalı; geçersiz bir
+  // değer görülmesi veri bozulması demektir, hemen hata verilir.
   const totalSec = scenes.reduce((sum: number, s: any) => {
-    const d = Number(s.duration_seconds)
-    return sum + (isFinite(d) ? d : 0)
+    return sum + resolveSceneDurationSeconds(s.duration_seconds, s.id)
   }, 0)
   const audioReady   = scenes.filter((s: any) => s.tts_url).length
   const ffprobeCount = scenes.filter((s: any) => s.duration_source === 'ffprobe').length
   const captionCount = scenes.filter((s: any) => Array.isArray(s.captions) && s.captions.length > 0).length
-  const badDurations = scenes.filter((s: any) => {
-    const d = Number(s.duration_seconds)
-    return !isFinite(d) || d <= 0
-  }).length
 
   console.log(
     `[${prefix}] job=${job_id} composition=${compositionId}` +
@@ -625,9 +634,6 @@ function _sceneSummary(storyboard: any, compositionId: string, job_id: string, p
     ` duration_source=ffprobe:${ffprobeCount}` +
     ` captions=${captionCount}/${scenes.length}`,
   )
-  if (badDurations > 0) {
-    console.error(`[${prefix}] ${badDurations}/${scenes.length} sahnede duration_seconds geçersiz`)
-  }
   return { scenes, totalSec }
 }
 
@@ -759,7 +765,17 @@ app.post('/render', (req, res) => {
   }
 
   // ── Tür bazında props doğrulaması (hard fail) ─────────────────────────────
-  const _propsErr = _validateProps(storyboard, compositionId, normalizedType, job_id)
+  // M9: _sceneSummary artık geçersiz duration_seconds'ta throw ediyor (eskiden
+  // sessizce 0 sayıyordu) — bu try/catch olmadan Express'e uncaught exception
+  // olarak düşer ve düz 500 HTML dönerdi; diğer hata yollarıyla aynı 422 JSON
+  // şekline çevriliyor.
+  let _propsErr: { error: string; message: string } | null
+  try {
+    _propsErr = _validateProps(storyboard, compositionId, normalizedType, job_id)
+  } catch (propsThrown: any) {
+    console.error(`[lambda] duration_validation_failed job=${job_id}: ${propsThrown.message}`)
+    return res.status(422).json({ error: 'duration_validation_failed', message: propsThrown.message })
+  }
   if (_propsErr) {
     return res.status(422).json(_propsErr)
   }
@@ -842,11 +858,18 @@ app.post('/render', (req, res) => {
         throw err
       })
 
-      _addCost(result.costUsd)
+      if (result.costUsd === null) {
+        console.error(
+          `[lambda] cost_tracking_broken job=${job_id} composition=${compositionId} — ` +
+          `costs.accruedSoFar render boyunca hiç okunamadı, 0 yazılmıyor`,
+        )
+      } else {
+        _addCost(result.costUsd)
+      }
       console.log(
         `[lambda] render tamam (${totalElapsed()}s):` +
         ` composition=${compositionId}` +
-        ` maliyet=$${result.costUsd.toFixed(4)}` +
+        ` maliyet=${result.costUsd === null ? 'BILINMIYOR (cost_tracking_broken)' : `$${result.costUsd.toFixed(4)}`}` +
         ` günlük=$${_dailyCostUsd.toFixed(4)}`,
       )
 

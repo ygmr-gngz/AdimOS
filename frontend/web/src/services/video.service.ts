@@ -9,6 +9,7 @@ export type VideoType =
   | 'motivasyon'
   | 'gorsel_post'
 export type VideoFormat = '16:9' | '9:16'
+export type ContentTrack = 'ogrenci' | 'danisan'
 export type VideoStatus =
   | 'draft'
   | 'pending'
@@ -67,6 +68,7 @@ export interface CreateVideoPayload {
   pre_storyboard?: Record<string, unknown>
   infographic_template?: string
   content_series?: string
+  content_track: ContentTrack   // M8: backend'de zorunlu — burada da opsiyonel bırakılmadı
   storyboard_version?: number
   questions?: {
     text: string

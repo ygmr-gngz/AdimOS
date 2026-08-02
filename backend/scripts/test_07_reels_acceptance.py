@@ -7,7 +7,7 @@ Kontrol eder:
   TEST R3a — Reels sahne yapisi: 7-10 sahne, >=5 gorsel yuzey
   TEST R3b — CTA kurali: tek eylem, cta_text alaninda
   TEST R3c — Hook kurali: "Merhaba arkadaşlar" yasak
-  TEST R3d — content_track fallback: belirtilmemisse 'ogrenci' varsayiliyor
+  TEST R3d — content_track ZORUNLU (M8): eksik/gecersizse CreateVideoPayload reddeder
 
 Calistir: python scripts/test_07_reels_acceptance.py
 """
@@ -67,7 +67,7 @@ def _():
     # content_track=None → kontrol aktif değil (eski kayıtlar için)
     errors = check_marketing_compliance(storyboard, None)
     assert errors == [], f"None track'te kontrol calismamali: {errors}"
-    print(f"{PASS} content_track=None → marketing check devre disi")
+    print(f"{PASS} content_track=None -> marketing check devre disi")
 
 
 # ── TEST R2: ContentTrack enum ve content_type.py ─────────────
@@ -186,25 +186,38 @@ def _():
     print(f"{PASS} Hook kurali: 'Merhaba arkadaslar' yasak, diger hooklar gecerli")
 
 
-# ── TEST R3d: content_track fallback ─────────────────────────
+# ── TEST R3d: content_track ZORUNLU (M8) ───────────────────────
+# Eskiden: belirtilmemisse/gecersizse sessizce 'ogrenci' varsayilirdi.
+# M8 sonrasi: content_track Literal["ogrenci","danisan"], varsayilan YOK —
+# danisan hatti TÜRMOB uyum kapisi (check_marketing_compliance) sessizce
+# atlanabiliyordu. Artik eksik/gecersiz deger CreateVideoPayload'i
+# ValidationError ile reddediyor (FastAPI'de 422'ye donusur).
 
-@test("R3d_content_track_fallback_ogrenci")
+@test("R3d_content_track_required_rejects_missing")
 def _():
-    """
-    content_track belirtilmemisse veya gecersizse 'ogrenci' varsayilmali.
-    Bu mantik video.py create_video_job'da uygulanir; burada sadece mantigi test et.
-    """
-    def _resolve_track(raw):
-        if raw not in ("ogrenci", "danisan"):
-            return "ogrenci"
-        return raw
+    from pydantic import ValidationError
+    from app.api.routes.video import CreateVideoPayload
 
-    assert _resolve_track(None)      == "ogrenci"
-    assert _resolve_track("")        == "ogrenci"
-    assert _resolve_track("invalid") == "ogrenci"
-    assert _resolve_track("ogrenci") == "ogrenci"
-    assert _resolve_track("danisan") == "danisan"
-    print(f"{PASS} content_track fallback: None/gecersiz → 'ogrenci'")
+    for bad in (None, "", "invalid"):
+        kwargs = dict(type="reels_short", title="Test", format="9:16")
+        if bad is not None:
+            kwargs["content_track"] = bad
+        try:
+            CreateVideoPayload(**kwargs)
+            raise AssertionError(f"content_track={bad!r} kabul edildi, reddedilmeliydi")
+        except ValidationError:
+            pass
+    print(f"{PASS} content_track eksik/gecersizse CreateVideoPayload reddediyor (422)")
+
+
+@test("R3d_content_track_valid_values_accepted")
+def _():
+    from app.api.routes.video import CreateVideoPayload
+
+    for track in ("ogrenci", "danisan"):
+        p = CreateVideoPayload(type="reels_short", title="Test", format="9:16", content_track=track)
+        assert p.content_track == track
+    print(f"{PASS} content_track='ogrenci'/'danisan' kabul ediliyor")
 
 
 # ── Runner ────────────────────────────────────────────────────

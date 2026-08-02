@@ -61,75 +61,140 @@ KURALLAR:
 - Yasaklı ifadeler: "Teşekkür ederim", "Hoşçakalın", "İzlediğiniz için".
 """
 
-_SCENE_SCHEMA = """
+# Sahne başına örnek voice_text parçaları — _build_scene_schema bunları
+# hedef karakter aralığına (min_chars/max_chars) göre birleştirir/keser.
+# Sabit uzunlukta tek bir örnek DEĞİL — few-shot çıpası çağrılan bütçeye göre
+# değişir (örn. 30s/4 sahne ile 120s/15 sahne aynı örnek uzunluğunu kullanmamalı).
+_SCENE_EXAMPLE_PARTS: dict[int, list[str]] = {
+    1: [  # hook
+        "SGS sınavına girenlerin yaklaşık yüzde yetmişi bu soruyu yanlış yapıyor.",
+        "Sen de aynı hataya düşmeden önce bu kuralı birlikte netleştirelim.",
+        "Çünkü bu konu neredeyse her dönem karşımıza çıkıyor ve gözden kaçıyor.",
+    ],
+    2: [  # context
+        "Bu konu her dönem sınavda karşına çıkıyor ve çoğu aday puan kaybediyor.",
+        "Teorik bilgiyle pratik uygulamayı birbirine karıştırdığı için hata yapılıyor.",
+        "Bu yüzden konuyu baştan sağlam öğrenmek uzun vadede zaman kazandırır.",
+    ],
+    3: [  # content 1
+        "Kanunun ilgili maddesi net bir süre ve şart tanımlıyor.",
+        "Bu süre dolmadan gerekli işlemi yapmazsan yetki belgen geçersiz sayılır.",
+        "Geçersiz belgeyle görev yapmak hem senin hem kurumun sorumluluğunu artırır.",
+    ],
+    4: [  # content 2
+        "Örneğin bir aday süresini kaçırdığında yeniden başvuru sürecine girer.",
+        "Bu hem zaman hem de ek belge kaybı anlamına gelir, dikkatli olmak gerekir.",
+        "Sınavda bu tür örnek senaryolar sorularak bilgin pratikte test edilir.",
+    ],
+    5: [  # mistake
+        "Adayların çoğu 'süre dolsa da görevime devam ederim' sanıyor.",
+        "Bu tamamen yanlış — geçersiz belgeyle çalışmak kanuna aykırıdır.",
+        "Bu hatanın cezai sonucu olabilir, bu yüzden süreyi asla göz ardı etme.",
+    ],
+    6: [  # tip
+        "Soru kökünde süreyle ilgili bir ifade görürsen önce ilgili maddeyi hatırla.",
+        "Sonra şıklardaki sayılara değil kurala odaklanarak cevap ver.",
+        "Bu yöntemle benzer sorularda da hızlıca doğru şıkka ulaşabilirsin.",
+    ],
+    7: [  # outro / cta
+        "Özetle: süreyi takip et, belgeni zamanında yenile ve kuralı ezbere değil mantığıyla öğren.",
+        "Daha fazla soru için @adimmusavir'i takip etmeyi unutma.",
+        "Her hafta yeni bir SGS konusunu birlikte netleştiriyoruz.",
+    ],
+}
+
+
+def _fit_example_text(parts: list[str], target_min: int, target_max: int) -> str:
+    """
+    parts'i [target_min, target_max] karakter aralığına en yakın olacak
+    şekilde birleştirir/keser. Kısa kalırsa parça ekler, uzarsa kelime
+    sınırında keser — few-shot örneği çağrılan bütçeye göre ölçeklenir.
+    """
+    text = parts[0]
+    for extra in parts[1:]:
+        if len(text) >= target_min:
+            break
+        text = f"{text} {extra}"
+    if len(text) > target_max:
+        truncated = text[:target_max]
+        last_space = truncated.rfind(" ")
+        if last_space > target_max * 0.5:
+            truncated = truncated[:last_space]
+        text = truncated.rstrip(".,;: ") + "."
+    return text
+
+
+def _build_scene_schema(min_chars: int, max_chars: int) -> str:
+    ex = {i: _fit_example_text(parts, min_chars, max_chars) for i, parts in _SCENE_EXAMPLE_PARTS.items()}
+    return f"""
 Storyboard JSON formatı (sahne sayısı prompt'taki talimata göre belirlenir).
 ÖNEMLİ: Aşağıdaki voice_text ÖRNEKLERİ hem İÇERİK TÜRÜNÜ hem de HEDEF
-UZUNLUĞU gösterir — model somut örnekleri taklit eder, bu yüzden buradaki
-cümleler kısa/boş bırakılmadı. Kendi konunla değiştir ama YAKLAŞIK AYNI
-UZUNLUKTA yaz; asıl bağlayıcı sayı prompt'taki HECE BÜTÇESİ / KARAKTER
-SINIRI talimatıdır, bu örnekler değil.
+UZUNLUĞU (yaklaşık {min_chars}-{max_chars} karakter) gösterir — model somut
+örnekleri taklit eder. Kendi konunla değiştir ama YAKLAŞIK AYNI UZUNLUKTA
+yaz; asıl bağlayıcı sayı prompt'taki HECE BÜTÇESİ / KARAKTER SINIRI
+talimatıdır, bu örnekler değil.
 
-{
+{{
   "scenes": [
-    {
+    {{
       "id": 1,
       "component": "ReelHookScene",
       "visual_source": "text_only",
       "hook_text": "Kısa çarpıcı kanca (2 satır, maks 10 kelime)",
       "highlight_stat": "Dikkat çeken rakam/yüzde",
-      "voice_text": "SGS sınavına girenlerin yaklaşık yüzde yetmişi bu soruyu yanlış yapıyor. Sen de aynı hataya düşmeden önce bu kuralı birlikte netleştirelim."
-    },
-    {
+      "voice_text": {json.dumps(ex[1], ensure_ascii=False)}
+    }},
+    {{
       "id": 2,
       "component": "ReelConceptScene",
       "visual_source": "card",
       "title": "Neden bilmen gerekiyor?",
       "bullet_points": ["Madde 1", "Madde 2", "Madde 3"],
-      "voice_text": "Bu konu her dönem sınavda karşına çıkıyor ve çoğu aday teorik bilgiyle pratik uygulamayı birbirine karıştırdığı için puan kaybediyor."
-    },
-    {
+      "voice_text": {json.dumps(ex[2], ensure_ascii=False)}
+    }},
+    {{
       "id": 3,
       "component": "ReelConceptScene",
       "visual_source": "card",
       "title": "Ana Kural / Birinci Bilgi",
       "bullet_points": ["Madde 1", "Madde 2", "Madde 3", "Madde 4"],
-      "voice_text": "Kanunun ilgili maddesi net bir süre ve şart tanımlıyor. Bu süre dolmadan gerekli işlemi yapmazsan yetki belgen geçersiz sayılır ve görev yapamazsın."
-    },
-    {
+      "voice_text": {json.dumps(ex[3], ensure_ascii=False)}
+    }},
+    {{
       "id": 4,
       "component": "ReelConceptScene",
       "visual_source": "card",
       "title": "İkinci Bilgi / Örnek",
       "bullet_points": ["Madde 1", "Madde 2", "Madde 3"],
-      "voice_text": "Örneğin bir aday süresini kaçırdığında yeniden başvuru sürecine girer; bu hem zaman hem de ek belge kaybı anlamına gelir, dikkatli ol."
-    },
-    {
+      "voice_text": {json.dumps(ex[4], ensure_ascii=False)}
+    }},
+    {{
       "id": 5,
       "component": "ReelMistakeScene",
       "visual_source": "card",
       "title": "Dikkat!",
       "common_mistake": "Sık yapılan hatanın 1-2 cümlelik açıklaması",
-      "voice_text": "Adayların çoğu 'süre dolsa da görevime devam ederim' sanıyor. Bu tamamen yanlış — geçersiz belgeyle çalışmak kanuna aykırıdır ve cezai sonucu vardır."
-    },
-    {
+      "voice_text": {json.dumps(ex[5], ensure_ascii=False)}
+    }},
+    {{
       "id": 6,
       "component": "ReelExamTipScene",
       "visual_source": "card",
       "title": "Sınav İpucu",
       "exam_tip": "Sınava özel pratik ipucu — 1-2 cümle",
-      "voice_text": "Soru kökünde süreyle ilgili bir ifade görürsen önce ilgili maddeyi hatırla, sonra şıklardaki sayılara değil kurala odaklanarak cevap ver."
-    },
-    {
+      "voice_text": {json.dumps(ex[6], ensure_ascii=False)}
+    }},
+    {{
       "id": 7,
       "component": "ReelCtaScene",
       "visual_source": "text_only",
       "title": "Özet",
       "bullet_points": ["Özet madde 1", "Özet madde 2", "Özet madde 3"],
       "cta_text": "Daha fazla SGS sorusu için @adimmusavir'i takip et!",
-      "voice_text": "Özetle: süreyi takip et, belgeni zamanında yenile ve kuralı ezbere değil mantığıyla öğren. Daha fazla soru için @adimmusavir'i takip etmeyi unutma."
-    }
+      "voice_text": {json.dumps(ex[7], ensure_ascii=False)}
+    }}
   ]
-}
+}}
 """
 
 # segment_type → component adı eşlemesi (post-processing fallback)
@@ -211,9 +276,16 @@ def generate_educational_reel_storyboard(
         )
     else:
         _sc = scene_count if (scene_count and scene_count > 0) else 7
+        # budget_seconds verilmediğinde de few-shot örneği makul bir uzunlukta
+        # olmalı — DEFAULT_DURATION_SECONDS (Remotion tarafı, 15s/sahne) ile
+        # tutarlı bir orta değer.
+        _default_syl_per_scene = round(15 * TR_SPS)
+        min_chars = round(_default_syl_per_scene * CHARS_PER_SYLLABLE * 0.85)
+        max_chars = round(_default_syl_per_scene * CHARS_PER_SYLLABLE * 1.15)
 
     _sc_min = _sc - 2
     _sc_max = _sc + 3
+    _scene_schema = _build_scene_schema(min_chars, max_chars)
 
     def _attempt(extra_feedback: str) -> list[dict]:
         """Tek bir GPT üretim denemesi — prompt kur, çağır, sahneleri normalize et."""
@@ -226,7 +298,7 @@ Konu: {topic}
 Ders / Alan: {subject}
 Video başlığı: {title}
 {series_label}{desc_note}{budget_note}{feedback_note}
-{_SCENE_SCHEMA}
+{_scene_schema}
 
 ÖNEMLİ: {_sc_min}–{_sc_max} sahne üret (ideal: {_sc}). Her sahnede voice_text zorunlu. Sadece JSON döndür.
 """

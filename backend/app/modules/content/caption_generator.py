@@ -195,6 +195,46 @@ def _timing_from_whisper(
     return entries
 
 
+def transcribe_word_timestamps(audio_bytes: bytes, scene_index: int | str = "?") -> Optional[list[dict]]:
+    """
+    TTS ses baytlarını Whisper'a geri gönderip kelime bazlı zaman damgası
+    çıkarır. OpenAI TTS (audio.speech) zaman damgası döndürmez — bu yüzden
+    üretilen ses ayrıca transkript edilir. Tahmin değil ölçüm: kelime
+    zamanlaması sesin kendisinden çıkarılır.
+
+    Başarısızlıkta None döner ve hatayı loglar (sessizce yutmaz) — çağıran
+    bu durumda generate_captions'ı word_timestamps=None ile çağırır, ki bu
+    da açıkça daha düşük hassasiyetli fast_path'e düşer (yine loglanır,
+    bkz. generate_captions içindeki "fast path'e düşülüyor" uyarısı).
+    """
+    import io
+
+    from openai import OpenAI
+
+    from app.core.config import settings
+
+    try:
+        client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=60.0)
+        audio_file = io.BytesIO(audio_bytes)
+        audio_file.name = "scene.mp3"
+        result = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            response_format="verbose_json",
+            timestamp_granularities=["word"],
+        )
+    except Exception as exc:
+        logger.error(f"[caption] sahne {scene_index} whisper transkript hatası: {exc}")
+        return None
+
+    words = getattr(result, "words", None)
+    if not words:
+        logger.error(f"[caption] sahne {scene_index} whisper kelime zaman damgası döndürmedi")
+        return None
+
+    return [{"word": w.word, "start": w.start, "end": w.end} for w in words]
+
+
 def generate_captions(
     voice_text: str,
     total_seconds: float,

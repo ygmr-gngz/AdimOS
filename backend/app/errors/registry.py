@@ -108,6 +108,10 @@ REGISTRY: dict[str, dict[str, Any]] = {
         "retryable": False,
         "user_message": "Altyazı üretilemedi veya sesle hizalanmadı.",
     },
+    "lufs_validation_failed": {
+        "retryable": False,
+        "user_message": "Ses seviyesi hedef aralığın (-18..-14 LUFS) dışında.",
+    },
     "preflight_failed": {
         "retryable": False,
         "user_message": "Render altyapısı ön kontrolü başarısız.",

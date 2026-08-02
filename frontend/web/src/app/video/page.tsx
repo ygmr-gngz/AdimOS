@@ -534,6 +534,12 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
         target_duration_minutes: targetMinutes,
         requested_duration_seconds: targetMinutes * 60,  // saniye — backend kalite kapısı için
         duration_tolerance_seconds: 8,
+        // M8: backend content_track'i artık zorunlu kılıyor (danışan hattı TÜRMOB
+        // uyum kapısını buradan tetikliyor). Bu panelde henüz hat seçici UI yok —
+        // mevcut davranışla birebir aynı ('ogrenci'), ama artık backend'in sessiz
+        // varsayımına değil buradaki açık değere dayanıyor. Danışan hattı içerik
+        // üretimi gerektiğinde burada bir seçici eklenmeli.
+        content_track: 'ogrenci',
         infographic_template: type === 'gorsel_post' ? infographicTemplate : undefined,
         questions: type === 'soru_cozum' ? questions : undefined,
       })

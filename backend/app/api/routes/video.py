@@ -2,7 +2,7 @@
 import logging
 import time
 import uuid
-from typing import Optional, List
+from typing import Optional, List, Literal
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 import math
 import traceback as _traceback
@@ -18,6 +18,7 @@ from app.modules.content.quality_gates import (
     check_audio_urls,
     check_marketing_compliance,
     run_postcheck,
+    normalize_loudness,
 )
 from app.modules.content.content_dedup import check_content_duplicate, save_content_fingerprint
 
@@ -68,9 +69,11 @@ class CreateVideoPayload(BaseModel):
     # İçerik tekrar engeli (Section 2)
     content_series: Optional[str] = None   # cikmis_soru | iki_dakikada_sgs | sik_hata | ...
     storyboard_version: Optional[int] = None  # yeniden oluşturma sayacı
-    # Hedef kitle hattı (Bölüm 0.1) — 'ogrenci' | 'danisan'
-    # Zorunlu alan; None ise 'ogrenci' varsayılır ve uyarı loglanır.
-    content_track: Optional[str] = None
+    # Hedef kitle hattı (Bölüm 0.1) — 'ogrenci' | 'danisan'.
+    # M8: ZORUNLU alan, varsayılan YOK. Danışan hattı (check_marketing_compliance)
+    # TÜRMOB uyum kapısını bu alandan tetikler — sessiz "ogrenci" varsayımı bu
+    # kapıyı görünmeden atlatabiliyordu. Eksik/geçersiz değer → 422 (Pydantic).
+    content_track: Literal["ogrenci", "danisan"]
 
     @field_validator("requested_duration_seconds", "duration_tolerance_seconds", mode="before")
     @classmethod
@@ -1147,6 +1150,13 @@ def _run_pipeline_inner(
                             _tts_hard_fail = True
                             break
 
+                    # ── Ses normalizasyonu (M4) — hedef -16 LUFS ────────────
+                    # Sessizlik kontrolünden SONRA (ham TTS'in gerçekten
+                    # sessiz olup olmadığını maskelemeyelim), yüklemeden ÖNCE.
+                    # Başarısızsa normalize_loudness ham ses döner (loglanır);
+                    # kalıcı sapmayı postcheck'teki LUFS kapısı yakalar.
+                    audio_bytes = normalize_loudness(audio_bytes)
+
                     filename = f"{job_id}_{scene_row['scene_index']}.mp3"
                     tts_url = _upload_tts(audio_bytes, filename)
                     audio_duration, ffprobe_err = _ffprobe_duration(audio_bytes)
@@ -1165,6 +1175,29 @@ def _run_pipeline_inner(
                             "[video] %s sahne %s ffprobe=%.2fs duration_source=ffprobe",
                             job_id, scene_row["scene_index"], audio_duration,
                         )
+
+                        # ── Altyazı (M3) — yalnızca 9:16 (CaptionOverlay diğer
+                        # formatlarda kapalı; gereksiz Whisper maliyeti önlenir) ──
+                        captions: list[dict] = []
+                        if storyboard.get("format") == "9:16":
+                            from app.modules.content.caption_generator import (
+                                generate_captions, transcribe_word_timestamps,
+                            )
+                            word_ts = transcribe_word_timestamps(
+                                audio_bytes, scene_index=scene_row["scene_index"],
+                            )
+                            captions = generate_captions(
+                                voice_text=voice_text,
+                                total_seconds=audio_duration,
+                                start_offset=0.0,   # sahne-göreli — Remotion kompozisyon offset'ini kendi ekliyor
+                                word_timestamps=word_ts,
+                            )
+                            if not captions:
+                                logger.error(
+                                    "[caption] %s sahne %s altyazı üretilemedi (word_ts=%s)",
+                                    job_id[:8], scene_row["scene_index"], bool(word_ts),
+                                )
+                            scene_update["captions"] = captions
                     else:
                         # "estimated" yolu yok — hard fail
                         scene_update = {
@@ -1193,13 +1226,34 @@ def _run_pipeline_inner(
                             },
                         )
 
-                    sb.table("video_scenes").update(scene_update).eq("id", scene_row["id"]).execute()
+                    try:
+                        sb.table("video_scenes").update(scene_update).eq("id", scene_row["id"]).execute()
+                    except Exception as db_exc:
+                        # M3 savunması: video_scenes.captions kolonunun canlı DB'de
+                        # var olduğu migration'dan (014_p0_schema_fixes.sql) doğrulanamadı
+                        # — o migration'ın canlıya hiç uygulanmadığı zaten biliniyor
+                        # (bkz. render_cost_usd postmortem). Kolon yoksa TTS'in kendisi
+                        # başarılıyken bu yüzden job'un tamamı düşmesin — captions'sız
+                        # tekrar dene, açıkça logla (sessiz değil).
+                        if "captions" in scene_update:
+                            logger.error(
+                                "[caption] %s sahne %s video_scenes güncellemesi captions "
+                                "alanıyla başarısız (kolon eksik olabilir) — captions'sız "
+                                "yeniden deneniyor: %s",
+                                job_id[:8], scene_row["scene_index"], db_exc,
+                            )
+                            retry_update = {k: v for k, v in scene_update.items() if k != "captions"}
+                            sb.table("video_scenes").update(retry_update).eq("id", scene_row["id"]).execute()
+                        else:
+                            raise
 
                     for s in storyboard["scenes"]:
                         if s["id"] - 1 == scene_row["scene_index"]:
                             s["tts_url"] = tts_url
                             s["duration_seconds"] = duration
                             s["duration_source"] = duration_source
+                            if "captions" in scene_update:
+                                s["captions"] = scene_update["captions"]
                             break
 
                     logger.info(
@@ -1370,6 +1424,30 @@ def _run_pipeline_inner(
             })
             return
 
+        # ── 3c. Altyazı kapısı (M3) — 9:16 formatlarda caption zorunlu ────
+        # CaptionOverlay 9:16'da render'a girer; caption'sız 9:16 render
+        # sessizce devam etmiyor — hard fail.
+        if storyboard.get("format") == "9:16":
+            missing_captions = [
+                s.get("id", i)
+                for i, s in enumerate(storyboard.get("scenes", []))
+                if (s.get("voice_text") or "").strip() and not s.get("captions")
+            ]
+            if missing_captions:
+                logger.error(
+                    f"[caption] {job_id[:8]} caption_gate: "
+                    f"{len(missing_captions)} sahnede altyazı yok, render bloklandı: {missing_captions}"
+                )
+                _set_status(job_id, "failed", {
+                    "error_code": "caption_validation_failed",
+                    "error_message": (
+                        f"{len(missing_captions)} sahne için altyazı üretilemedi "
+                        "(9:16 formatta zorunlu). Render başlatılmadı."
+                    ),
+                    "admin_detail": {"missing_caption_scene_ids": missing_captions},
+                })
+                return
+
         # ── 4. Remotion render ─────────────────────────────────
         _run_remotion_render(job_id, storyboard)
 
@@ -1456,6 +1534,12 @@ def recover_pending_jobs():
                 format=raw.get("format", job.get("format", "16:9")),
                 target_duration_minutes=raw.get("target_duration_minutes", job.get("target_duration_minutes")),
                 questions=questions_raw,
+                # M8: content_track artık zorunlu (Literal) — bu recovery yolu
+                # eski (bu alan zorunlu olmadan önce oluşturulmuş) job'ları da
+                # yeniden kurabilmeli; payload_json'da yoksa 'ogrenci' varsayımı
+                # burada BİLİNÇLİ bir geriye-dönük-uyumluluk fallback'i, yeni
+                # job oluşturmadaki sessiz varsayılanla karıştırılmamalı.
+                content_track=raw.get("content_track") or "ogrenci",
             )
             t = threading.Thread(target=_run_pipeline, args=(job["id"], rebuilt), daemon=True)
             t.start()
@@ -1528,11 +1612,8 @@ def create_video_job(payload: CreateVideoPayload, background_tasks: BackgroundTa
         raise HTTPException(status_code=422, detail=f"Payload hatası: {e}")
 
     try:
-        track = payload.content_track
-        if track not in ("ogrenci", "danisan"):
-            logger.warning(f"[video] {job_id[:8]} content_track belirtilmemiş — 'ogrenci' varsayıldı")
-            track = "ogrenci"
-
+        # M8: content_track artık Pydantic seviyesinde zorunlu (Literal) —
+        # buraya ulaştıysa geçerli "ogrenci"/"danisan" değeri garanti.
         r = sb.table("video_jobs").insert({
             "id": job_id,
             "type": payload.type,
@@ -1544,7 +1625,7 @@ def create_video_job(payload: CreateVideoPayload, background_tasks: BackgroundTa
             "status": "pending",
             "payload_json": payload_json,
             "idempotency_key": idem_key,
-            "content_track": track,
+            "content_track": payload.content_track,
         }).execute()
     except Exception as e:
         logger.error(f"[video] DB insert hatası: {e}", exc_info=True)
@@ -1662,7 +1743,9 @@ def _rebuild_payload_from_job(job: dict) -> "CreateVideoPayload":
             requested_duration_seconds=raw.get("requested_duration_seconds"),
             duration_tolerance_seconds=raw.get("duration_tolerance_seconds") or 15,
             content_series=raw.get("content_series"),
-            content_track=raw.get("content_track"),
+            # M8: eski job'larda (zorunlu olmadan önce) content_track boş
+            # olabilir — geriye dönük uyumluluk fallback'i (bkz. recovery yolu notu).
+            content_track=raw.get("content_track") or "ogrenci",
             infographic_template=raw.get("infographic_template"),
             pre_storyboard=raw.get("pre_storyboard"),
         )
@@ -1684,6 +1767,7 @@ def _rebuild_payload_from_job(job: dict) -> "CreateVideoPayload":
         questions=questions_raw or None,
         requested_duration_seconds=job.get("requested_duration_seconds"),
         duration_tolerance_seconds=job.get("duration_tolerance_seconds") or 15,
+        content_track=job.get("content_track") or "ogrenci",
     )
 
 
@@ -1847,7 +1931,7 @@ def render_callback(body: RenderCallback, background_tasks: BackgroundTasks):
         logger.error(f"[video] {body.job_id[:8]} render_failed: {body.error}")
         return {"ok": True}
 
-    # ── Maliyet kaydı (P0-7) ─────────────────────────────────────
+    # ── Maliyet kaydı (P0-7 / M6) ─────────────────────────────────
     cost_usd = body.cost_lambda_usd
     if cost_usd is not None and cost_usd > 0:
         try:
@@ -1855,15 +1939,26 @@ def render_callback(body: RenderCallback, background_tasks: BackgroundTasks):
                 "cost_lambda_usd": cost_usd,
             }).eq("id", body.job_id).execute()
             logger.info(
-                f"[video] {body.job_id[:8]} render_cost_usd=${cost_usd:.4f} "
+                f"[video] {body.job_id[:8]} cost_lambda_usd=${cost_usd:.4f} "
                 f"elapsed={body.elapsed_seconds}s render_id={body.render_id}"
             )
         except Exception as cost_exc:
             logger.warning(f"[video] {body.job_id[:8]} maliyet yazılamadı: {cost_exc}")
     elif cost_usd is None:
+        # Bridge costs.accruedSoFar'ı hiç okuyamadı (M6: cost_tracking_broken) —
+        # sadece loglamak yetmez, kalite raporunda görünür olmalı.
         logger.warning(
-            f"[video] {body.job_id[:8]} cost_lambda_usd=null — bridge maliyet bilgisi gönderemiyor"
+            f"[video] {body.job_id[:8]} cost_lambda_usd=null — cost_tracking_broken "
+            "(bridge maliyet bilgisi okuyamadı)"
         )
+        try:
+            existing = sb_cb.table("video_jobs").select("admin_detail").eq("id", body.job_id).execute()
+            prior_admin_detail = (existing.data or [{}])[0].get("admin_detail") or {}
+            sb_cb.table("video_jobs").update({
+                "admin_detail": {**prior_admin_detail, "cost_tracking_broken": True},
+            }).eq("id", body.job_id).execute()
+        except Exception as admin_exc:
+            logger.warning(f"[video] {body.job_id[:8]} cost_tracking_broken admin_detail yazılamadı: {admin_exc}")
     # cost_usd == 0 → $0 yazmak yerine null bırak (ölçülemeyen değeri maskeleme)
 
     # ── Postcheck (P0-5) — 'done' kazanılır, varsayılan değil ────

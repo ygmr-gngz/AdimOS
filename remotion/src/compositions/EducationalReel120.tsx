@@ -18,11 +18,9 @@ import { RuleBoxScene } from '../scenes/RuleBoxScene'
 import { CommonMistakeScene } from '../scenes/CommonMistakeScene'
 import { JournalEntryScene } from '../scenes/JournalEntryScene'
 import { FPS } from '../brand'
-import { TRANSITION_FRAMES } from '../utils'
+import { TRANSITION_FRAMES, resolveSceneDurationSeconds } from '../utils'
 
 interface Props { storyboard: StoryboardJSON }
-
-const DEFAULT_DURATION_SECONDS = 15
 
 function ReelScene({ scene, brand }: { scene: Record<string, unknown>; brand: unknown }) {
   const comp = scene.component as string
@@ -80,10 +78,7 @@ export function EducationalReel120({ storyboard }: Props) {
   let cursor = 0
   const timings = scenes.map(scene => {
     const start = cursor
-    const raw = scene.duration_seconds as number | string | undefined | null
-    const safeSec = (typeof raw === 'number' && isFinite(raw) && raw > 0) ? raw
-      : (typeof raw === 'string' && Number(raw) > 0) ? Number(raw)
-      : DEFAULT_DURATION_SECONDS
+    const safeSec = resolveSceneDurationSeconds(scene.duration_seconds, scene.id)
     const durationFrames = Math.max(TRANSITION_FRAMES + 1, Math.round(safeSec * FPS) + TRANSITION_FRAMES)
     cursor += durationFrames
     return { scene, start, durationFrames }
@@ -129,27 +124,8 @@ export function EducationalReel120({ storyboard }: Props) {
 
 export function getReelTotalFrames(storyboard: StoryboardJSON | undefined): number {
   const scenes = storyboard?.scenes ?? []
-  let total = 0
-  // TEŞHİS LOGU — 65.35s(TTS) vs 105.0s(render) sapmasının kaynağını bulmak için.
-  // calculateMetadata Lambda'nın kendi Chromium sürecinde çalışır; bu console.log
-  // CloudWatch'a düşer. Kök neden bulununca kaldırılacak.
-  for (const s of scenes) {
-    const raw = s.duration_seconds as number | string | undefined | null
-    const safeSec = (typeof raw === 'number' && isFinite(raw) && raw > 0) ? raw
-      : (typeof raw === 'string' && Number(raw) > 0) ? Number(raw)
-      : DEFAULT_DURATION_SECONDS
-    const durationFrames = Math.max(TRANSITION_FRAMES + 1, Math.round(safeSec * FPS) + TRANSITION_FRAMES)
-    total += durationFrames
-    // eslint-disable-next-line no-console
-    console.log(
-      `[getReelTotalFrames] scene=${s.id} raw_duration_seconds=${JSON.stringify(raw)}` +
-      ` (typeof=${typeof raw}) safeSec=${safeSec} durationFrames=${durationFrames}`,
-    )
-  }
-  // eslint-disable-next-line no-console
-  console.log(
-    `[getReelTotalFrames] scenes=${scenes.length} totalFrames=${total}` +
-    ` totalSec=${(total / FPS).toFixed(2)}`,
-  )
-  return total
+  return scenes.reduce((acc, s) => {
+    const safeSec = resolveSceneDurationSeconds(s.duration_seconds, s.id)
+    return acc + Math.max(TRANSITION_FRAMES + 1, Math.round(safeSec * FPS) + TRANSITION_FRAMES)
+  }, 0)
 }

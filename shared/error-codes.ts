@@ -17,6 +17,7 @@ export const ERROR_CODES = [
   "unicode_validation_failed",
   "failed_visual_validation",
   "caption_validation_failed",
+  "lufs_validation_failed",
   "preflight_failed",
   "duplicate_content_detected",
   "job_already_running",
@@ -60,6 +61,8 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
     "Video yeterli görsel çeşitliliğe sahip değil.",
   caption_validation_failed:
     "Altyazı üretilemedi veya sesle hizalanmadı.",
+  lufs_validation_failed:
+    "Ses seviyesi hedef aralığın (-18..-14 LUFS) dışında.",
   preflight_failed:
     "Render altyapısı ön kontrolü başarısız.",
   duplicate_content_detected:
@@ -84,6 +87,7 @@ export const NON_RETRYABLE_CODES = new Set<ErrorCode>(
       "unicode_validation_failed",
       "failed_visual_validation",
       "caption_validation_failed",
+      "lufs_validation_failed",
       "preflight_failed",
       "duplicate_content_detected",
       "job_already_running",

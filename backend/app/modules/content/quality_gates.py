@@ -66,15 +66,15 @@ def check_storyboard_quality(storyboard: dict, video_type: str) -> list[str]:
     if missing_voice:
         warnings.append(f"voice_text eksik sahne id'leri: {missing_voice}")
 
-    # duration_seconds tipi
-    bad_dur = [
-        s.get("id", i+1)
-        for i, s in enumerate(scenes)
-        if not isinstance(s.get("duration_seconds"), (int, float))
-        or s.get("duration_seconds", 0) <= 0
-    ]
-    if bad_dur:
-        warnings.append(f"duration_seconds hatalı/sıfır sahne id'leri: {bad_dur}")
+    # NOT (M7): duration_seconds burada KASITLI olarak kontrol edilmiyor.
+    # Bu fonksiyon storyboard'u LLM üretiminden hemen sonra, TTS'ten ÖNCE
+    # çalışır — duration_seconds şemadan bilinçli çıkarıldı (LLM süre
+    # yazamaz, süre yalnızca ffprobe ile ölçülür). Yani bu noktada her
+    # zaman eksik/geçersizdir; eski "duration_seconds hatalı/sıfır" uyarısı
+    # bu yüzden %100 yanlış-pozitifti ve gerçek bir uyarı taşımıyordu.
+    # Asıl kapı render öncesi, TTS SONRASI çalışır — duration_source
+    # kapısı (video.py, "── 3b." — duration_source != 'ffprobe' olan
+    # sahne varsa render'ı hard-fail eder, bu soft uyarıdan çok daha güçlü).
 
     # Gerekli bileşen alanları
     for s in scenes:
@@ -86,14 +86,13 @@ def check_storyboard_quality(storyboard: dict, video_type: str) -> list[str]:
         if comp == "EducationalReelScene" and not s.get("segment_type"):
             warnings.append(f"Sahne {s.get('id')}: EducationalReelScene için segment_type zorunlu.")
 
-    # Toplam süre uyarısı (lesson için)
-    if video_type in ("konu_anlatimi", "lesson", "lesson_long", "sgs_topic_video"):
-        total_sec = sum(s.get("duration_seconds") or 0 for s in scenes if isinstance(s.get("duration_seconds"), (int, float)))
-        if total_sec < 1080:
-            warnings.append(
-                f"Konu anlatımı toplam süresi kısa: {total_sec:.0f}s < 1080s (18dk). "
-                "TTS sonrası uzayacak ama storyboard'u gözden geçir."
-            )
+    # NOT (M7): "Toplam süre uyarısı (lesson için)" kaldırıldı — aynı kök
+    # neden. lesson_storyboard.py'nin kendi şeması LLM'e çoğu sahne için
+    # "duration_seconds: 0 (TTS sonrası hesaplanır — bu alanı 0 bırak)"
+    # talimatı veriyor. Yani bu toplam, bu fonksiyon çalıştığı noktada
+    # (TTS'ten önce) neredeyse her zaman ~0 çıkar ve uyarı hep tetiklenirdi.
+    # Gerçek süre kontrolü TTS sonrası, ölçülmüş veriyle yapılıyor (bkz.
+    # video.py duration kapalı döngüsü — [duration-loop] logları).
 
     return warnings
 
@@ -186,6 +185,95 @@ def check_audio_volume(audio_bytes: bytes) -> tuple[bool, float]:
                 os.unlink(tmp_path)
             except OSError:
                 pass
+
+
+# ── 3b. Ses normalizasyonu (LUFS) ─────────────────────────────
+# TTS çıktısında normalize edilir (final mix'te değil): Remotion/Lambda
+# render zinciri özel bir audio-mix adımı yapmıyor, sahne ses dosyalarını
+# olduğu gibi çalıyor — bu yüzden kaynakta normalize etmek final videoyu da
+# hedefe getirir. "final mix'te normalize et" seçeneği Lambda render
+# pipeline'ına özel bir post-processing adımı eklemeyi gerektirir; bu,
+# statik/izole doğrulanamayan ve bu görevin dışındaki bir Remotion/Lambda
+# değişikliği olurdu.
+_LUFS_TARGET  = -16.0
+_LUFS_TP      = -1.5
+_LUFS_LRA     = 11.0
+_LOUDNORM_TIMEOUT = 30
+
+
+def normalize_loudness(audio_bytes: bytes) -> bytes:
+    """
+    İki geçişli ffmpeg loudnorm — TTS çıktısını hedef LUFS'a normalize eder.
+    Başarısızlıkta orijinal audio_bytes'ı loglayarak döner (sessiz değil —
+    downstream postcheck LUFS kapısı kalıcı sorunları yakalar).
+    """
+    src_path: Optional[str] = None
+    out_path: Optional[str] = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            f.write(audio_bytes)
+            src_path = f.name
+
+        # Geçiş 1 — ölç
+        measure = subprocess.run(
+            [
+                "ffmpeg", "-i", src_path,
+                "-af", f"loudnorm=I={_LUFS_TARGET}:TP={_LUFS_TP}:LRA={_LUFS_LRA}:print_format=json",
+                "-f", "null", "-",
+            ],
+            capture_output=True, text=True, timeout=_LOUDNORM_TIMEOUT,
+        )
+        m = re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", measure.stderr, re.DOTALL)
+        if not m:
+            logger.warning("[loudnorm] ölçüm çıktısı parse edilemedi — normalizasyon atlandı, ham ses kullanılıyor")
+            return audio_bytes
+        stats = json.loads(m.group(0))
+
+        # Geçiş 2 — ölçülen değerlerle uygula (linear=true → doğal dinamik korunur)
+        out_path = src_path + "_norm.mp3"
+        apply_result = subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", src_path,
+                "-af", (
+                    f"loudnorm=I={_LUFS_TARGET}:TP={_LUFS_TP}:LRA={_LUFS_LRA}:"
+                    f"measured_I={stats['input_i']}:measured_TP={stats['input_tp']}:"
+                    f"measured_LRA={stats['input_lra']}:measured_thresh={stats['input_thresh']}:"
+                    f"offset={stats.get('target_offset', 0)}:linear=true"
+                ),
+                "-ar", "48000", out_path,
+            ],
+            capture_output=True, text=True, timeout=_LOUDNORM_TIMEOUT,
+        )
+        if apply_result.returncode != 0 or not os.path.exists(out_path):
+            logger.warning(
+                f"[loudnorm] uygulama geçişi başarısız (code={apply_result.returncode}) — "
+                "normalizasyon atlandı, ham ses kullanılıyor"
+            )
+            return audio_bytes
+
+        with open(out_path, "rb") as f:
+            normalized = f.read()
+        logger.info(
+            f"[loudnorm] normalize edildi: input_i={stats['input_i']}dB → hedef={_LUFS_TARGET}dB"
+        )
+        return normalized
+
+    except FileNotFoundError:
+        logger.debug("[loudnorm] ffmpeg bulunamadı — normalizasyon atlandı")
+        return audio_bytes
+    except subprocess.TimeoutExpired:
+        logger.warning("[loudnorm] ffmpeg timeout — normalizasyon atlandı, ham ses kullanılıyor")
+        return audio_bytes
+    except Exception as exc:
+        logger.warning(f"[loudnorm] hata (atlandı, ham ses kullanılıyor): {exc}")
+        return audio_bytes
+    finally:
+        for p in (src_path, out_path):
+            if p and os.path.exists(p):
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
 
 
 # ── 3. Pre-render ses URL kapısı ─────────────────────────────
@@ -297,6 +385,7 @@ def run_postcheck(
       url_accessible       : bool
       file_size_bytes      : int
       audio_volume_db      : float | None
+      integrated_lufs      : float | None
       duration_check       : dict | None
     """
     report: dict = {
@@ -306,6 +395,7 @@ def run_postcheck(
         "url_accessible": False,
         "file_size_bytes": 0,
         "audio_volume_db": None,
+        "integrated_lufs": None,
         "duration_check": None,
     }
 
@@ -372,6 +462,41 @@ def run_postcheck(
         logger.warning("[postcheck] ffmpeg timeout — ses kontrolü atlandı")
     except Exception as exc:
         logger.warning(f"[postcheck] ses kontrolü hatası (atlandı): {exc}")
+
+    # ── Kontrol 3b: LUFS (M4) — entegre yükseklik hedef aralıkta mı ────
+    # TTS çıktısında normalize edildiği için (normalize_loudness) bu kontrol
+    # kalıcı sapmaları yakalayan bir SON savunma — sessizce geçmiyor,
+    # aralık dışıysa hard fail.
+    try:
+        lufs_result = subprocess.run(
+            [
+                "ffmpeg", "-i", video_url.strip(),
+                "-af", f"loudnorm=I={_LUFS_TARGET}:TP={_LUFS_TP}:LRA={_LUFS_LRA}:print_format=json",
+                "-f", "null", "-",
+                "-t", "60",
+            ],
+            capture_output=True, text=True, timeout=45,
+        )
+        m = re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", lufs_result.stderr, re.DOTALL)
+        if m:
+            stats = json.loads(m.group(0))
+            integrated_lufs = float(stats["input_i"])
+            report["integrated_lufs"] = integrated_lufs
+            if not (-18.0 <= integrated_lufs <= -14.0):
+                report["first_failure_code"] = "lufs_validation_failed"
+                report["first_failure_message"] = (
+                    f"Entegre ses yüksekliği {integrated_lufs:.1f} LUFS, "
+                    f"hedef aralık -18..-14 LUFS dışında."
+                )
+                return report
+        else:
+            logger.warning("[postcheck] LUFS ölçümü parse edilemedi — kontrol atlandı")
+    except FileNotFoundError:
+        logger.debug("[postcheck] ffmpeg bulunamadı — LUFS kontrolü atlandı")
+    except subprocess.TimeoutExpired:
+        logger.warning("[postcheck] LUFS timeout — kontrol atlandı")
+    except Exception as exc:
+        logger.warning(f"[postcheck] LUFS kontrolü hatası (atlandı): {exc}")
 
     # ── Kontrol 4: Süre kontrolü (opsiyonel) ──────────────────
     if requested_seconds:
