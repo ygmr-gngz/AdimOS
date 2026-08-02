@@ -18,7 +18,7 @@ import logging
 import unicodedata
 from openai import OpenAI
 from app.core.config import settings
-from app.core.content_constants import TR_SPS, CHARS_PER_SYLLABLE
+from app.core.content_constants import TR_SPS, CHARS_PER_SYLLABLE, budget_params
 
 logger = logging.getLogger(__name__)
 _client = OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -252,36 +252,35 @@ def generate_educational_reel_storyboard(
 
     min_chars: int | None = None
     max_chars: int | None = None
+    target_chars: int | None = None
     budget_note = ""
     if budget_seconds is not None:
         _sc = scene_count if (scene_count and scene_count > 0) else _math.ceil(budget_seconds / 8.0)
         _sc = max(1, _sc)
-        _total_syl = round(budget_seconds * TR_SPS)
-        _syl_per_scene = round(_total_syl / _sc)
+        # Tek kaynak: hece bütçesi kapısı (video.py _check_syllable_budget) ve
+        # buradaki karakter sınırı artık AYNI fonksiyondan geliyor. Önceki hata:
+        # ikisi bağımsız hesaplanıyordu ve farklı budget_seconds/scene_count
+        # değerlerinden sistematik olarak sapıyordu (bkz. budget_params docstring).
+        _total_syl, _syl_per_scene, min_chars, max_chars = budget_params(budget_seconds, _sc)
         _tolerance = max(3, round(_syl_per_scene * 0.15))
-        # ±%15 — hem alt (kısa kalma) hem üst (aşma) sınırı somut karakter
-        # sayısına çevirir. Yalnızca tavan vermek yetmiyordu: model tavanın
-        # çok altında kalıp sabit ~155 hece üretmeye devam ediyordu.
-        min_chars = round(_syl_per_scene * CHARS_PER_SYLLABLE * 0.85)
-        max_chars = round(_syl_per_scene * CHARS_PER_SYLLABLE * 1.15)
+        target_chars = round(_syl_per_scene * CHARS_PER_SYLLABLE)
         budget_note = (
             f"\nHECE BÜTÇESİ (ZORUNLU): Toplam {_total_syl} hece "
             f"({budget_seconds:.0f}s × {TR_SPS:.2f} hece/s, {_sc} sahne).\n"
             f"Her sahne voice_text'inde yaklaşık {_syl_per_scene} hece kullan "
             f"(±{_tolerance} tolerans, yani {_syl_per_scene - _tolerance}–{_syl_per_scene + _tolerance} arası).\n"
             f"Türkçede hece = metindeki ünlü harf sayısı (a,e,ı,i,o,ö,u,ü).\n"
-            f"KARAKTER SINIRI (SERT): Her sahne voice_text'i EN AZ {min_chars}, "
-            f"EN FAZLA {max_chars} karakter olmalı (boşluklar dahil). Bu aralığın "
-            f"dışına çıkma — ne kısa kes ne uzat.\n"
+            f"KARAKTER UZUNLUĞU: Her sahne voice_text'i YAKLAŞIK {target_chars} karakter "
+            f"olmalı (boşluklar dahil, ±%15 — yani {min_chars}-{max_chars} arası kabul "
+            f"edilir ama HEDEFİN {target_chars} olduğunu unutma). Aralığın alt ucuna "
+            f"yapışma — tam {target_chars}'i hedefle.\n"
         )
     else:
         _sc = scene_count if (scene_count and scene_count > 0) else 7
         # budget_seconds verilmediğinde de few-shot örneği makul bir uzunlukta
         # olmalı — DEFAULT_DURATION_SECONDS (Remotion tarafı, 15s/sahne) ile
         # tutarlı bir orta değer.
-        _default_syl_per_scene = round(15 * TR_SPS)
-        min_chars = round(_default_syl_per_scene * CHARS_PER_SYLLABLE * 0.85)
-        max_chars = round(_default_syl_per_scene * CHARS_PER_SYLLABLE * 1.15)
+        _, _default_syl_per_scene, min_chars, max_chars = budget_params(15 * _sc, _sc)
 
     _sc_min = _sc - 2
     _sc_max = _sc + 3
@@ -365,8 +364,9 @@ Video başlığı: {title}
             ]
             if not out_of_range:
                 logger.info(
-                    "[voice-text-length] deneme=%d/2 tüm sahneler aralıkta (limit=%d-%d karakter)",
-                    attempt, min_chars, max_chars,
+                    "[voice-text-length] deneme=%d/2 bütçe_saniye=%.1f tüm sahneler aralıkta "
+                    "(hedef=%s limit=%d-%d karakter)",
+                    attempt, budget_seconds or 0.0, target_chars, min_chars, max_chars,
                 )
                 break
             for scene_id, n in out_of_range:
@@ -374,30 +374,35 @@ Video başlığı: {title}
                 sinir = max_chars if n > max_chars else min_chars
                 pct = (n / sinir - 1) * 100
                 logger.warning(
-                    "[voice-text-length] deneme=%d/2 sahne=%s karakter=%d limit=%d-%d yön=%s sapma=%%%.0f",
-                    attempt, scene_id, n, min_chars, max_chars, yon, pct,
+                    "[voice-text-length] deneme=%d/2 bütçe_saniye=%.1f sahne=%s karakter=%d "
+                    "hedef=%s limit=%d-%d yön=%s sapma=%%%.0f",
+                    attempt, budget_seconds or 0.0, scene_id, n, target_chars, min_chars, max_chars, yon, pct,
                 )
             if attempt == 1:
                 too_long = [(sid, n) for sid, n in out_of_range if n > max_chars]
                 too_short = [(sid, n) for sid, n in out_of_range if n < min_chars]
                 parts = []
+                # Tek hedef sayı ver, aralık değil — modeller aralığın alt/üst
+                # ucuna yapışıyor (bkz. prompt notu). "En az/en fazla" yerine
+                # "TAM {target_chars}'e getir" diyerek aynı prensip retry'de de uygulanıyor.
                 if too_long:
                     parts.append(
                         "ÇOK UZUN: " + "; ".join(f"sahne {sid}: {n} karakter" for sid, n in too_long) +
-                        f" — en fazla {max_chars} karaktere KISALT."
+                        f" — TAM {target_chars} karaktere KISALT (üst sınıra değil, hedefe getir)."
                     )
                 if too_short:
                     parts.append(
                         "ÇOK KISA: " + "; ".join(f"sahne {sid}: {n} karakter" for sid, n in too_short) +
-                        f" — en az {min_chars} karaktere UZAT (daha fazla ayrıntı/örnek ekle)."
+                        f" — TAM {target_chars} karaktere UZAT (alt sınıra değil, hedefe getir; "
+                        f"daha fazla ayrıntı/örnek ekle)."
                     )
                 scenes = _attempt(
-                    "Önceki üretimde şu sahnelerin voice_text'i karakter aralığının dışındaydı. "
+                    "Önceki üretimde şu sahnelerin voice_text'i hedeften saptı. "
                     + " ".join(parts)
                 )
             else:
                 logger.error(
-                    "[voice-text-length] 2 denemede de karakter aralığı sağlanamadı — "
+                    "[voice-text-length] 2 denemede de karakter hedefi sağlanamadı — "
                     "downstream hece bütçesi kapısı son savunma."
                 )
 

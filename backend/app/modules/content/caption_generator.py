@@ -154,14 +154,27 @@ def _timing_from_whisper(
     groups: list[str],
     word_timestamps: list[dict],
     start_offset: float = 0.0,
-) -> list[CaptionEntry]:
+) -> tuple[list[CaptionEntry], dict]:
     """
     Whisper word-level timestamp'leriyle hassas zamanlama.
     word_timestamps: [{"word": str, "start": float, "end": float}, ...]
     Hassasiyet: ≤ 150 ms (Whisper + tolerans).
+
+    Döner: (entries, match_stats) — match_stats başarısızlık nedenini
+    teşhis etmek için (kaç grup/kelime eşleşti, Whisper kaç kelime döndürdü).
+    Önceden bu bilgi hiç loglanmıyordu ("eşleştirme başarısız" tek başına
+    neden olduğunu göstermiyordu) — sessiz fallback sınırındaydı.
     """
+    stats = {
+        "groups_total": len(groups),
+        "groups_matched": 0,
+        "words_total": sum(len(g.split()) for g in groups),
+        "words_matched": 0,
+        "whisper_words_total": len(word_timestamps),
+    }
     if not word_timestamps:
-        return []
+        stats["reason"] = "word_timestamps_empty"
+        return [], stats
 
     # Kelime dizisini oluştur
     wt_idx = 0
@@ -175,6 +188,7 @@ def _timing_from_whisper(
         for gword in words_in_group:
             # Whisper'ın ürettiği kelimeyle kaba eşleştirme (noktalama temizlenerek)
             gword_clean = re.sub(r'[^\w]', '', gword.lower())
+            matched = False
             while wt_idx < len(word_timestamps):
                 wt_word = re.sub(r'[^\w]', '', word_timestamps[wt_idx]['word'].lower())
                 if wt_word == gword_clean or gword_clean in wt_word or wt_word in gword_clean:
@@ -182,8 +196,11 @@ def _timing_from_whisper(
                         group_start = word_timestamps[wt_idx]['start'] + start_offset
                     group_end = word_timestamps[wt_idx]['end'] + start_offset
                     wt_idx += 1
+                    matched = True
                     break
                 wt_idx += 1
+            if matched:
+                stats["words_matched"] += 1
 
         if group_start is not None and group_end is not None:
             entries.append(CaptionEntry(
@@ -191,8 +208,17 @@ def _timing_from_whisper(
                 end=group_end,
                 text=_normalize_case(group),
             ))
+            stats["groups_matched"] += 1
 
-    return entries
+    if not entries:
+        stats["reason"] = (
+            "no_groups_matched" if stats["words_matched"] == 0 else "partial_match_no_complete_group"
+        )
+        # Teşhis için ilk birkaç kelimeyi karşılaştırmalı göster.
+        stats["sample_expected"] = groups[0].split()[:5] if groups else []
+        stats["sample_whisper"] = [w.get("word") for w in word_timestamps[:5]]
+
+    return entries, stats
 
 
 def transcribe_word_timestamps(audio_bytes: bytes, scene_index: int | str = "?") -> Optional[list[dict]]:
@@ -265,9 +291,18 @@ def generate_captions(
         return []
 
     if word_timestamps:
-        entries = _timing_from_whisper(groups, word_timestamps, start_offset)
+        entries, match_stats = _timing_from_whisper(groups, word_timestamps, start_offset)
         if not entries:
-            logger.warning("[caption] Whisper eşleştirme başarısız — fast path'e düşülüyor")
+            logger.warning(
+                "[caption] Whisper eşleştirme başarısız — fast path'e düşülüyor "
+                "(neden=%s gruplar=%d/%d kelimeler=%d/%d whisper_kelime=%d "
+                "örnek_beklenen=%s örnek_whisper=%s)",
+                match_stats.get("reason"),
+                match_stats.get("groups_matched", 0), match_stats.get("groups_total", len(groups)),
+                match_stats.get("words_matched", 0), match_stats.get("words_total", 0),
+                match_stats.get("whisper_words_total", 0),
+                match_stats.get("sample_expected"), match_stats.get("sample_whisper"),
+            )
             entries = _timing_from_wordcount(groups, total_seconds, start_offset)
     else:
         entries = _timing_from_wordcount(groups, total_seconds, start_offset)

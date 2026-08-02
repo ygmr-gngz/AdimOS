@@ -10,7 +10,7 @@ from pydantic import BaseModel, field_validator
 from openai import RateLimitError as OpenAIRateLimitError, APITimeoutError
 from app.db.supabase import get_supabase_client
 from app.core.config import settings
-from app.core.content_constants import TR_SPS
+from app.core.content_constants import TR_SPS, budget_params
 from app.modules.content.pronunciation_dict import apply_pronunciation_dict
 from app.modules.content.quality_gates import (
     check_storyboard_quality,
@@ -253,14 +253,15 @@ def _syllable_budget_params(
     (toplam_hece_bütçesi, sahne_başına_hece, sahne_sayısı) hesaplar.
     scene_count verilmezse ceil(budget_seconds / 8.0) kullanılır.
     8.0 = ortalama sahne süresi saniye cinsinden (tek değişim noktası).
-    TR_SPS (hece/saniye) shared/content-types.json'dan gelir — ölçülmüş
-    değer (4.04-4.35, ort. ~4.15); eski 4.8 hiç ölçülmemişti.
+    Hece/karakter matematiği app.core.content_constants.budget_params'a
+    devredildi — hece bütçesi kapısı ve karakter sınırı artık TEK
+    fonksiyondan besleniyor (bkz. o fonksiyonun docstring'i — daha önce
+    bu ikisi bağımsız hesaplanıp sistematik olarak birbirinden sapmıştı).
     """
     import math
     n = scene_count if (scene_count and scene_count > 0) else math.ceil(budget_seconds / 8.0)
     n = max(1, n)
-    total = round(budget_seconds * TR_SPS)
-    per_scene = round(total / n)
+    total, per_scene, _, _ = budget_params(budget_seconds, n)
     return total, per_scene, n
 
 
@@ -410,8 +411,9 @@ def _regen_storyboard_for_duration(
         pct = ((actual_syl / total_budget) - 1) * 100 if total_budget else 0.0
         ok, detail = _check_syllable_budget(sb_new, corrected_seconds)
         logger.warning(
-            "[syllable-budget] tur=%d hedef_hece=%d üretilen_hece=%d sapma=%%%.0f deneme=%d/2",
-            turn, total_budget, actual_syl, pct, attempt,
+            "[syllable-budget] tur=%d bütçe_saniye=%.1f hedef_hece=%d üretilen_hece=%d "
+            "sapma=%%%.0f deneme=%d/2",
+            turn, corrected_seconds, total_budget, actual_syl, pct, attempt,
         )
         if ok:
             return sb_new, None
