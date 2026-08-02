@@ -36,6 +36,7 @@ import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 import { renderMediaOnLambda, getRenderProgress } from '@remotion/lambda/client'
 import WebSocket from 'ws'
 import type { RenderRequest, RenderResponse } from '../types'
+import { TRANSITION_FRAMES } from '../utils'
 
 // ── Supabase client (modül düzeyinde bir kere oluştur) ───────────
 // Node 20'de native WebSocket yok; ws paketi transport olarak verilir.
@@ -293,26 +294,36 @@ const ALLOWED_COMPOSITIONS = new Set(Object.values(COMPOSITION_MAP as Record<str
 // ── Toplam kare hesabı — tek kaynak: sahne ölçüm toplamı ──────────────────────
 // total_frames girdi olarak geliyorsa yalnızca ±%2 doğrulaması için kullanılır;
 // hesabın kaynağı olamaz.
+// Her composition (bkz. src/compositions/*.tsx) sahneler arası geçiş için
+// TRANSITION_FRAMES kare ekliyor — gerçek render süresi bu yüzden
+// scene_sum'dan sahne_sayısı × (TRANSITION_FRAMES/FPS) saniye daha uzun çıkıyor.
+// Ölçüm: 7 sahne, scene_sum=78.94s, render=82.52s, fark=3.58s ≈ 7×0.5s. Bu satır
+// olmadan framesPerLambda ve %2 doğrulaması gerçek çıktıdan sistematik sapıyordu.
+const TRANSITION_SECONDS = TRANSITION_FRAMES / FPS
+
 function estimateTotalFrames(storyboard: any, jobId?: string): number {
   const tag = jobId ? ` job=${jobId}` : ''
   const scenes: any[] = Array.isArray(storyboard?.scenes) ? storyboard.scenes : []
 
-  const total = scenes.reduce((acc: number, s: any) => {
+  const sceneSum = scenes.reduce((acc: number, s: any) => {
     const v = Number(s.duration_seconds)
     return acc + (Number.isFinite(v) ? v : 0)
   }, 0)
 
-  if (!Number.isFinite(total) || total <= 0) {
+  if (!Number.isFinite(sceneSum) || sceneSum <= 0) {
     throw new Error(
       `duration_validation_failed: geçersiz sahne süreleri` +
-      ` (sahne=${scenes.length} toplam=${total})${tag}`,
+      ` (sahne=${scenes.length} toplam=${sceneSum})${tag}`,
     )
   }
 
+  const total = sceneSum + scenes.length * TRANSITION_SECONDS
   const frames = Math.round(total * FPS)
   console.log(
     `[lambda] frames${tag} kaynak=scene_sum_measured` +
-    ` sahne=${scenes.length} toplamSn=${total.toFixed(2)} fps=${FPS} değer=${frames}`,
+    ` sahne=${scenes.length} sceneSumSn=${sceneSum.toFixed(2)}` +
+    ` gecisSn=${(scenes.length * TRANSITION_SECONDS).toFixed(2)}` +
+    ` toplamSn=${total.toFixed(2)} fps=${FPS} değer=${frames}`,
   )
 
   // total_frames yalnızca doğrulama kapısı — %2 sapma → hata
@@ -620,14 +631,22 @@ function _sceneSummary(storyboard: any, compositionId: string, job_id: string, p
   return { scenes, totalSec }
 }
 
-function _toleranceCheck(storyboard: any, compositionId: string, totalSec: number, prefix: string): { error: string; message: string } | null {
+function _toleranceCheck(
+  storyboard: any, compositionId: string, totalSec: number, sceneCount: number, prefix: string,
+): { error: string; message: string } | null {
   const requested = Number(storyboard.requested_duration_seconds)
   if (!requested || totalSec <= 0) return null
   const tolerance = Number(storyboard.duration_tolerance_seconds ?? 8)
   const lo = requested - tolerance
   const hi = requested + tolerance
-  if (totalSec < lo || totalSec > hi) {
-    const msg = `${compositionId}: istek=${requested}s ±${tolerance}s gerçek=${totalSec.toFixed(2)}s izin=${lo.toFixed(0)}–${hi.toFixed(0)}s`
+  // Render, sahneler arası geçiş için sahne başına TRANSITION_SECONDS ekliyor
+  // (bkz. src/compositions/*.tsx) — gerçek çıktı totalSec'ten sistematik olarak
+  // sceneCount × TRANSITION_SECONDS daha uzun. Kapı, ham ölçüm yerine bu
+  // beklenen render süresiyle karşılaştırır (aynı formül estimateTotalFrames'te).
+  const expectedSec = totalSec + sceneCount * TRANSITION_SECONDS
+  if (expectedSec < lo || expectedSec > hi) {
+    const msg = `${compositionId}: istek=${requested}s ±${tolerance}s ölçülen=${totalSec.toFixed(2)}s` +
+      ` beklenen=${expectedSec.toFixed(2)}s izin=${lo.toFixed(0)}–${hi.toFixed(0)}s`
     console.error(`[${prefix}] HARD FAIL duration_validation_failed: ${msg}`)
     return { error: 'duration_validation_failed', message: msg }
   }
@@ -646,33 +665,33 @@ function _validateProps(
         console.error(`[lesson-props] HARD FAIL insufficient_scene_count: ${msg}`)
         return { error: 'insufficient_scene_count', message: msg }
       }
-      return _toleranceCheck(storyboard, compositionId, totalSec, 'lesson-props')
+      return _toleranceCheck(storyboard, compositionId, totalSec, scenes.length, 'lesson-props')
     }
     case 'QuizVideo':
     case 'SplitQuizVerticalDemo': {
-      const { totalSec } = _sceneSummary(storyboard, compositionId, job_id, 'quizboard-props')
-      return _toleranceCheck(storyboard, compositionId, totalSec, 'quizboard-props')
+      const { scenes, totalSec } = _sceneSummary(storyboard, compositionId, job_id, 'quizboard-props')
+      return _toleranceCheck(storyboard, compositionId, totalSec, scenes.length, 'quizboard-props')
     }
     case 'EducationalReel':
     case 'EducationalReel120': {
       const { scenes, totalSec } = _sceneSummary(storyboard, compositionId, job_id, 'reel-props')
       if (scenes.length > 0 && totalSec > 0) {
-        const tolErr = _toleranceCheck(storyboard, compositionId, totalSec, 'reel-props')
+        const tolErr = _toleranceCheck(storyboard, compositionId, totalSec, scenes.length, 'reel-props')
         if (tolErr) return tolErr
       }
       return null
     }
     case 'MotivationVideo': {
-      const { totalSec } = _sceneSummary(storyboard, compositionId, job_id, 'motivation-props')
-      return _toleranceCheck(storyboard, compositionId, totalSec, 'motivation-props')
+      const { scenes, totalSec } = _sceneSummary(storyboard, compositionId, job_id, 'motivation-props')
+      return _toleranceCheck(storyboard, compositionId, totalSec, scenes.length, 'motivation-props')
     }
     case 'InfographicVideo': {
-      const { totalSec } = _sceneSummary(storyboard, compositionId, job_id, 'infographic-props')
-      return _toleranceCheck(storyboard, compositionId, totalSec, 'infographic-props')
+      const { scenes, totalSec } = _sceneSummary(storyboard, compositionId, job_id, 'infographic-props')
+      return _toleranceCheck(storyboard, compositionId, totalSec, scenes.length, 'infographic-props')
     }
     case 'QuizBoardVideo': {
-      const { totalSec } = _sceneSummary(storyboard, compositionId, job_id, 'quizboard-props')
-      return _toleranceCheck(storyboard, compositionId, totalSec, 'quizboard-props')
+      const { scenes, totalSec } = _sceneSummary(storyboard, compositionId, job_id, 'quizboard-props')
+      return _toleranceCheck(storyboard, compositionId, totalSec, scenes.length, 'quizboard-props')
     }
     default: {
       _sceneSummary(storyboard, compositionId, job_id, 'props')
