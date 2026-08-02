@@ -128,11 +128,28 @@ export function EducationalReel120({ storyboard }: Props) {
 }
 
 export function getReelTotalFrames(storyboard: StoryboardJSON | undefined): number {
-  return (storyboard?.scenes ?? []).reduce((acc, s) => {
+  const scenes = storyboard?.scenes ?? []
+  let total = 0
+  // TEŞHİS LOGU — 65.35s(TTS) vs 105.0s(render) sapmasının kaynağını bulmak için.
+  // calculateMetadata Lambda'nın kendi Chromium sürecinde çalışır; bu console.log
+  // CloudWatch'a düşer. Kök neden bulununca kaldırılacak.
+  for (const s of scenes) {
     const raw = s.duration_seconds as number | string | undefined | null
     const safeSec = (typeof raw === 'number' && isFinite(raw) && raw > 0) ? raw
       : (typeof raw === 'string' && Number(raw) > 0) ? Number(raw)
       : DEFAULT_DURATION_SECONDS
-    return acc + Math.max(TRANSITION_FRAMES + 1, Math.round(safeSec * FPS) + TRANSITION_FRAMES)
-  }, 0)
+    const durationFrames = Math.max(TRANSITION_FRAMES + 1, Math.round(safeSec * FPS) + TRANSITION_FRAMES)
+    total += durationFrames
+    // eslint-disable-next-line no-console
+    console.log(
+      `[getReelTotalFrames] scene=${s.id} raw_duration_seconds=${JSON.stringify(raw)}` +
+      ` (typeof=${typeof raw}) safeSec=${safeSec} durationFrames=${durationFrames}`,
+    )
+  }
+  // eslint-disable-next-line no-console
+  console.log(
+    `[getReelTotalFrames] scenes=${scenes.length} totalFrames=${total}` +
+    ` totalSec=${(total / FPS).toFixed(2)}`,
+  )
+  return total
 }

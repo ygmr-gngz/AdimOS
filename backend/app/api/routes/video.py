@@ -10,6 +10,7 @@ from pydantic import BaseModel, field_validator
 from openai import RateLimitError as OpenAIRateLimitError, APITimeoutError
 from app.db.supabase import get_supabase_client
 from app.core.config import settings
+from app.core.content_constants import TR_SPS
 from app.modules.content.pronunciation_dict import apply_pronunciation_dict
 from app.modules.content.quality_gates import (
     check_storyboard_quality,
@@ -249,11 +250,13 @@ def _syllable_budget_params(
     (toplam_hece_bütçesi, sahne_başına_hece, sahne_sayısı) hesaplar.
     scene_count verilmezse ceil(budget_seconds / 8.0) kullanılır.
     8.0 = ortalama sahne süresi saniye cinsinden (tek değişim noktası).
+    TR_SPS (hece/saniye) shared/content-types.json'dan gelir — ölçülmüş
+    değer (4.04-4.35, ort. ~4.15); eski 4.8 hiç ölçülmemişti.
     """
     import math
     n = scene_count if (scene_count and scene_count > 0) else math.ceil(budget_seconds / 8.0)
     n = max(1, n)
-    total = round(budget_seconds * 4.8)
+    total = round(budget_seconds * TR_SPS)
     per_scene = round(total / n)
     return total, per_scene, n
 
@@ -263,7 +266,7 @@ def _check_syllable_budget(
 ) -> tuple[bool, str | None]:
     """
     reels_short için sahne hece bütçesi doğrulaması.
-    Bütçe = budget_seconds × 4.8 hece/s; sahne başına hedef süreden türetilir.
+    Bütçe = budget_seconds × TR_SPS hece/s; sahne başına hedef süreden türetilir.
     Toplam sahne hece sayısı %20'den fazla aşarsa (False, detay) döner.
     """
     scenes = storyboard.get("scenes", [])
@@ -1029,10 +1032,12 @@ def _run_pipeline_inner(
             _seed_corrected_sec if _seed_corrected_sec is not None
             else float(payload.requested_duration_seconds or 0)
         )
-        # Tolerans tek kaynaktan hesaplanır — hem bu döngüde hem Remotion'a
-        # gönderilen storyboard'da (aşağıda) aynı değer kullanılır.
+        # Tolerans tek kaynaktan gelir: payload.duration_tolerance_seconds
+        # (video_jobs.duration_tolerance_seconds kolonu, çağıranın gönderdiği değer).
+        # Yüzde tabanlı ayrı bir formül YOK — panel ve kod aynı sayıyı görmeli.
+        # Hem bu döngüde hem Remotion'a gönderilen storyboard'da (aşağıda) kullanılır.
         _dur_tolerance_sec: float | None = (
-            max(payload.requested_duration_seconds * 0.25, 20.0)
+            float(payload.duration_tolerance_seconds)
             if payload.requested_duration_seconds else None
         )
 
@@ -1281,9 +1286,25 @@ def _run_pipeline_inner(
                 if tts_total_sec > 0 and not (lo <= tts_total_sec <= hi):
                     deviation = tts_total_sec - req
                     pct = abs(deviation / req) * 100
+                    ratio = req / tts_total_sec if tts_total_sec > 0 else 1.0
+                    # Sönümlü düzeltme: tam orantılı (ratio) yerine %60'ı uygulanır —
+                    # aksi halde sistem hedefin üstünden altına salınıyordu (105s→38.6s
+                    # ölçüldü). Taban "mevcut" = bu turu üretmek için kullanılan bütçe
+                    # (_dur_corrected_sec), sabit req değil — iteratif olarak yakınsar.
+                    _damped_corrected = _dur_corrected_sec * (1 + (ratio - 1) * 0.6)
+                    _damped_corrected = max(
+                        min(_damped_corrected, float(req) * 1.5), float(req) * 0.5
+                    )
+                    actual_syllables = sum(
+                        _syllable_count(s.get("voice_text") or "")
+                        for s in storyboard.get("scenes", [])
+                    )
+                    gercek_sps = actual_syllables / tts_total_sec if tts_total_sec > 0 else 0.0
                     logger.warning(
-                        "[video] %s duration_retry_loop tur=%d ölçülen=%.1fs hedef=%ds sapma=%%%d",
-                        job_id[:8], _dur_turn, tts_total_sec, req, pct,
+                        "[duration-loop] job=%s tur=%d ölçülen=%.1fs hedef=%ds ratio=%.3f "
+                        "sönümlü_hedef=%.1fs gerçek_sps=%.2f",
+                        job_id[:8], _dur_turn, tts_total_sec, req, ratio,
+                        _damped_corrected, gercek_sps,
                     )
                     if _dur_turn < 2:
                         direction = "kısalt" if deviation > 0 else "uzat"
@@ -1292,12 +1313,7 @@ def _run_pipeline_inner(
                             f"hedef {req:.0f}s. voice_text içeriklerini %{pct:.0f} oranında {direction}. "
                             f"Sahne başına {'20-25' if deviation > 0 else '28-35'} hece kullan."
                         )
-                        # Ölçek faktörü: req / tts_total_sec oranıyla düzelt, ±%50 sınırla
-                        scale = req / tts_total_sec if tts_total_sec > 0 else 1.0
-                        _dur_corrected_sec = float(req) * scale
-                        _dur_corrected_sec = max(
-                            min(_dur_corrected_sec, float(req) * 1.5), float(req) * 0.5
-                        )
+                        _dur_corrected_sec = _damped_corrected
                         continue  # storyboard yeniden üret
                     else:
                         _set_status(job_id, "failed", {
@@ -1906,8 +1922,21 @@ def render_callback(body: RenderCallback, background_tasks: BackgroundTasks):
                 actual = float(dur_check["actual_seconds"])
                 deviation = actual - req_sec
                 pct = abs(deviation / req_sec) * 100
-                scale = req_sec / actual if actual else 1.0
-                corrected_sec = max(min(req_sec * scale, req_sec * 1.5), req_sec * 0.5)
+                ratio = req_sec / actual if actual else 1.0
+                # Sönümlü düzeltme (bkz. pre-render döngüsündeki aynı formül) —
+                # "mevcut" bu render'ı üretmek için kullanılan bütçe; ilk post-render
+                # turunda henüz kayıtlı değilse ilk render req ile üretildiği için
+                # req_sec varsayılır.
+                mevcut = float(admin_detail.get("last_budget_seconds") or req_sec)
+                corrected_sec = mevcut * (1 + (ratio - 1) * 0.6)
+                corrected_sec = max(min(corrected_sec, req_sec * 1.5), req_sec * 0.5)
+
+                rendered_scenes = (job_full.get("storyboard") or {}).get("scenes", [])
+                actual_syllables = sum(
+                    _syllable_count(s.get("voice_text") or "") for s in rendered_scenes
+                )
+                gercek_sps = actual_syllables / actual if actual else 0.0
+
                 direction = "kısalt" if deviation > 0 else "uzat"
                 hint = (
                     f"ÖNEMLİ DÜZELTME: Render edilmiş videonun ffprobe ile ölçülen gerçek "
@@ -1917,13 +1946,17 @@ def render_callback(body: RenderCallback, background_tasks: BackgroundTasks):
                 )
                 next_turn = turn + 1
                 logger.warning(
-                    "[duration-loop] job=%s tur=%d/%d render_sonrasi=true hedef=%.0fs "
-                    "ölçülen=%.1fs sapma=%.1fs bütçe_saniye=%.1f",
+                    "[duration-loop] job=%s tur=%d/%d render_sonrasi=true ölçülen=%.1fs "
+                    "hedef=%.0fs ratio=%.3f sönümlü_hedef=%.1fs gerçek_sps=%.2f",
                     body.job_id[:8], next_turn, _MAX_POSTRENDER_DURATION_TURNS,
-                    req_sec, actual, deviation, corrected_sec,
+                    actual, req_sec, ratio, corrected_sec, gercek_sps,
                 )
                 sb_cb.table("video_jobs").update({
-                    "admin_detail": {**admin_detail, "duration_postrender_turn": next_turn},
+                    "admin_detail": {
+                        **admin_detail,
+                        "duration_postrender_turn": next_turn,
+                        "last_budget_seconds": corrected_sec,
+                    },
                 }).eq("id", body.job_id).execute()
                 sb_cb.table("video_scenes").delete().eq("job_id", body.job_id).execute()
                 _set_status(body.job_id, "pending", {

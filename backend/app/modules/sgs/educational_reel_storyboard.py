@@ -18,6 +18,7 @@ import logging
 import unicodedata
 from openai import OpenAI
 from app.core.config import settings
+from app.core.content_constants import TR_SPS, CHARS_PER_SYLLABLE
 
 logger = logging.getLogger(__name__)
 _client = OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -32,12 +33,14 @@ SERIES_TITLE_TEMPLATES: dict[str, str] = {
     "motivasyon":       "{topic} | Adım Müşavir Motivasyon",
 }
 
-# Türkçede ortalama karakter/hece — hece bütçesini sert karakter limitine çevirir.
-# OpenAI structured outputs strict:true bile string maxLength'i zorlamıyor (doğrulandı,
-# bkz. OpenAI docs: "pattern, minLength, format ... not enforced by the model in strict
-# mode"), o yüzden şema yerine üretim sonrası deterministik kontrol + 1 yeniden deneme
-# kullanılıyor (bkz. generate_educational_reel_storyboard).
-CHARS_PER_SYLLABLE = 2.7
+# TR_SPS (hece/saniye) ve CHARS_PER_SYLLABLE (karakter/hece) artık
+# shared/content-types.json'dan geliyor (app.core.content_constants) — tek
+# kaynak, backend/app/api/routes/video.py ile paylaşılır.
+# OpenAI structured outputs strict:true bile string maxLength'i zorlamıyor
+# (doğrulandı, bkz. OpenAI docs: "pattern, minLength, format ... not enforced
+# by the model in strict mode"), o yüzden şema yerine üretim sonrası
+# deterministik kontrol + 1 yeniden deneme kullanılıyor (bkz.
+# generate_educational_reel_storyboard).
 
 _SYSTEM = """Sen Türkiye'nin en iyi SGS (Özel Güvenlik) ve SMMM sınav koçusun.
 2 dakikalık Instagram Reels eğitim videoları üretiyorsun.
@@ -46,10 +49,10 @@ Her video 7 sahneden oluşur, akıcı Türkçe anlatım yapar, sınavda çıkan 
 KURALLAR:
 - Tüm çıktılar Türkçe.
 - Sadece geçerli JSON döndür.
-- voice_text uzunluğu SABİT DEĞİLDİR — kullanıcı promptundaki HECE BÜTÇESİ ve
-  KARAKTER SINIRI talimatına göre belirlenir. Bu talimatlar en yüksek önceliklidir;
-  aşağıdaki örnek JSON'daki metinler yalnızca ALAN YAPISINI gösterir, uzunluk
-  örneği değildir.
+- voice_text uzunluğu kullanıcı promptundaki HECE BÜTÇESİ ve KARAKTER SINIRI
+  talimatına göre belirlenir — bu talimatlardaki SAYI her zaman bağlayıcıdır.
+  Aşağıdaki örnek JSON'daki voice_text metinleri hem alan yapısını hem de
+  YAKLAŞIK hedef uzunluğu gösterir; onlardan çok daha kısa yazma.
 - hook sahnesinde hook_text kısa ve çarpıcı olsun (maksimum 10 kelime, 2 satır).
 - highlight_stat rakam veya yüzde içermeli (örn: "%73", "5 yıl", "3 gün").
 - bullet_points maksimum 4 madde, her madde 8-12 kelime.
@@ -59,9 +62,12 @@ KURALLAR:
 """
 
 _SCENE_SCHEMA = """
-Storyboard JSON formatı (sahne sayısı ve voice_text uzunluğu prompt'taki
-HECE BÜTÇESİ / KARAKTER SINIRI talimatına göre belirlenir — buradaki
-voice_text değerleri yalnızca İÇERİK TÜRÜNÜ gösterir, uzunluk örneği değildir):
+Storyboard JSON formatı (sahne sayısı prompt'taki talimata göre belirlenir).
+ÖNEMLİ: Aşağıdaki voice_text ÖRNEKLERİ hem İÇERİK TÜRÜNÜ hem de HEDEF
+UZUNLUĞU gösterir — model somut örnekleri taklit eder, bu yüzden buradaki
+cümleler kısa/boş bırakılmadı. Kendi konunla değiştir ama YAKLAŞIK AYNI
+UZUNLUKTA yaz; asıl bağlayıcı sayı prompt'taki HECE BÜTÇESİ / KARAKTER
+SINIRI talimatıdır, bu örnekler değil.
 
 {
   "scenes": [
@@ -71,7 +77,7 @@ voice_text değerleri yalnızca İÇERİK TÜRÜNÜ gösterir, uzunluk örneği 
       "visual_source": "text_only",
       "hook_text": "Kısa çarpıcı kanca (2 satır, maks 10 kelime)",
       "highlight_stat": "Dikkat çeken rakam/yüzde",
-      "voice_text": "Sürükleyici giriş, sürpriz bir bilgi ver"
+      "voice_text": "SGS sınavına girenlerin yaklaşık yüzde yetmişi bu soruyu yanlış yapıyor. Sen de aynı hataya düşmeden önce bu kuralı birlikte netleştirelim."
     },
     {
       "id": 2,
@@ -79,7 +85,7 @@ voice_text değerleri yalnızca İÇERİK TÜRÜNÜ gösterir, uzunluk örneği 
       "visual_source": "card",
       "title": "Neden bilmen gerekiyor?",
       "bullet_points": ["Madde 1", "Madde 2", "Madde 3"],
-      "voice_text": "Konunun sınavdaki önemini anlat"
+      "voice_text": "Bu konu her dönem sınavda karşına çıkıyor ve çoğu aday teorik bilgiyle pratik uygulamayı birbirine karıştırdığı için puan kaybediyor."
     },
     {
       "id": 3,
@@ -87,7 +93,7 @@ voice_text değerleri yalnızca İÇERİK TÜRÜNÜ gösterir, uzunluk örneği 
       "visual_source": "card",
       "title": "Ana Kural / Birinci Bilgi",
       "bullet_points": ["Madde 1", "Madde 2", "Madde 3", "Madde 4"],
-      "voice_text": "Detaylı anlatım, örneklerle pekiştir"
+      "voice_text": "Kanunun ilgili maddesi net bir süre ve şart tanımlıyor. Bu süre dolmadan gerekli işlemi yapmazsan yetki belgen geçersiz sayılır ve görev yapamazsın."
     },
     {
       "id": 4,
@@ -95,7 +101,7 @@ voice_text değerleri yalnızca İÇERİK TÜRÜNÜ gösterir, uzunluk örneği 
       "visual_source": "card",
       "title": "İkinci Bilgi / Örnek",
       "bullet_points": ["Madde 1", "Madde 2", "Madde 3"],
-      "voice_text": "İkinci detay veya somut örnek"
+      "voice_text": "Örneğin bir aday süresini kaçırdığında yeniden başvuru sürecine girer; bu hem zaman hem de ek belge kaybı anlamına gelir, dikkatli ol."
     },
     {
       "id": 5,
@@ -103,7 +109,7 @@ voice_text değerleri yalnızca İÇERİK TÜRÜNÜ gösterir, uzunluk örneği 
       "visual_source": "card",
       "title": "Dikkat!",
       "common_mistake": "Sık yapılan hatanın 1-2 cümlelik açıklaması",
-      "voice_text": "Hatayı açıkla, neden yanlış olduğunu göster"
+      "voice_text": "Adayların çoğu 'süre dolsa da görevime devam ederim' sanıyor. Bu tamamen yanlış — geçersiz belgeyle çalışmak kanuna aykırıdır ve cezai sonucu vardır."
     },
     {
       "id": 6,
@@ -111,7 +117,7 @@ voice_text değerleri yalnızca İÇERİK TÜRÜNÜ gösterir, uzunluk örneği 
       "visual_source": "card",
       "title": "Sınav İpucu",
       "exam_tip": "Sınava özel pratik ipucu — 1-2 cümle",
-      "voice_text": "Sınavda nasıl ayırt edeceğini anlat"
+      "voice_text": "Soru kökünde süreyle ilgili bir ifade görürsen önce ilgili maddeyi hatırla, sonra şıklardaki sayılara değil kurala odaklanarak cevap ver."
     },
     {
       "id": 7,
@@ -120,7 +126,7 @@ voice_text değerleri yalnızca İÇERİK TÜRÜNÜ gösterir, uzunluk örneği 
       "title": "Özet",
       "bullet_points": ["Özet madde 1", "Özet madde 2", "Özet madde 3"],
       "cta_text": "Daha fazla SGS sorusu için @adimmusavir'i takip et!",
-      "voice_text": "Özet + @adimmusavir'e yönlendirme"
+      "voice_text": "Özetle: süreyi takip et, belgeni zamanında yenile ve kuralı ezbere değil mantığıyla öğren. Daha fazla soru için @adimmusavir'i takip etmeyi unutma."
     }
   ]
 }
@@ -179,23 +185,29 @@ def generate_educational_reel_storyboard(
 
     desc_note = f"Ek bağlam / yönetmen notu: {description}\n" if description else ""
 
+    min_chars: int | None = None
     max_chars: int | None = None
     budget_note = ""
     if budget_seconds is not None:
         _sc = scene_count if (scene_count and scene_count > 0) else _math.ceil(budget_seconds / 8.0)
         _sc = max(1, _sc)
-        _total_syl = round(budget_seconds * 4.8)
+        _total_syl = round(budget_seconds * TR_SPS)
         _syl_per_scene = round(_total_syl / _sc)
         _tolerance = max(3, round(_syl_per_scene * 0.15))
-        max_chars = round(_syl_per_scene * CHARS_PER_SYLLABLE)
+        # ±%15 — hem alt (kısa kalma) hem üst (aşma) sınırı somut karakter
+        # sayısına çevirir. Yalnızca tavan vermek yetmiyordu: model tavanın
+        # çok altında kalıp sabit ~155 hece üretmeye devam ediyordu.
+        min_chars = round(_syl_per_scene * CHARS_PER_SYLLABLE * 0.85)
+        max_chars = round(_syl_per_scene * CHARS_PER_SYLLABLE * 1.15)
         budget_note = (
             f"\nHECE BÜTÇESİ (ZORUNLU): Toplam {_total_syl} hece "
-            f"({budget_seconds:.0f}s × 4.8 hece/s, {_sc} sahne).\n"
+            f"({budget_seconds:.0f}s × {TR_SPS:.2f} hece/s, {_sc} sahne).\n"
             f"Her sahne voice_text'inde yaklaşık {_syl_per_scene} hece kullan "
             f"(±{_tolerance} tolerans, yani {_syl_per_scene - _tolerance}–{_syl_per_scene + _tolerance} arası).\n"
             f"Türkçede hece = metindeki ünlü harf sayısı (a,e,ı,i,o,ö,u,ü).\n"
-            f"KARAKTER SINIRI (SERT): Her sahnenin voice_text'i EN FAZLA {max_chars} "
-            f"karakter olmalı (boşluklar dahil). Bunu aşma.\n"
+            f"KARAKTER SINIRI (SERT): Her sahne voice_text'i EN AZ {min_chars}, "
+            f"EN FAZLA {max_chars} karakter olmalı (boşluklar dahil). Bu aralığın "
+            f"dışına çıkma — ne kısa kes ne uzat.\n"
         )
     else:
         _sc = scene_count if (scene_count and scene_count > 0) else 7
@@ -265,38 +277,55 @@ Video başlığı: {title}
 
     scenes = _attempt("")
 
-    # ── voice_text karakter sınırı — deterministik kontrol + 1 yeniden deneme ──
-    # Şema seviyesinde zorlanamıyor (bkz. CHARS_PER_SYLLABLE notu); sessizce
-    # geçilmiyor — her deneme loglanır, 2. denemede de aşarsa downstream hece
-    # bütçesi kapısı (_check_syllable_budget / duration_validation_failed) devreye girer.
-    if max_chars is not None:
+    # ── voice_text karakter aralığı — deterministik kontrol + 1 yeniden deneme ──
+    # Şema seviyesinde zorlanamıyor (bkz. yukarıdaki not); sessizce geçilmiyor —
+    # her deneme loglanır. Hem TAVAN (aşım) hem TABAN (kısa kalma) denetlenir —
+    # yalnızca tavan kontrolü modelin tavanın çok altında (sabit ~155 hece)
+    # takılıp kalmasını yakalayamıyordu. 2. denemede de aralık dışındaysa
+    # downstream hece bütçesi kapısı (_check_syllable_budget / duration_validation_failed)
+    # son savunma.
+    if max_chars is not None and min_chars is not None:
         for attempt in (1, 2):
-            over = [
+            out_of_range = [
                 (s.get("id", i + 1), len(s.get("voice_text") or ""))
                 for i, s in enumerate(scenes)
-                if len(s.get("voice_text") or "") > max_chars
+                if not (min_chars <= len(s.get("voice_text") or "") <= max_chars)
             ]
-            if not over:
+            if not out_of_range:
                 logger.info(
-                    "[voice-text-length] deneme=%d/2 tüm sahneler limit içinde (limit=%d karakter)",
-                    attempt, max_chars,
+                    "[voice-text-length] deneme=%d/2 tüm sahneler aralıkta (limit=%d-%d karakter)",
+                    attempt, min_chars, max_chars,
                 )
                 break
-            for scene_id, n in over:
-                pct = (n / max_chars - 1) * 100
+            for scene_id, n in out_of_range:
+                yon = "aşım" if n > max_chars else "kısa"
+                sinir = max_chars if n > max_chars else min_chars
+                pct = (n / sinir - 1) * 100
                 logger.warning(
-                    "[voice-text-length] deneme=%d/2 sahne=%s karakter=%d limit=%d aşım=%%%.0f",
-                    attempt, scene_id, n, max_chars, pct,
+                    "[voice-text-length] deneme=%d/2 sahne=%s karakter=%d limit=%d-%d yön=%s sapma=%%%.0f",
+                    attempt, scene_id, n, min_chars, max_chars, yon, pct,
                 )
             if attempt == 1:
-                detail = "; ".join(f"sahne {sid}: {n} karakter (limit {max_chars})" for sid, n in over)
+                too_long = [(sid, n) for sid, n in out_of_range if n > max_chars]
+                too_short = [(sid, n) for sid, n in out_of_range if n < min_chars]
+                parts = []
+                if too_long:
+                    parts.append(
+                        "ÇOK UZUN: " + "; ".join(f"sahne {sid}: {n} karakter" for sid, n in too_long) +
+                        f" — en fazla {max_chars} karaktere KISALT."
+                    )
+                if too_short:
+                    parts.append(
+                        "ÇOK KISA: " + "; ".join(f"sahne {sid}: {n} karakter" for sid, n in too_short) +
+                        f" — en az {min_chars} karaktere UZAT (daha fazla ayrıntı/örnek ekle)."
+                    )
                 scenes = _attempt(
-                    f"Önceki üretimde şu sahnelerin voice_text'i karakter sınırını aştı: {detail}. "
-                    f"Bu sahneleri KISALT — her biri en fazla {max_chars} karakter olmalı."
+                    "Önceki üretimde şu sahnelerin voice_text'i karakter aralığının dışındaydı. "
+                    + " ".join(parts)
                 )
             else:
                 logger.error(
-                    "[voice-text-length] 2 denemede de karakter sınırı aşıldı — "
+                    "[voice-text-length] 2 denemede de karakter aralığı sağlanamadı — "
                     "downstream hece bütçesi kapısı son savunma."
                 )
 
