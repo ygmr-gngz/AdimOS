@@ -32,6 +32,13 @@ SERIES_TITLE_TEMPLATES: dict[str, str] = {
     "motivasyon":       "{topic} | Adım Müşavir Motivasyon",
 }
 
+# Türkçede ortalama karakter/hece — hece bütçesini sert karakter limitine çevirir.
+# OpenAI structured outputs strict:true bile string maxLength'i zorlamıyor (doğrulandı,
+# bkz. OpenAI docs: "pattern, minLength, format ... not enforced by the model in strict
+# mode"), o yüzden şema yerine üretim sonrası deterministik kontrol + 1 yeniden deneme
+# kullanılıyor (bkz. generate_educational_reel_storyboard).
+CHARS_PER_SYLLABLE = 2.7
+
 _SYSTEM = """Sen Türkiye'nin en iyi SGS (Özel Güvenlik) ve SMMM sınav koçusun.
 2 dakikalık Instagram Reels eğitim videoları üretiyorsun.
 Her video 7 sahneden oluşur, akıcı Türkçe anlatım yapar, sınavda çıkan bilgilere odaklanır.
@@ -39,7 +46,10 @@ Her video 7 sahneden oluşur, akıcı Türkçe anlatım yapar, sınavda çıkan 
 KURALLAR:
 - Tüm çıktılar Türkçe.
 - Sadece geçerli JSON döndür.
-- Her sahne için voice_text 30-80 kelime arasında olmalı (sahneye göre değişir).
+- voice_text uzunluğu SABİT DEĞİLDİR — kullanıcı promptundaki HECE BÜTÇESİ ve
+  KARAKTER SINIRI talimatına göre belirlenir. Bu talimatlar en yüksek önceliklidir;
+  aşağıdaki örnek JSON'daki metinler yalnızca ALAN YAPISINI gösterir, uzunluk
+  örneği değildir.
 - hook sahnesinde hook_text kısa ve çarpıcı olsun (maksimum 10 kelime, 2 satır).
 - highlight_stat rakam veya yüzde içermeli (örn: "%73", "5 yıl", "3 gün").
 - bullet_points maksimum 4 madde, her madde 8-12 kelime.
@@ -49,7 +59,9 @@ KURALLAR:
 """
 
 _SCENE_SCHEMA = """
-Storyboard JSON formatı (sahne sayısı prompt'ta belirtilir):
+Storyboard JSON formatı (sahne sayısı ve voice_text uzunluğu prompt'taki
+HECE BÜTÇESİ / KARAKTER SINIRI talimatına göre belirlenir — buradaki
+voice_text değerleri yalnızca İÇERİK TÜRÜNÜ gösterir, uzunluk örneği değildir):
 
 {
   "scenes": [
@@ -59,7 +71,7 @@ Storyboard JSON formatı (sahne sayısı prompt'ta belirtilir):
       "visual_source": "text_only",
       "hook_text": "Kısa çarpıcı kanca (2 satır, maks 10 kelime)",
       "highlight_stat": "Dikkat çeken rakam/yüzde",
-      "voice_text": "30-50 kelime — sürükleyici giriş, sürpriz bir bilgi ver"
+      "voice_text": "Sürükleyici giriş, sürpriz bir bilgi ver"
     },
     {
       "id": 2,
@@ -67,7 +79,7 @@ Storyboard JSON formatı (sahne sayısı prompt'ta belirtilir):
       "visual_source": "card",
       "title": "Neden bilmen gerekiyor?",
       "bullet_points": ["Madde 1", "Madde 2", "Madde 3"],
-      "voice_text": "50-70 kelime — konunun sınavdaki önemini anlat"
+      "voice_text": "Konunun sınavdaki önemini anlat"
     },
     {
       "id": 3,
@@ -75,7 +87,7 @@ Storyboard JSON formatı (sahne sayısı prompt'ta belirtilir):
       "visual_source": "card",
       "title": "Ana Kural / Birinci Bilgi",
       "bullet_points": ["Madde 1", "Madde 2", "Madde 3", "Madde 4"],
-      "voice_text": "70-80 kelime — detaylı anlatım, örneklerle pekiştir"
+      "voice_text": "Detaylı anlatım, örneklerle pekiştir"
     },
     {
       "id": 4,
@@ -83,7 +95,7 @@ Storyboard JSON formatı (sahne sayısı prompt'ta belirtilir):
       "visual_source": "card",
       "title": "İkinci Bilgi / Örnek",
       "bullet_points": ["Madde 1", "Madde 2", "Madde 3"],
-      "voice_text": "70-80 kelime — ikinci detay veya somut örnek"
+      "voice_text": "İkinci detay veya somut örnek"
     },
     {
       "id": 5,
@@ -91,7 +103,7 @@ Storyboard JSON formatı (sahne sayısı prompt'ta belirtilir):
       "visual_source": "card",
       "title": "Dikkat!",
       "common_mistake": "Sık yapılan hatanın 1-2 cümlelik açıklaması",
-      "voice_text": "60-70 kelime — hatayı açıkla, neden yanlış olduğunu göster"
+      "voice_text": "Hatayı açıkla, neden yanlış olduğunu göster"
     },
     {
       "id": 6,
@@ -99,7 +111,7 @@ Storyboard JSON formatı (sahne sayısı prompt'ta belirtilir):
       "visual_source": "card",
       "title": "Sınav İpucu",
       "exam_tip": "Sınava özel pratik ipucu — 1-2 cümle",
-      "voice_text": "40-60 kelime — sınavda nasıl ayırt edeceğini anlat"
+      "voice_text": "Sınavda nasıl ayırt edeceğini anlat"
     },
     {
       "id": 7,
@@ -108,7 +120,7 @@ Storyboard JSON formatı (sahne sayısı prompt'ta belirtilir):
       "title": "Özet",
       "bullet_points": ["Özet madde 1", "Özet madde 2", "Özet madde 3"],
       "cta_text": "Daha fazla SGS sorusu için @adimmusavir'i takip et!",
-      "voice_text": "30-50 kelime — özet + @adimmusavir'e yönlendirme"
+      "voice_text": "Özet + @adimmusavir'e yönlendirme"
     }
   ]
 }
@@ -152,10 +164,14 @@ def generate_educational_reel_storyboard(
     """
     EducationalReel120 composition için storyboard üretir.
     scene_count verilmezse ceil(budget_seconds / 8.0) ile hesaplanır.
+    voice_text karakter sınırı üretim sonrası deterministik kontrol edilir ve
+    aşılırsa 1 kez yeniden denenir — OpenAI structured outputs strict:true bile
+    string maxLength'i şema seviyesinde zorlamıyor (bkz. CHARS_PER_SYLLABLE notu),
+    o yüzden şemaya güvenmek yerine burada ölçülüyor.
     Döner: tam storyboard dict (video_type, scenes, brand vb.)
     """
     import math as _math
-    from app.modules.content.pronunciation_dict import latex_to_spoken_turkish
+    from app.modules.content.pronunciation_dict import latex_to_spoken_turkish  # noqa: F401
 
     series_label = ""
     if content_series and content_series in SERIES_TITLE_TEMPLATES:
@@ -163,6 +179,7 @@ def generate_educational_reel_storyboard(
 
     desc_note = f"Ek bağlam / yönetmen notu: {description}\n" if description else ""
 
+    max_chars: int | None = None
     budget_note = ""
     if budget_seconds is not None:
         _sc = scene_count if (scene_count and scene_count > 0) else _math.ceil(budget_seconds / 8.0)
@@ -170,12 +187,15 @@ def generate_educational_reel_storyboard(
         _total_syl = round(budget_seconds * 4.8)
         _syl_per_scene = round(_total_syl / _sc)
         _tolerance = max(3, round(_syl_per_scene * 0.15))
+        max_chars = round(_syl_per_scene * CHARS_PER_SYLLABLE)
         budget_note = (
             f"\nHECE BÜTÇESİ (ZORUNLU): Toplam {_total_syl} hece "
             f"({budget_seconds:.0f}s × 4.8 hece/s, {_sc} sahne).\n"
             f"Her sahne voice_text'inde yaklaşık {_syl_per_scene} hece kullan "
             f"(±{_tolerance} tolerans, yani {_syl_per_scene - _tolerance}–{_syl_per_scene + _tolerance} arası).\n"
             f"Türkçede hece = metindeki ünlü harf sayısı (a,e,ı,i,o,ö,u,ü).\n"
+            f"KARAKTER SINIRI (SERT): Her sahnenin voice_text'i EN FAZLA {max_chars} "
+            f"karakter olmalı (boşluklar dahil). Bunu aşma.\n"
         )
     else:
         _sc = scene_count if (scene_count and scene_count > 0) else 7
@@ -183,11 +203,12 @@ def generate_educational_reel_storyboard(
     _sc_min = _sc - 2
     _sc_max = _sc + 3
 
-    feedback_note = ""
-    if syllable_feedback:
-        feedback_note = f"\nDÜZELTME GEREKLİ (önceki üretimden): {syllable_feedback}\n"
+    def _attempt(extra_feedback: str) -> list[dict]:
+        """Tek bir GPT üretim denemesi — prompt kur, çağır, sahneleri normalize et."""
+        combined = f"{syllable_feedback or ''}\n{extra_feedback}".strip()
+        feedback_note = f"\nDÜZELTME GEREKLİ (önceki üretimden): {combined}\n" if combined else ""
 
-    prompt = f"""Aşağıdaki SGS konusu için EducationalReel120 storyboard üret.
+        prompt = f"""Aşağıdaki SGS konusu için EducationalReel120 storyboard üret.
 
 Konu: {topic}
 Ders / Alan: {subject}
@@ -197,50 +218,87 @@ Video başlığı: {title}
 
 ÖNEMLİ: {_sc_min}–{_sc_max} sahne üret (ideal: {_sc}). Her sahnede voice_text zorunlu. Sadece JSON döndür.
 """
+        try:
+            raw = _client.chat.completions.create(
+                model="gpt-4o",
+                response_format={"type": "json_object"},
+                temperature=0.45,
+                max_tokens=4000,
+                messages=[
+                    {"role": "system", "content": _SYSTEM},
+                    {"role": "user",   "content": prompt},
+                ],
+            )
+            data = json.loads(raw.choices[0].message.content)
+            _scenes = data.get("scenes", [])
+        except Exception as exc:
+            logger.error(f"[reel_storyboard] GPT hatası: {exc}")
+            raise RuntimeError(f"EducationalReel storyboard üretilemedi: {exc}") from exc
 
-    try:
-        raw = _client.chat.completions.create(
-            model="gpt-4o",
-            response_format={"type": "json_object"},
-            temperature=0.45,
-            max_tokens=4000,
-            messages=[
-                {"role": "system", "content": _SYSTEM},
-                {"role": "user",   "content": prompt},
-            ],
-        )
-        data = json.loads(raw.choices[0].message.content)
-        scenes = data.get("scenes", [])
-    except Exception as exc:
-        logger.error(f"[reel_storyboard] GPT hatası: {exc}")
-        raise RuntimeError(f"EducationalReel storyboard üretilemedi: {exc}") from exc
+        # Unicode NFC normalleştirme
+        def _norm(obj):
+            if isinstance(obj, str):
+                return unicodedata.normalize("NFC", obj)
+            if isinstance(obj, list):
+                return [_norm(i) for i in obj]
+            if isinstance(obj, dict):
+                return {k: _norm(v) for k, v in obj.items()}
+            return obj
+        _scenes = _norm(_scenes)
 
-    # Unicode NFC normalleştirme
-    def _norm(obj):
-        if isinstance(obj, str):
-            return unicodedata.normalize("NFC", obj)
-        if isinstance(obj, list):
-            return [_norm(i) for i in obj]
-        if isinstance(obj, dict):
-            return {k: _norm(v) for k, v in obj.items()}
-        return obj
-    scenes = _norm(scenes)
+        # id'leri sırayla ata, component'i doğrula/düzelt
+        _default_types = ["hook", "context", "content", "content", "mistake", "tip", "outro"]
+        for i, s in enumerate(_scenes, 1):
+            s["id"] = i
+            # LLM bilinmeyen bileşen ürettiyse segment_type'dan türet
+            if s.get("component") not in _ALLOWED_COMPONENTS:
+                seg = s.get("segment_type") or (_default_types[i - 1] if i <= len(_default_types) else "content")
+                s["component"] = _SEGMENT_COMPONENT.get(seg, "ReelConceptScene")
+            # segment_type eksikse component'tan çıkar (reverse map)
+            if not s.get("segment_type"):
+                _rev = {v: k for k, v in _SEGMENT_COMPONENT.items()}
+                s["segment_type"] = _rev.get(s["component"], "content")
+            # voice_text eksikse basit fallback
+            if not (s.get("voice_text") or "").strip():
+                s["voice_text"] = s.get("hook_text") or s.get("title") or topic
+        return _scenes
 
-    # id'leri sırayla ata, component'i doğrula/düzelt
-    _default_types = ["hook", "context", "content", "content", "mistake", "tip", "outro"]
-    for i, s in enumerate(scenes, 1):
-        s["id"] = i
-        # LLM bilinmeyen bileşen ürettiyse segment_type'dan türet
-        if s.get("component") not in _ALLOWED_COMPONENTS:
-            seg = s.get("segment_type") or (_default_types[i - 1] if i <= len(_default_types) else "content")
-            s["component"] = _SEGMENT_COMPONENT.get(seg, "ReelConceptScene")
-        # segment_type eksikse component'tan çıkar (reverse map)
-        if not s.get("segment_type"):
-            _rev = {v: k for k, v in _SEGMENT_COMPONENT.items()}
-            s["segment_type"] = _rev.get(s["component"], "content")
-        # voice_text eksikse basit fallback
-        if not (s.get("voice_text") or "").strip():
-            s["voice_text"] = s.get("hook_text") or s.get("title") or topic
+    scenes = _attempt("")
+
+    # ── voice_text karakter sınırı — deterministik kontrol + 1 yeniden deneme ──
+    # Şema seviyesinde zorlanamıyor (bkz. CHARS_PER_SYLLABLE notu); sessizce
+    # geçilmiyor — her deneme loglanır, 2. denemede de aşarsa downstream hece
+    # bütçesi kapısı (_check_syllable_budget / duration_validation_failed) devreye girer.
+    if max_chars is not None:
+        for attempt in (1, 2):
+            over = [
+                (s.get("id", i + 1), len(s.get("voice_text") or ""))
+                for i, s in enumerate(scenes)
+                if len(s.get("voice_text") or "") > max_chars
+            ]
+            if not over:
+                logger.info(
+                    "[voice-text-length] deneme=%d/2 tüm sahneler limit içinde (limit=%d karakter)",
+                    attempt, max_chars,
+                )
+                break
+            for scene_id, n in over:
+                pct = (n / max_chars - 1) * 100
+                logger.warning(
+                    "[voice-text-length] deneme=%d/2 sahne=%s karakter=%d limit=%d aşım=%%%.0f",
+                    attempt, scene_id, n, max_chars, pct,
+                )
+            if attempt == 1:
+                detail = "; ".join(f"sahne {sid}: {n} karakter (limit {max_chars})" for sid, n in over)
+                scenes = _attempt(
+                    f"Önceki üretimde şu sahnelerin voice_text'i karakter sınırını aştı: {detail}. "
+                    f"Bu sahneleri KISALT — her biri en fazla {max_chars} karakter olmalı."
+                )
+            else:
+                logger.error(
+                    "[voice-text-length] 2 denemede de karakter sınırı aşıldı — "
+                    "downstream hece bütçesi kapısı son savunma."
+                )
 
     if len(scenes) < 5:
         logger.warning(f"[reel_storyboard] Yetersiz sahne üretildi: {len(scenes)}/7")
