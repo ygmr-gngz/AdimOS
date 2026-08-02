@@ -37,6 +37,11 @@ export function BrandWatermark({
     opacity: eff,
     transform: `rotate(${rotate}deg)`,
     userSelect: 'none' as const,
+    // Şeffaf PNG artık gerçek alfa kanalına sahip (RGBA, doğrulandı) ama koyu
+    // zeminde düz opaklık "üste yapıştırılmış" görünüyordu — karışım modu
+    // filigranı zemine gömüyor.
+    mixBlendMode: 'soft-light' as const,
+    filter: 'grayscale(1)',
   }
 
   return (

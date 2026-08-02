@@ -29,6 +29,17 @@ _MAX_GROUP_WORDS = 7
 _MAX_CAPTION_CHARS = 38   # satır başına max karakter (2 satır × 19)
 _UPPERCASE_RATIO_LIMIT = 0.35
 
+# Whisper'ın SGS/mali müşavirlik alanı kısaltmalarını tanımasını artırmak için
+# "prompt" parametresi — Whisper bunu sesli olarak duymaz, yalnızca kelime
+# dağarcığı ipucu olarak kullanır (OpenAI docs). Bu olmadan "KDV" gibi kısa
+# kısaltmalar "Kadeh"/"Kade ve" gibi alakasız kelimelere transkript ediliyordu
+# — bu da _timing_from_whisper'ın eşleşme bulamayıp her sahnede fast path'e
+# düşmesine yol açıyordu.
+_WHISPER_DOMAIN_PROMPT = (
+    "KDV, SGK, SMMM, SGS, TTK, VUK, yevmiye, amortisman, mizan, bilanço, "
+    "tahakkuk, beyanname"
+)
+
 
 @dataclass
 class CaptionEntry:
@@ -248,6 +259,7 @@ def transcribe_word_timestamps(audio_bytes: bytes, scene_index: int | str = "?")
             file=audio_file,
             response_format="verbose_json",
             timestamp_granularities=["word"],
+            prompt=_WHISPER_DOMAIN_PROMPT,
         )
     except Exception as exc:
         logger.error(f"[caption] sahne {scene_index} whisper transkript hatası: {exc}")
