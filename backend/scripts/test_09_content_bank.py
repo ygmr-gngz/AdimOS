@@ -132,20 +132,14 @@ def _():
 
 @test("B5_visual_library_manifest")
 def _():
-    import json, pathlib
-    manifest_path = pathlib.Path(__file__).parents[2] / "assets" / "library" / "manifest.json"
+    from app.core.visual_manifest import THEMES, STYLE_CONTRACT
 
-    assert manifest_path.exists(), f"manifest.json bulunamadı: {manifest_path}"
-
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    themes = manifest.get("themes", {})
-
-    assert len(themes) >= 8, f"En az 8 tema olmalı: {len(themes)}"
+    assert len(THEMES) >= 8, f"En az 8 tema olmalı: {len(THEMES)}"
 
     # Zorunlu alanlar
-    required_fields = {"dir", "label", "content_tracks", "target_variants",
+    required_fields = {"label", "content_tracks", "target_variants",
                        "tags", "subject_prompt"}
-    for theme_key, cfg in themes.items():
+    for theme_key, cfg in THEMES.items():
         missing = required_fields - set(cfg.keys())
         assert not missing, f"Tema '{theme_key}' eksik alanlar: {missing}"
         assert cfg["target_variants"] >= 10, \
@@ -154,20 +148,19 @@ def _():
             f"Tema '{theme_key}' en az 3 tag olmalı"
 
     # Danisan temaları var mı
-    danisan_themes = [k for k, v in themes.items()
+    danisan_themes = [k for k, v in THEMES.items()
                       if "danisan" in v.get("content_tracks", [])]
     assert len(danisan_themes) >= 2, \
         f"En az 2 danisan teması olmalı: {danisan_themes}"
 
     # Style contract
-    sc = manifest.get("style_contract", {})
-    assert sc.get("positive"), "style_contract.positive boş"
-    assert sc.get("negative"), "style_contract.negative boş"
-    assert "no text" in sc.get("positive", "").lower() or \
-           "no text" in sc.get("negative", "").lower(), \
+    assert STYLE_CONTRACT.get("positive"), "style_contract.positive boş"
+    assert STYLE_CONTRACT.get("negative"), "style_contract.negative boş"
+    assert "no text" in STYLE_CONTRACT.get("positive", "").lower() or \
+           "no text" in STYLE_CONTRACT.get("negative", "").lower(), \
         "Style contract görsel-metin yasağı içermeli"
 
-    print(f"{PASS} Manifest geçerli: {len(themes)} tema, "
+    print(f"{PASS} Manifest geçerli: {len(THEMES)} tema, "
           f"{len(danisan_themes)} danisan, style_contract OK")
 
 

@@ -21,6 +21,23 @@ export function resolveSceneDurationSeconds(raw: unknown, sceneId: unknown): num
 // getCompositionsOnLambda inputProps:{} ile çağrıldığında storyboard undefined gelir;
 // calculateMetadata'nın crash etmemesi için null-safe yapıldı.
 // duration_seconds string veya undefined gelebilir (GPT çıktısı garantisiz) — NaN koruması eklendi.
+// Ken Burns — motivasyon sahnesi foto arka planına yavaş zoom. Yön scene.id'nin
+// hash'inden belirlenir (çift→zoom-out, tek→zoom-in), böylece art arda sahnelerde
+// yön dönüşümlü olur ve tüm sahneler aynı yönde "kayıp gitmiyor" hissi vermez.
+export function kenBurnsScale(
+  frame: number,
+  durationSeconds: number,
+  fps: number,
+  seed: string,
+): number {
+  const totalFrames = Math.max(1, Math.round(durationSeconds * fps))
+  const progress = Math.min(1, Math.max(0, frame / totalFrames))
+  let hash = 0
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0
+  const zoomOut = hash % 2 === 0
+  return zoomOut ? 1.14 - progress * 0.08 : 1.06 + progress * 0.08
+}
+
 export function getTotalFrames(storyboard: StoryboardJSON | undefined | null): number {
   if (!storyboard?.scenes?.length) return 900   // fallback: 30 sn
   return storyboard.scenes.reduce((acc, s) => {

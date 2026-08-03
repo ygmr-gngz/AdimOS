@@ -12,7 +12,10 @@
         "default": "LessonVideo",
         "16:9":    "LessonVideo"
       },
-      "aliases": ["lesson", "lesson_long", "sgs_topic_video", "ders"]
+      "aliases": ["lesson", "lesson_long", "sgs_topic_video", "ders"],
+      "min_visual_surfaces": 12,
+      "min_photos": 0,
+      "min_photos_note": "Kart/tablo/tahta tabanlı — fotoğrafik AI görsel gerekmez."
     },
     {
       "canonical": "soru_cozum",
@@ -24,7 +27,10 @@
       "aliases": [
         "quiz", "single_question", "question_set_long",
         "soru_cozumu", "soru"
-      ]
+      ],
+      "min_visual_surfaces": 3,
+      "min_photos": 0,
+      "min_photos_note": "Tahta/kart tabanlı — fotoğrafik AI görsel gerekmez."
     },
     {
       "canonical": "reels_short",
@@ -35,7 +41,11 @@
       "aliases": [
         "reel", "reels", "educational_reel", "shorts", "short",
         "youtube_short", "bilgilendirme_kisa", "kisa_icerik"
-      ]
+      ],
+      "min_visual_surfaces": 5,
+      "min_photos": 0,
+      "max_photos": 2,
+      "min_photos_note": "Kart ağırlıklı — en fazla 2 fotoğrafik AI görsel (bkz. visual_manifest.COST_CAPS.reels_short)."
     },
     {
       "canonical": "motivasyon",
@@ -43,7 +53,10 @@
         "default": "MotivationVideo",
         "9:16":    "MotivationVideo"
       },
-      "aliases": ["motivation", "motivation_reel", "motive"]
+      "aliases": ["motivation", "motivation_reel", "motive"],
+      "min_visual_surfaces": 7,
+      "min_photos": 5,
+      "min_photos_note": "Her sahne fotoğrafik arka plan alır (theme_for_scene + select_asset) — flat-navy fallback yok."
     },
     {
       "canonical": "gorsel_post",
@@ -53,7 +66,10 @@
       },
       "aliases": [
         "infographic", "infografik", "infografik_animasyon", "post"
-      ]
+      ],
+      "min_visual_surfaces": 3,
+      "min_photos": 0,
+      "min_photos_note": "İnfografik/kart tabanlı — fotoğrafik AI görsel gerekmez."
     }
   ]
 }

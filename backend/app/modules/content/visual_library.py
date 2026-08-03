@@ -1,7 +1,16 @@
 """
 Görsel kütüphane seçici — ADIM 5 (ÖNCELİK HATTI v3 §6.2–6.4).
 
-Manifest: assets/library/manifest.json
+Depolama: Supabase Postgres tablosu `visual_assets` + Supabase Storage bucket
+`visual-library`. Repo kökündeki local dosya sistemi KULLANILMAZ — render
+Remotion Lambda üzerinde çalışır ve backend'in local diskine hiçbir zaman
+erişemez (gerçek HTTP URL şart), ayrıca Railway'de backend'in Docker build
+context'i backend/ (Root Directory) — repo kökü runtime'da yok
+(content_constants.py postmortem'i ile aynı hata sınıfı).
+
+Tema kataloğu / stil sözleşmesi: app.core.visual_manifest (backend/ içinde
+git'e commitli, sabit — serbest metin tema/prompt yok).
+
 Spec §6.3 seçim algoritması:
   1. Sahne anahtar kelimeleri → tag eşleşmesi → aday havuzu
   2. Son 10 videoda kullanılanları çıkar
@@ -14,40 +23,20 @@ Lisans zorunluluğu: license alanı boş olan görsel render'a giremez (asset_li
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
-import pathlib
 from typing import Optional
+
+from app.core.visual_manifest import STYLE_CONTRACT, THEMES
+from app.db.supabase import get_supabase_client
 
 logger = logging.getLogger(__name__)
 
-_MANIFEST_PATH = pathlib.Path(__file__).resolve().parents[4] / "assets" / "library" / "manifest.json"
-_ASSET_REGISTRY_PATH = pathlib.Path(__file__).resolve().parents[4] / "assets" / "library" / "asset_registry.json"
-
-# Önbellek: modül yüklendiğinde manifest okunur
-_manifest_cache: Optional[dict] = None
+VISUAL_ASSETS_TABLE = "visual_assets"
 
 
-def _load_manifest() -> dict:
-    global _manifest_cache
-    if _manifest_cache is not None:
-        return _manifest_cache
-    if not _MANIFEST_PATH.exists():
-        logger.error(f"[visual_library] manifest bulunamadı: {_MANIFEST_PATH}")
-        return {}
-    try:
-        _manifest_cache = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
-    except Exception as exc:
-        logger.error(f"[visual_library] manifest parse hatası: {exc}")
-        return {}
-    return _manifest_cache
-
-
-def _cache_key(theme: str, model: str, quality: str, variant_index: int) -> str:
-    """§6.5.6 — Önbellek anahtarı."""
-    manifest = _load_manifest()
-    style = manifest.get("style_contract", {}).get("positive", "")
-    raw = f"{theme}|{style}|{model}|{quality}|{variant_index}"
+def cache_key(theme: str, model: str, quality: str, variant_index: int) -> str:
+    """§6.5.6 — Önbellek anahtarı. Stil değişirse (aynı tema için) yeni üretim tetiklenir."""
+    raw = f"{theme}|{STYLE_CONTRACT['positive']}|{model}|{quality}|{variant_index}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
@@ -58,43 +47,34 @@ def _deterministic_pick(candidates: list[dict], job_id: str, theme: str, idx: in
     return candidates[h % len(candidates)]
 
 
-def _load_asset_registry() -> list[dict]:
-    """Üretilmiş görsellerin kayıt defteri."""
-    if not _ASSET_REGISTRY_PATH.exists():
-        return []
-    try:
-        return json.loads(_ASSET_REGISTRY_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return []
-
-
-def _save_asset_registry(registry: list[dict]) -> None:
-    _ASSET_REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _ASSET_REGISTRY_PATH.write_text(
-        json.dumps(registry, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-
 def register_asset(asset: dict) -> None:
     """
-    Üretilmiş görseli kayıt defterine ekler.
-    Gerekli alanlar: asset_id, theme, source, license, model, quality,
-                     prompt_hash, path, generated_at, sha256, ocr_clean, has_face
+    Üretilmiş görseli visual_assets tablosuna ekler.
+    Gerekli alanlar: asset_id, theme, cache_key, license, model, quality,
+                     storage_path, public_url, sha256
     """
-    required = {"asset_id", "theme", "license", "path"}
+    required = {"asset_id", "theme", "cache_key", "storage_path", "public_url", "sha256"}
     missing = required - set(asset.keys())
     if missing:
         raise ValueError(f"register_asset eksik alanlar: {sorted(missing)}")
 
-    registry = _load_asset_registry()
-    # Çift kayıt engeli
-    if any(a.get("asset_id") == asset["asset_id"] for a in registry):
-        logger.debug(f"[visual_library] Zaten kayıtlı: {asset['asset_id']}")
-        return
-    registry.append(asset)
-    _save_asset_registry(registry)
-    logger.info(f"[visual_library] Kaydedildi: {asset['asset_id']} (tema: {asset.get('theme')})")
+    supabase = get_supabase_client()
+    try:
+        existing = (
+            supabase.table(VISUAL_ASSETS_TABLE)
+            .select("asset_id")
+            .eq("asset_id", asset["asset_id"])
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            logger.debug(f"[visual_library] Zaten kayıtlı: {asset['asset_id']}")
+            return
+        supabase.table(VISUAL_ASSETS_TABLE).insert(asset).execute()
+        logger.info(f"[visual_library] Kaydedildi: {asset['asset_id']} (tema: {asset.get('theme')})")
+    except Exception as exc:
+        logger.error(f"[visual_library] DB kayıt hatası: {exc}")
+        raise
 
 
 def select_asset(
@@ -109,7 +89,7 @@ def select_asset(
     §6.3 algoritmasına göre görsel seçer.
 
     Args:
-        theme:          Görsel teması (manifest anahtarı)
+        theme:          Görsel teması (THEMES anahtarı)
         job_id:         Deterministik seçim için iş kimliği
         content_track:  'ogrenci' | 'danisan'
         used_in_video:  Bu video içinde kullanılmış asset_id'ler
@@ -127,8 +107,7 @@ def select_asset(
     used_in_video = used_in_video or []
     recently_used = recently_used or []
 
-    manifest = _load_manifest()
-    theme_cfg = manifest.get("themes", {}).get(theme)
+    theme_cfg = THEMES.get(theme)
     if not theme_cfg:
         raise PipelineErrorException(
             "asset_license_missing",
@@ -136,7 +115,6 @@ def select_asset(
             stage="visual",
         )
 
-    # Tema bu content_track için geçerli mi?
     allowed_tracks = theme_cfg.get("content_tracks", ["ogrenci"])
     if content_track not in allowed_tracks:
         raise PipelineErrorException(
@@ -150,12 +128,25 @@ def select_asset(
             stage="visual",
         )
 
-    # Kayıt defterinden bu temaya ait adaylar
-    registry = _load_asset_registry()
-    candidates = [a for a in registry if a.get("theme") == theme]
+    supabase = get_supabase_client()
+    try:
+        resp = (
+            supabase.table(VISUAL_ASSETS_TABLE)
+            .select("*")
+            .eq("theme", theme)
+            .execute()
+        )
+        registry_rows = resp.data or []
+    except Exception as exc:
+        logger.error(f"[visual_library] DB okuma hatası: {exc}")
+        raise PipelineErrorException(
+            "asset_license_missing",
+            admin_detail={"reason": "db_read_failed", "theme": theme, "error": str(exc)},
+            stage="visual",
+        )
 
     # Lisans kontrolü: license alanı boş olan çıkar
-    candidates = [a for a in candidates if a.get("license")]
+    candidates = [a for a in registry_rows if a.get("license")]
 
     # Son 10 videoda kullanılanları çıkar
     candidates = [a for a in candidates if a.get("asset_id") not in recently_used]
@@ -173,7 +164,7 @@ def select_asset(
             admin_detail={
                 "reason": "no_valid_candidate",
                 "theme": theme,
-                "total_in_theme": len([a for a in registry if a.get("theme") == theme]),
+                "total_in_theme": len(registry_rows),
                 "after_filters": 0,
             },
             stage="visual",
@@ -188,16 +179,14 @@ def theme_for_scene(scene: dict, content_track: str = "ogrenci") -> Optional[str
     LLM'den gelen 'visual_theme' alanı varsa onu kullanır (güvenli allowlist ile).
 
     Returns:
-        Manifest'teki tema anahtarı ya da None
+        THEMES anahtarı ya da None
     """
-    manifest = _load_manifest()
-    all_themes = set(manifest.get("themes", {}).keys())
+    all_themes = set(THEMES.keys())
 
-    # LLM visual_theme alanına güven — sadece manifest'te varsa
+    # LLM visual_theme alanına güven — sadece THEMES'te varsa
     if scene.get("visual_theme") in all_themes:
         return scene["visual_theme"]
 
-    # Component bazlı varsayılan tema
     component = scene.get("component", "")
     segment_type = scene.get("segment_type", "")
 
@@ -210,7 +199,6 @@ def theme_for_scene(scene: dict, content_track: str = "ogrenci") -> Optional[str
     if "Motivation" in component:
         if content_track == "danisan":
             return "ofis_muhasebe"
-        # Segment tipine göre öneri
         _motivation_map = {
             "hook":    "yeniden_baslama",
             "problem": "mola",
@@ -227,10 +215,26 @@ def theme_for_scene(scene: dict, content_track: str = "ogrenci") -> Optional[str
     if visual_source in ("card", "table", "journal", "board"):
         return None
 
-    # Varsayılan
     if content_track == "danisan":
         return "ofis_muhasebe"
     return "calisma_masasi"
+
+
+MIN_VARIANTS_READY = 5
+
+
+def motivation_library_ready() -> tuple[bool, dict]:
+    """
+    Motivasyon üretimi açılmadan önce her temanın en az MIN_VARIANTS_READY
+    lisanslı varyantı olmalı — boş/yarım kütüphaneyle iş başlatılmaz
+    (asset_license_missing ile sessizce yarım video üretmek yerine, iş hiç
+    kuyruğa girmez; bkz. app/api/routes/video.py /create motivasyon kapısı).
+
+    Returns: (ready, status) — status = library_status() çıktısı
+    """
+    status = library_status()
+    ready = all(v["current"] >= MIN_VARIANTS_READY for v in status.values())
+    return ready, status
 
 
 def library_status() -> dict:
@@ -238,16 +242,18 @@ def library_status() -> dict:
     Kütüphane doluluk durumunu raporlar — toplu üretim kararı için.
     Returns: {theme: {target, current, pct, needs_generation: bool}}
     """
-    manifest = _load_manifest()
-    registry = _load_asset_registry()
+    supabase = get_supabase_client()
+    try:
+        resp = supabase.table(VISUAL_ASSETS_TABLE).select("theme, license").execute()
+        rows = resp.data or []
+    except Exception as exc:
+        logger.error(f"[visual_library] library_status DB hatası: {exc}")
+        rows = []
 
     result = {}
-    for theme_key, cfg in manifest.get("themes", {}).items():
+    for theme_key, cfg in THEMES.items():
         target = cfg.get("target_variants", 15)
-        current = sum(
-            1 for a in registry
-            if a.get("theme") == theme_key and a.get("license")
-        )
+        current = sum(1 for a in rows if a.get("theme") == theme_key and a.get("license"))
         result[theme_key] = {
             "label": cfg.get("label", theme_key),
             "target": target,

@@ -8,7 +8,13 @@ supabase==2.10.0
 httpx==0.27.2
 
 # ── OpenAI ───────────────────────────────────────────────────
-openai==1.57.4
+# 1.57.4 -> 2.52.0: gpt-image-2/gpt-image-1-mini için gerekli (images.generate
+# eski sürümde quality='low'/'medium', output_format, size=1024x1536 kabul
+# etmiyordu — TypeError). Doğrulandı: tek breaking change 2.0.0'da Responses
+# API'ye özel (bu kod tabanında hiç kullanılmıyor); chat.completions.create,
+# audio.speech.create, audio.transcriptions.create (tüm gerçek kullanım
+# noktaları) imzaları değişmeden duruyor.
+openai==2.52.0
 
 # ── Google Gemini ────────────────────────────────────────────
 google-generativeai==0.8.3

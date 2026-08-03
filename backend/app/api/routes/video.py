@@ -296,12 +296,67 @@ def _check_syllable_budget(
     return True, None
 
 
+def _attach_visual_assets(scenes: list[dict], job_id: str, content_track: str) -> list[dict]:
+    """
+    Motivasyon sahnelerine tema + görsel atar (visual_library.select_asset — DB'den,
+    lisanslı, deterministik). /create seviyesinde kütüphanenin hazır olduğu zaten
+    doğrulanmış olsa da (motivation_library_ready), select_asset yine de belirli bir
+    tema için aday tükenmişse asset_license_missing fırlatabilir — burada YUTULMAZ,
+    job'u durdurur (sessiz görselsiz fallback yok; kullanıcı kararı).
+    """
+    from app.modules.content.visual_library import theme_for_scene, select_asset
+
+    sb = get_supabase_client()
+    recently_used: list[str] = []
+    try:
+        recent_jobs = (
+            sb.table("video_jobs")
+            .select("id")
+            .eq("content_type", "motivasyon")
+            .order("created_at", desc=True)
+            .limit(10)
+            .execute()
+        )
+        recent_job_ids = [j["id"] for j in (recent_jobs.data or []) if j["id"] != job_id]
+        if recent_job_ids:
+            recent_scenes = (
+                sb.table("video_scenes")
+                .select("image_asset_id")
+                .in_("job_id", recent_job_ids)
+                .execute()
+            )
+            recently_used = [
+                s["image_asset_id"] for s in (recent_scenes.data or []) if s.get("image_asset_id")
+            ]
+    except Exception as exc:
+        logger.warning(f"[visual] {job_id[:8]} recently_used sorgu hatası: {exc}")
+
+    used_in_video: list[str] = []
+    face_count = 0
+    for s in scenes:
+        theme = theme_for_scene(s, content_track=content_track)
+        if not theme:
+            continue
+        asset = select_asset(
+            theme=theme, job_id=job_id, content_track=content_track,
+            used_in_video=used_in_video, recently_used=recently_used,
+            face_count=face_count,
+        )
+        s["image_url"] = asset["public_url"]
+        s["image_asset_id"] = asset["asset_id"]
+        used_in_video.append(asset["asset_id"])
+        if asset.get("has_face"):
+            face_count += 1
+    return scenes
+
+
 def _generate_storyboard_for_regen(
     content_type: str,
     payload,
     brand: dict,
     corrected_seconds: float,
     correction_hint: str,
+    job_id: str = "",
 ) -> dict | None:
     """
     Tek bir üretim denemesi — hece bütçesi doğrulaması yapmaz.
@@ -343,6 +398,7 @@ def _generate_storyboard_for_regen(
             if not s.get("voice_text"):
                 s["voice_text"] = s.get("narration") or s.get("spoken_text") or ""
             scenes.append(s)
+        scenes = _attach_visual_assets(scenes, job_id, payload.content_track)
         return {
             "video_type": payload.type,
             "title": result.get("title", payload.title),
@@ -386,6 +442,7 @@ def _regen_storyboard_for_duration(
     corrected_seconds: float,
     correction_hint: str,
     turn: int = 0,
+    job_id: str = "",
 ) -> tuple[dict | None, dict | None]:
     """
     Süre düzeltmesiyle storyboard yeniden üretir, ardından hece bütçesini
@@ -399,7 +456,7 @@ def _regen_storyboard_for_duration(
                                                           aşıldı — çağıran job'u
                                                           TTS'e göndermeden durdurmalı
     """
-    sb_new = _generate_storyboard_for_regen(content_type, payload, brand, corrected_seconds, correction_hint)
+    sb_new = _generate_storyboard_for_regen(content_type, payload, brand, corrected_seconds, correction_hint, job_id)
     if sb_new is None:
         return None, None
 
@@ -419,7 +476,7 @@ def _regen_storyboard_for_duration(
             return sb_new, None
         if attempt == 1:
             feedback = detail or feedback
-            sb_new = _generate_storyboard_for_regen(content_type, payload, brand, corrected_seconds, feedback)
+            sb_new = _generate_storyboard_for_regen(content_type, payload, brand, corrected_seconds, feedback, job_id)
             if sb_new is None:
                 return None, None
 
@@ -847,6 +904,7 @@ def _run_pipeline_inner(
                 if not s.get("voice_text"):
                     s["voice_text"] = s.get("narration") or s.get("spoken_text") or ""
                 scenes.append(s)
+            scenes = _attach_visual_assets(scenes, job_id, payload.content_track)
             storyboard = {
                 "video_type": payload.type,
                 "title": result.get("title", payload.title),
@@ -1055,7 +1113,7 @@ def _run_pipeline_inner(
                 _new_sb, _budget_exceeded = _regen_storyboard_for_duration(
                     content_type, payload, brand,
                     _dur_corrected_sec, _dur_correction_hint or "",
-                    turn=_dur_turn,
+                    turn=_dur_turn, job_id=job_id,
                 )
                 if _budget_exceeded is not None:
                     logger.error(
@@ -1606,6 +1664,24 @@ def create_video_job(payload: CreateVideoPayload, background_tasks: BackgroundTa
                 ),
             },
         )
+
+    # Motivasyon: görsel kütüphanesi dolmadan (her tema >= MIN_VARIANTS_READY
+    # lisanslı varyant) iş kuyruğa alınmaz — aksi halde her job select_asset'te
+    # asset_license_missing ile yarı yolda başarısız olur. Kullanıcı kararı:
+    # sessiz görselsiz fallback yok, kütüphane hazır olana kadar tür kapalı.
+    if _ct == "motivasyon":
+        from app.modules.content.visual_library import motivation_library_ready
+        _ready, _status = motivation_library_ready()
+        if not _ready:
+            logger.info(f"[video] motivasyon feature_not_ready — kütüphane durumu: {_status}")
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "feature_not_ready",
+                    "message": "Motivasyon videoları görsel kütüphanesi hazırlandıktan sonra açılacak.",
+                    "library_status": _status,
+                },
+            )
 
     try:
         payload_json = payload.model_dump(mode="json")

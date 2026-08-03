@@ -4,6 +4,7 @@
 import { AbsoluteFill, Audio, Img, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
 import { BrandConfig, Scene } from '../types'
 import { T } from '../theme/tokens'
+import { kenBurnsScale } from '../utils'
 
 interface Props { scene: Scene; brand: BrandConfig }
 
@@ -30,7 +31,10 @@ export function MotivationStepScene({ scene, brand }: Props) {
     <AbsoluteFill style={{ background: T.color.navy900, overflow: 'hidden' }}>
       {imageUrl && (
         <AbsoluteFill>
-          <Img src={imageUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <Img src={imageUrl} style={{
+            width: '100%', height: '100%', objectFit: 'cover', filter: 'saturate(0.92)',
+            transform: `scale(${kenBurnsScale(frame, scene.duration_seconds, fps, String(scene.id ?? ''))})`,
+          }} />
         </AbsoluteFill>
       )}
       <AbsoluteFill style={{

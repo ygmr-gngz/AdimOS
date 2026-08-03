@@ -1,0 +1,13 @@
+# ── Yerel geliştirme araçları — Railway/production imajına DAHİL DEĞİL ─────
+# Bu bağımlılıklar yalnızca backend/scripts/generate_assets.py gibi manuel,
+# yerelden çalıştırılan CLI araçları içindir. backend/Dockerfile bu dosyayı
+# okumaz — üretim container'ı yalnızca requirements.txt kullanır (bkz.
+# generate_assets.py docstring: script Railway'de HİÇBİR ZAMAN çalışmaz,
+# CMD sadece "uvicorn app.main:app").
+#
+# Kurulum:
+#   pip install -r requirements-dev.txt
+# Ayrıca Tesseract OCR binary'si (Python paketinin dışında, ayrı kurulum
+# gerekir) — bkz. generate_assets.py docstring / proje talimatları.
+
+pytesseract>=0.3.10

@@ -22,6 +22,7 @@ export const ERROR_CODES = [
   "duplicate_content_detected",
   "job_already_running",
   "cost_cap_exceeded",
+  "feature_not_ready",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -71,6 +72,8 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
     "Bu iş zaten kuyrukta.",
   cost_cap_exceeded:
     "İş için tanımlı maliyet üst sınırı aşıldı.",
+  feature_not_ready:
+    "Motivasyon videoları görsel kütüphanesi hazırlandıktan sonra açılacak.",
 };
 
 /** retryable=false olan kodlarda "Yeniden Dene" butonu gösterilmez */
@@ -92,6 +95,7 @@ export const NON_RETRYABLE_CODES = new Set<ErrorCode>(
       "duplicate_content_detected",
       "job_already_running",
       "cost_cap_exceeded",
+      "feature_not_ready",
     ].includes(c)
   )
 );
