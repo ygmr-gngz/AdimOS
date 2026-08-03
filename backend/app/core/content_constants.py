@@ -13,7 +13,7 @@ shared/content-types.json değiştiğinde:
   python backend/scripts/generate_content_constants.py
   (CI'da doğrulama: --check bayrağıyla)
 """
-from app.core.generated_constants import TR_SPS, CHARS_PER_SYLLABLE  # noqa: F401
+from app.core.generated_constants import TR_SPS, CHARS_PER_SYLLABLE, VISUAL_SURFACE_MINIMUMS  # noqa: F401
 
 
 def budget_params(budget_seconds: float, scene_count: int) -> tuple[int, int, int, int]:

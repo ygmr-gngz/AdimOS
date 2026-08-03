@@ -344,9 +344,35 @@ def _attach_visual_assets(scenes: list[dict], job_id: str, content_track: str) -
         )
         s["image_url"] = asset["public_url"]
         s["image_asset_id"] = asset["asset_id"]
+        s["visual_source"] = "photo"
         used_in_video.append(asset["asset_id"])
         if asset.get("has_face"):
             face_count += 1
+        logger.info(
+            "[visual] %s sahne=%s tema=%s asset_id=%s",
+            job_id[:8], s.get("id"), theme, asset["asset_id"],
+        )
+
+    duplicate_assets = len(used_in_video) - len(set(used_in_video))
+    if duplicate_assets:
+        logger.warning(
+            "[visual] %s AYNI GÖRSEL BİRDEN FAZLA KULLANILDI (%d tekrar) — "
+            "select_asset dedup mantığında hata olabilir", job_id[:8], duplicate_assets,
+        )
+
+    # Gözlem amaçlı — henüz job'u durdurmuyor (kütüphane yeni dolduruldu, ilk
+    # gerçek job'ların tamamlanıp izlenmesi bekleniyor; sert kapı daha sonra).
+    from app.core.content_constants import VISUAL_SURFACE_MINIMUMS
+    photo_count = sum(1 for s in scenes if s.get("visual_source") == "photo")
+    mins = VISUAL_SURFACE_MINIMUMS.get("motivasyon", {})
+    min_surfaces, min_photos = mins.get("min_visual_surfaces", 0), mins.get("min_photos", 0)
+    surfaces_ok = len(scenes) >= min_surfaces
+    photos_ok = photo_count >= min_photos
+    logger.info(
+        "[visual] %s min_visual_surfaces kapısı: sahne=%d/%d %s | foto=%d/%d %s",
+        job_id[:8], len(scenes), min_surfaces, "GEÇTİ" if surfaces_ok else "BAŞARISIZ",
+        photo_count, min_photos, "GEÇTİ" if photos_ok else "BAŞARISIZ",
+    )
     return scenes
 
 

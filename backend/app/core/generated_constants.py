@@ -5,3 +5,12 @@
 
 TR_SPS: float = 4.15
 CHARS_PER_SYLLABLE: float = 2.7
+
+# canonical content_type -> {min_visual_surfaces, min_photos, max_photos?}
+VISUAL_SURFACE_MINIMUMS: dict[str, dict] = {
+    'konu_anlatimi': {'min_visual_surfaces': 12, 'min_photos': 0},
+    'soru_cozum': {'min_visual_surfaces': 3, 'min_photos': 0},
+    'reels_short': {'min_visual_surfaces': 5, 'min_photos': 0, 'max_photos': 2},
+    'motivasyon': {'min_visual_surfaces': 7, 'min_photos': 5},
+    'gorsel_post': {'min_visual_surfaces': 3, 'min_photos': 0},
+}
