@@ -211,6 +211,7 @@ export interface Scene {
   imageUrl?: string            // sahne arka plan görseli URL
   image_url?: string           // eski alias
   image_search_query?: string  // arka plan arama terimi
+  visual_source?: string       // backend theme_for_scene/select_asset ile atanır — 'photo' ise imageUrl dolu
   step_number?: number         // MotivationStepScene adım numarası
   step_title?: string          // MotivationStepScene adım başlığı
   captions?: { start: number; end: number; text: string }[]

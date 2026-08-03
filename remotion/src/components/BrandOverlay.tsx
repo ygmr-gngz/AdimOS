@@ -26,6 +26,10 @@ interface BrandOverlayProps {
   watermarkOpacity?: number
   /** SocialFooter göster. Varsayılan true. */
   showFooter?: boolean
+  /** Filigran göster. Varsayılan true — fotoğraf arka planlı sahnelerde false
+   *  verilmeli (mixBlendMode fotoğraf üzerinde parlak dikdörtgene dönüşüyor
+   *  ve metni okunmaz kılıyor; bkz. MotivationVideo.tsx per-sahne filigran). */
+  showWatermark?: boolean
 }
 
 export function BrandOverlay({
@@ -34,13 +38,16 @@ export function BrandOverlay({
   logoSize           = 140,
   watermarkOpacity,
   showFooter         = true,
+  showWatermark      = true,
 }: BrandOverlayProps) {
   const wOpacity = watermarkOpacity ?? (theme === 'light' ? 0.09 : 0.10)
 
   return (
     <>
       {/* 1. Filigran — içerik arkasında (z:0) */}
-      <BrandWatermark theme={theme} opacity={wOpacity} logoUrl={brand?.logo_url} />
+      {showWatermark && (
+        <BrandWatermark theme={theme} opacity={wOpacity} logoUrl={brand?.logo_url} />
+      )}
 
       {/* 2. Köşe logosu — içerik üstünde (z:100) */}
       <BrandCornerLogo brand={brand} corner="top-right" size={logoSize} />

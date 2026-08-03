@@ -6,6 +6,7 @@
 import { AbsoluteFill, Sequence } from 'remotion'
 import { StoryboardJSON } from '../types'
 import { BrandOverlay } from '../components/BrandOverlay'
+import { BrandWatermark } from '../components/BrandWatermark'
 import { CaptionOverlay } from '../components/CaptionOverlay'
 import { MotivationScene } from '../scenes/MotivationScene'
 import { MotivationHookScene }    from '../scenes/MotivationHookScene'
@@ -67,6 +68,11 @@ export function MotivationVideo({ storyboard }: Props) {
           <AbsoluteFill>
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
             <MotivationSceneDispatcher scene={scene as unknown as Record<string, unknown>} brand={brand} />
+            {/* Filigran yalnızca fotoğrafsız sahnelerde — fotoğraf üzerinde
+                mixBlendMode parlak dikdörtgene dönüşüp metni okunmaz kılıyordu. */}
+            {scene.visual_source !== 'photo' && (
+              <BrandWatermark theme="dark" opacity={0.10} logoUrl={brand?.logo_url} />
+            )}
           </AbsoluteFill>
         </Sequence>
       ))}
@@ -92,8 +98,8 @@ export function MotivationVideo({ storyboard }: Props) {
         )
       })}
 
-      {/* Logo sağ üst + watermark + footer */}
-      <BrandOverlay brand={brand} theme="dark" logoSize={140} watermarkOpacity={0.10} showFooter />
+      {/* Logo sağ üst + footer — filigran per-sahne yukarıda (fotoğrafsız sahnelerde) */}
+      <BrandOverlay brand={brand} theme="dark" logoSize={140} showFooter showWatermark={false} />
     </AbsoluteFill>
   )
 }
