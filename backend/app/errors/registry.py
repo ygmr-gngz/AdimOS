@@ -156,6 +156,10 @@ REGISTRY: dict[str, dict[str, Any]] = {
         "retryable": False,
         "user_message": "İçerik ekrana sığmadı.",
     },
+    "visual_content_missing": {
+        "retryable": False,
+        "user_message": "Sahnede ne fotoğraf ne de metin-sahne işareti var — görsel içerik atanmalı.",
+    },
     "marketing_compliance_failed": {
         "retryable": False,
         "user_message": "Metin, meslek kurallarına uygun olmayan ifade içeriyor.",

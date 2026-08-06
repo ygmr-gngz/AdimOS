@@ -28,7 +28,10 @@ export const T = {
 
     // ── Yüzeyler ──────────────────────────────────────────────────
     surface:   "#FBFBFB",   // kart zemini
-    canvas:    "#FEFEFE",   // sayfa zemini
+    canvas:    "#F4F6FA",   // sayfa zemini — surface'tan (FBFBFB) belirgin ayrışsın
+                            // diye (eskiden FEFEFE idi, surface'la aşırı yakındı —
+                            // ölçüm: içerik pikseli %7'de tıkalı kalıyordu, beyaz
+                            // üstü beyaz kart "arka plandan farklı piksel" sayılmıyordu)
     border:    "#E1E7F0",   // kenar çizgisi
 
     // ── Metin ────────────────────────────────────────────────────
@@ -89,21 +92,29 @@ export const T = {
     // Güvenli alanlar
     safeTop:    220,
     safeBottom: 320,
-    safeX:      72,
+    safeX:      60,
     // Kart
-    cardW:      936,
-    cardPad:    40,
+    cardW:      960,
+    cardPad:    56,
     cardRadius: 28,
-    // Tipografi
+    // Sabit boyutlar — LLM'den gelen değişken uzunlukta metin DEĞİL
+    // (hesap kodu/nitelik harfi sabit uzunlukta), dinamik ölçeklemeye dahil değil.
     codeBadgeFont: 56,
-    titleFont:     48,
     natureBadge:   56,
-    labelFont:     34,
-    bodyFont:      38,
-    entryFont:     34,
     captionFont:   30,
+    // Dinamik ölçeklenen alanlar — target: kısa içerikte kullanılan tavan,
+    // min: taşma durumunda tek bir scale katsayısıyla inebileceği taban.
+    // Taban altına inmeden sığmıyorsa layout_overflow fırlatılır (sessiz
+    // kırpma yok — v4 spesifikasyonundaki kuralla aynı).
+    font: {
+      title: { target: 92, min: 68 },
+      body:  { target: 50, min: 38 },
+      label: { target: 34, min: 28 },
+      entry: { target: 34, min: 30 },
+      tip:   { target: 34, min: 30 },
+    },
     // Düzen
-    sectionGap:  20,
+    sectionGap:  44,
     iconSize:    28,
     entryIndent: 48,
   },
@@ -120,12 +131,19 @@ export const T = {
     cardRadius: 24,
     // Tipografi
     codeBadgeFont: 40,
-    titleFont:     34,
     natureBadge:   40,
-    labelFont:     24,
-    bodyFont:      27,
-    entryFont:     25,
     captionFont:   22,
+    // 16:9 için min değerleri hiç ölçülmedi/belirtilmedi — min=target koyarak
+    // dinamik ölçeklemeyi bu format için etkisiz bırakıyoruz (şimdilik sabit
+    // davranış korunuyor). Gerçek 16:9 kart kullanımı gündeme gelince ayrıca
+    // ölçülüp ayarlanmalı, buradan tahminle doldurulmadı.
+    font: {
+      title: { target: 34, min: 34 },
+      body:  { target: 27, min: 27 },
+      label: { target: 24, min: 24 },
+      entry: { target: 25, min: 25 },
+      tip:   { target: 27, min: 27 },
+    },
     // Düzen
     sectionGap:  16,
     iconSize:    22,

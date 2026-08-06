@@ -10,6 +10,7 @@
 import { AbsoluteFill, Sequence } from 'remotion'
 import { StoryboardJSON } from '../types'
 import { BrandOverlay } from '../components/BrandOverlay'
+import { BrandWatermark } from '../components/BrandWatermark'
 import { CaptionOverlay } from '../components/CaptionOverlay'
 import { EducationalReelScene } from '../scenes/EducationalReelScene'
 import { AccountCardScene } from '../scenes/AccountCardScene'
@@ -21,6 +22,15 @@ import { FPS } from '../brand'
 import { TRANSITION_FRAMES, resolveSceneDurationSeconds } from '../utils'
 
 interface Props { storyboard: StoryboardJSON }
+
+// Kart tabanlı sahnelerde filigran KAPALI — kartın arkasından geçmesi
+// okunabilirliği bozuyor (Motivation sahnelerindeki aynı sorunun karşılığı,
+// 2026-08-05). Yalnızca metin/foto sahnelerinde (ReelHookScene, ReelCtaScene,
+// vb.) filigran kalır — orada düz lacivert zemin var, filigran zemine gömülür.
+const CARD_BASED_COMPONENTS = new Set([
+  'AccountCardScene', 'JournalEntryScene', 'TableScene',
+  'CommonMistakeScene', 'RuleBoxScene',
+])
 
 function ReelScene({ scene, brand }: { scene: Record<string, unknown>; brand: unknown }) {
   const comp = scene.component as string
@@ -91,6 +101,9 @@ export function EducationalReel120({ storyboard }: Props) {
           <AbsoluteFill>
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
             <ReelScene scene={scene as any} brand={brand} />
+            {!CARD_BASED_COMPONENTS.has(scene.component as string) && (
+              <BrandWatermark theme="dark" opacity={0.08} logoUrl={brand?.logo_url} />
+            )}
           </AbsoluteFill>
         </Sequence>
       ))}
@@ -116,8 +129,8 @@ export function EducationalReel120({ storyboard }: Props) {
         )
       })}
 
-      {/* Logo sağ üstte, watermark + sosyal footer */}
-      <BrandOverlay brand={brand} theme="dark" logoSize={120} watermarkOpacity={0.08} showFooter />
+      {/* Logo sağ üstte + sosyal footer — filigran per-sahne yukarıda (kart olmayan sahnelerde) */}
+      <BrandOverlay brand={brand} theme="dark" logoSize={120} showFooter showWatermark={false} />
     </AbsoluteFill>
   )
 }

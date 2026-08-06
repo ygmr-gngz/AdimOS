@@ -49,10 +49,10 @@ export function MotivationProblemScene({ scene, brand }: Props) {
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: 10,
             background: 'rgba(232,176,75,0.18)', borderRadius: T.radius.chip,
-            padding: '8px 18px', border: `1.5px solid ${T.color.gold}`,
+            padding: '8px 18px', border: `1.5px solid ${T.color.gold500}`,
           }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: T.color.gold }} />
-            <span style={{ fontSize: 26, fontWeight: 700, color: T.color.gold, fontFamily: T.font.body }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: T.color.gold500 }} />
+            <span style={{ fontSize: 26, fontWeight: 700, color: T.color.gold500, fontFamily: T.font.body }}>
               Bunu biliyor musun?
             </span>
           </div>

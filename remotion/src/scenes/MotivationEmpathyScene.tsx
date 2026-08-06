@@ -45,7 +45,7 @@ export function MotivationEmpathyScene({ scene, brand }: Props) {
           opacity: quoteOp,
           transform: `scale(${quoteScale})`,
           transformOrigin: 'left center',
-          fontSize: 160, fontWeight: 900, color: T.color.gold,
+          fontSize: 160, fontWeight: 900, color: T.color.gold500,
           lineHeight: 1, marginBottom: -20,
           fontFamily: 'serif',
         }}>
@@ -62,8 +62,8 @@ export function MotivationEmpathyScene({ scene, brand }: Props) {
             {narration}
           </div>
           <div style={{ marginTop: 28, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 40, height: 2, background: T.color.gold }} />
-            <span style={{ fontSize: 26, color: T.color.gold, fontWeight: 600, fontFamily: T.font.body }}>
+            <div style={{ width: 40, height: 2, background: T.color.gold500 }} />
+            <span style={{ fontSize: 26, color: T.color.gold500, fontWeight: 600, fontFamily: T.font.body }}>
               Adım Müşavir
             </span>
           </div>

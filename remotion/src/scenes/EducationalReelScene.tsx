@@ -68,6 +68,20 @@ export function EducationalReelScene({ scene, brand }: Props) {
   const transform = useKenBurns(motion)
   const overlayOpacity = visual?.overlay_opacity ?? 0.45
 
+  // A.6 — eskiden fotoğraf yoksa HER ZAMAN sessizce lacivert gradyana
+  // düşülüyordu; bu, kasıtlı metin sahnesi (hook/cta, visual_source=
+  // 'text_only') ile GERÇEKTEN eksik içeriği ayırt edemiyordu. A.5 sonrası
+  // 'card' tipi içerik zaten AccountCardScene ailesine yönlendiriliyor —
+  // bu bileşene ulaşan bir sahnenin ya fotoğrafı olmalı ya da kasıtlı
+  // text_only olmalı. İkisi de yoksa artık sessizce geçilmiyor, hata verilir.
+  if (!visual?.visual_url && scene.visual_source !== 'text_only') {
+    throw new Error(
+      `visual_content_missing: sahne ${scene.id ?? '?'} (segment_type=${scene.segment_type ?? '?'}) ` +
+      `ne fotoğraf içeriyor ne visual_source='text_only' — EducationalReelScene artık sessizce ` +
+      `lacivert zemine düşmüyor. Sahneye fotoğraf atanmalı veya visual_source='text_only' işaretlenmeli.`
+    )
+  }
+
   const seg = scene.segment_type
   const { accent, badge, badgeText, labelText } = segmentStyle(seg)
 
@@ -112,7 +126,7 @@ export function EducationalReelScene({ scene, brand }: Props) {
           }} />
         </div>
       ) : (
-        /* Görsel yoksa lacivert gradyan */
+        /* visual_source='text_only' — KASITLI lacivert zemin (hook/cta), fallback DEĞİL */
         <div style={{
           position: 'absolute', inset: 0,
           background: 'linear-gradient(160deg, #0B2A4A 0%, #0D1F3C 45%, #0A1628 100%)',

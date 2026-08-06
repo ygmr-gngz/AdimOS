@@ -1,197 +1,231 @@
 /**
- * JournalEntryScene — Yevmiye kaydı tam ekran bileşeni
- * Borç/Alacak iki sütun, hesap kodu + ad + tutar hizalı, animasyonlu
+ * JournalEntryScene — tam ekran yevmiye kaydı.
+ *
+ * İKİ ÇAĞRI DESENİ bir arada desteklenir:
+ *  - EducationalReel120: sahne alanlarını DÜZ prop olarak yayıyor ({...p}) —
+ *    bu yolda eski {scene,brand} imzası hiç çalışmıyordu (undefined, ilk
+ *    erişimde çökerdi). Bu gerçek, düzeltilmesi gereken bir hataydı.
+ *  - LessonVideo / QuizVideo: {scene, brand} sarmalayıcısı ile çağırıyor,
+ *    scene.journal_rows (code/name/debit?/credit? — AYRI alanlar) kullanıyor.
+ *    Bu yol GERÇEKTEN ÇALIŞIYORDU — kart sistemi yeniden tasarımı bunu
+ *    KIRMAMALI, kapsam dışı bir composition ailesi.
+ * normalizeProps() ikisini de AccountCardScene'in journalEntry şekline
+ * (code/name/side/amount) çevirir — CardShell/dinamik ölçekleme/denklik
+ * çubuğu her iki çağrı yolunda da aynı şekilde çalışır.
  */
-import { interpolate, spring, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
-import { BrandConfig, Scene } from '../types'
-import { PALETTE } from '../brand'
+import { interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
+import { T } from '../theme/tokens'
+import { CardShell } from '../components/CardShell'
+import { IconCheck } from '../components/CardIcons'
+import { estimateLines, fieldMinScale, solveCardScale } from '../theme/dynamicScale'
 
-const ACCENT = PALETTE.ACCENT
-const BG_DARK = PALETTE.BG_DARK
-const BG_MID = PALETTE.BG_MID
+interface JournalLine {
+  code: string
+  name: string
+  side: 'debit' | 'credit'
+  amount?: string
+}
 
-interface Props { scene: Scene; brand: BrandConfig }
+interface FlatProps {
+  title?: string
+  journalEntry?: JournalLine[]
+  entryCaption?: string
+  explanation?: string
+  voice_text?: string
+  format?: '9:16' | '16:9'
+}
 
-export function JournalEntryScene({ scene, brand }: Props) {
+interface LegacyJournalRow {
+  code?: string
+  name: string
+  debit?: number
+  credit?: number
+}
+
+interface LegacyProps {
+  scene: {
+    title?: string
+    journal_rows?: LegacyJournalRow[]
+    explanation?: string
+    entryCaption?: string
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  brand?: any
+  format?: '9:16' | '16:9'
+}
+
+type JournalEntrySceneProps = FlatProps | LegacyProps
+
+const SECTION_INDENT = 0
+
+function parseTurkishAmount(raw: string | undefined): number {
+  if (!raw) return 0
+  const s = raw.trim().replace(/\./g, '').replace(',', '.')
+  const n = parseFloat(s)
+  return isNaN(n) ? 0 : n
+}
+
+function formatTurkishAmount(n: number): string {
+  return n.toLocaleString('tr-TR', { maximumFractionDigits: 2 })
+}
+
+function normalizeProps(props: JournalEntrySceneProps): FlatProps {
+  if ('scene' in props && props.scene) {
+    const s = props.scene
+    const journalEntry: JournalLine[] = (s.journal_rows ?? []).map(r => ({
+      code: r.code ?? '',
+      name: r.name,
+      side: r.debit !== undefined ? 'debit' as const : 'credit' as const,
+      amount: formatTurkishAmount(r.debit !== undefined ? r.debit : (r.credit ?? 0)),
+    }))
+    return {
+      title: s.title,
+      journalEntry,
+      entryCaption: s.entryCaption,
+      explanation: s.explanation,
+      format: props.format,
+    }
+  }
+  return props
+}
+
+export function JournalEntryScene(rawProps: JournalEntrySceneProps) {
+  const { title, journalEntry = [], entryCaption, explanation, format = '9:16' } = normalizeProps(rawProps)
   const frame = useCurrentFrame()
-  const { fps, width, height } = useVideoConfig()
-  const isVertical = height > width
+  const { fps, height: videoHeight } = useVideoConfig()
 
-  const rows = scene.journal_rows ?? []
-  const debitRows  = rows.filter(r => r.debit  !== undefined)
-  const creditRows = rows.filter(r => r.credit !== undefined)
+  const cardProgress = spring({ frame, fps, config: { damping: 14, stiffness: 100 } })
+  const cardY = interpolate(cardProgress, [0, 1], [60, 0])
+  const cardOpacity = interpolate(cardProgress, [0, 1], [0, 1])
 
-  const headerOpacity = interpolate(frame, [0, 22], [0, 1], { extrapolateRight: 'clamp' })
-  const tableScale = spring({ frame, fps, config: { damping: 20, stiffness: 160 }, from: 0.92, to: 1 })
-  const tableOpacity = interpolate(frame, [14, 34], [0, 1], { extrapolateRight: 'clamp' })
+  const L = format === '16:9' ? T.layout16x9 : T.layout9x16
+  const minScale = fieldMinScale(Object.values(L.font))
+  const availableHeight = videoHeight - L.safeTop - L.safeBottom
+  const innerWidth = L.cardW - 2 * L.cardPad
 
-  const padH = isVertical ? 48 : 120
-  const padV = isVertical ? 60 : 56
+  const debitTotal = journalEntry.filter(l => l.side === 'debit').reduce((s, l) => s + parseTurkishAmount(l.amount), 0)
+  const creditTotal = journalEntry.filter(l => l.side === 'credit').reduce((s, l) => s + parseTurkishAmount(l.amount), 0)
+  const balanced = Math.abs(debitTotal - creditTotal) < 0.01
 
-  const totalDebit  = debitRows.reduce((s, r) => s + (r.debit ?? 0), 0)
-  const totalCredit = creditRows.reduce((s, r) => s + (r.credit ?? 0), 0)
+  const estimateHeight = (scale: number): number => {
+    const title_ = L.font.title.target * scale * 0.75
+    const entry = L.font.entry.target * scale
+    let h = T.space.lg * 2
+
+    if (title) h += estimateLines(title, title_, innerWidth) * title_ * 1.15 + T.space.lg
+    h += entry * 1.2 + T.space.sm * 2  // yevmiye tablosu başlık satırı
+    h += journalEntry.length * (entry * 1.7)
+    if (entryCaption) h += L.captionFont * 1.4 + 6
+    h += T.space.md + entry * 1.5 + T.space.md * 2  // denklik çubuğu
+    if (explanation) {
+      h += T.space.md + estimateLines(explanation, L.font.body.target * scale, innerWidth - 40) * L.font.body.target * scale * 1.5 + T.space.md * 2
+    }
+
+    return h
+  }
+
+  const scale = solveCardScale(estimateHeight, availableHeight, minScale, 'JournalEntryScene')
+  const titleFont = L.font.title.target * scale * 0.75
+  const bodyFont = L.font.body.target * scale
+  const entryFont = L.font.entry.target * scale
 
   return (
-    <div style={{
-      width: '100%', height: '100%',
-      background: `linear-gradient(145deg, ${BG_DARK} 0%, #0C1E36 100%)`,
-      display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
-      padding: `${padV}px ${padH}px`,
-      fontFamily: brand.font_body, position: 'relative', overflow: 'hidden',
-    }}>
-      {/* Background glow */}
-      <div style={{
-        position: 'absolute', inset: 0,
-        background: `radial-gradient(ellipse at 50% 30%, ${ACCENT}08 0%, transparent 65%)`,
-        pointerEvents: 'none',
-      }} />
-
-      {/* Top bar */}
-      <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0, height: 4,
-        background: `linear-gradient(90deg, transparent, ${ACCENT}, transparent)`,
-        opacity: 0.7,
-      }} />
-
-      {/* Başlık */}
-      <div style={{ opacity: headerOpacity, textAlign: 'center', marginBottom: isVertical ? 36 : 32, width: '100%' }}>
-        <p style={{
-          fontSize: 12, fontWeight: 800, color: ACCENT,
-          letterSpacing: 4, textTransform: 'uppercase' as const, margin: '0 0 8px',
-        }}>
-          Yevmiye Kaydı
-        </p>
-        {scene.title && (
-          <h2 style={{
-            fontSize: isVertical ? 28 : 32,
-            fontFamily: brand.font_heading, fontWeight: 700,
-            color: '#FFFFFF', margin: 0, lineHeight: 1.3,
+    <CardShell format={format} opacity={cardOpacity} translateY={cardY}>
+      <div style={{ padding: `${T.space.lg}px ${L.cardPad}px 0` }}>
+        {title && (
+          <div style={{
+            fontSize: titleFont, fontWeight: 800, color: T.color.navy900,
+            lineHeight: 1.15, marginBottom: T.space.lg,
           }}>
-            {scene.title}
-          </h2>
+            {title}
+          </div>
         )}
-      </div>
 
-      {/* Tablo */}
-      <div style={{
-        width: '100%', transform: `scale(${tableScale})`,
-        opacity: tableOpacity,
-        borderRadius: 16, overflow: 'hidden',
-        border: `1px solid ${ACCENT}25`,
-        boxShadow: `0 8px 40px rgba(0,0,0,0.4)`,
-      }}>
-        {/* Tablo başlığı */}
+        {/* Yevmiye kaydı tablosu */}
         <div style={{
-          display: 'grid', gridTemplateColumns: isVertical ? '50px 1fr 100px' : '80px 1fr 130px',
-          background: ACCENT, padding: '12px 20px', gap: 10,
+          borderRadius: T.radius.chip, overflow: 'hidden', border: `1px solid ${T.color.border}`,
         }}>
-          <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', letterSpacing: 2 }}>KOD</span>
-          <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', letterSpacing: 2 }}>HESAP ADI</span>
-          <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', letterSpacing: 2, textAlign: 'right' }}>TUTAR</span>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between',
+            background: T.color.navy900, color: T.color.surface,
+            padding: `${T.space.sm}px ${T.space.md}px`,
+            fontSize: entryFont * 0.7, fontWeight: 700, letterSpacing: 1,
+            textTransform: 'uppercase' as const,
+          }}>
+            <span>Hesap</span>
+            <span>Tutar</span>
+          </div>
+          <div style={{ padding: `${T.space.sm}px ${T.space.md}px`, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {journalEntry.map((line, i) => {
+              const delay = i * 6
+              const op = interpolate(frame, [delay, delay + 12], [0, 1], { extrapolateRight: 'clamp' })
+              return (
+                <div key={i} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+                  paddingLeft: line.side === 'credit' ? L.entryIndent : SECTION_INDENT,
+                  opacity: op,
+                }}>
+                  <span style={{ fontSize: entryFont, color: T.color.text }}>
+                    <span style={{ color: T.color.navy500, fontWeight: 700, marginRight: 8 }}>{line.code}</span>
+                    {line.name}
+                  </span>
+                  {line.amount && (
+                    <span style={{
+                      fontSize: entryFont, fontWeight: 700, color: T.color.navy900,
+                      fontVariantNumeric: 'tabular-nums',
+                    }}>
+                      {line.amount}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          {entryCaption && (
+            <div style={{
+              padding: `0 ${T.space.md}px ${T.space.sm}px`,
+              fontSize: L.captionFont, color: T.color.muted, fontStyle: 'italic',
+            }}>
+              {entryCaption}
+            </div>
+          )}
         </div>
 
-        {/* Borç satırları */}
-        {debitRows.map((row, i) => {
-          const rOpacity = interpolate(frame, [34 + i * 12, 50 + i * 12], [0, 1], { extrapolateRight: 'clamp' })
-          const rX = interpolate(frame, [34 + i * 12, 50 + i * 12], [-20, 0], { extrapolateRight: 'clamp' })
-          return (
-            <div key={`d${i}`} style={{
-              display: 'grid',
-              gridTemplateColumns: isVertical ? '50px 1fr 100px' : '80px 1fr 130px',
-              padding: '11px 20px', gap: 10,
-              background: i % 2 === 0 ? BG_MID : `${BG_MID}AA`,
-              borderBottom: `1px solid ${ACCENT}12`,
-              opacity: rOpacity, transform: `translateX(${rX}px)`,
-            }}>
-              <span style={{ fontSize: isVertical ? 12 : 14, color: ACCENT, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                {row.code ?? '—'}
-              </span>
-              <span style={{ fontSize: isVertical ? 13 : 15, color: '#FFFFFF', fontWeight: 500 }}>
-                {row.name}
-              </span>
-              <span style={{
-                fontSize: isVertical ? 13 : 15, color: PALETTE.CORRECT,
-                fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums',
-              }}>
-                {(row.debit ?? 0).toLocaleString('tr-TR')} ₺
-              </span>
-            </div>
-          )
-        })}
-
-        {/* Alacak satırları (girintili) */}
-        {creditRows.map((row, i) => {
-          const delay = 34 + debitRows.length * 12 + i * 12
-          const rOpacity = interpolate(frame, [delay, delay + 16], [0, 1], { extrapolateRight: 'clamp' })
-          const rX = interpolate(frame, [delay, delay + 16], [20, 0], { extrapolateRight: 'clamp' })
-          return (
-            <div key={`c${i}`} style={{
-              display: 'grid',
-              gridTemplateColumns: isVertical ? '50px 1fr 100px' : '80px 1fr 130px',
-              padding: '11px 20px', gap: 10,
-              background: i % 2 === 0 ? '#0B1E35' : BG_DARK,
-              borderBottom: i < creditRows.length - 1 ? `1px solid ${ACCENT}10` : 'none',
-              opacity: rOpacity, transform: `translateX(${rX}px)`,
-            }}>
-              <span style={{ fontSize: isVertical ? 12 : 14, color: `${ACCENT}80`, fontWeight: 600 }}>
-                {row.code ?? '—'}
-              </span>
-              <span style={{ fontSize: isVertical ? 13 : 15, color: 'rgba(255,255,255,0.72)', paddingLeft: 16, fontStyle: 'italic' }}>
-                {row.name}
-              </span>
-              <span style={{
-                fontSize: isVertical ? 13 : 15, color: PALETTE.ACCENT_LT,
-                fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums',
-              }}>
-                {(row.credit ?? 0).toLocaleString('tr-TR')} ₺
-              </span>
-            </div>
-          )
-        })}
-
-        {/* Toplam satırı */}
-        {rows.length > 0 && (
+        {/* Borç = Alacak denklik çubuğu */}
+        {journalEntry.length > 0 && (
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: isVertical ? '50px 1fr 100px' : '80px 1fr 130px',
-            padding: '12px 20px', gap: 10,
-            background: `${ACCENT}15`,
-            borderTop: `2px solid ${ACCENT}40`,
-            opacity: interpolate(frame, [60 + rows.length * 10, 76 + rows.length * 10], [0, 1], { extrapolateRight: 'clamp' }),
+            marginTop: T.space.md,
+            background: balanced ? `${T.color.green700}14` : `${T.color.crimson}14`,
+            border: `1.5px solid ${balanced ? T.color.green700 : T.color.crimson}`,
+            borderRadius: T.radius.chip,
+            padding: `${T.space.sm}px ${T.space.md}px`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
           }}>
-            <span />
-            <span style={{ fontSize: isVertical ? 12 : 13, fontWeight: 800, color: PALETTE.TEXT_DIM, letterSpacing: 2 }}>
-              TOPLAM
-            </span>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: isVertical ? 11 : 12, color: PALETTE.CORRECT, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                B: {totalDebit.toLocaleString('tr-TR')} ₺
-              </div>
-              <div style={{ fontSize: isVertical ? 11 : 12, color: PALETTE.ACCENT_LT, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                A: {totalCredit.toLocaleString('tr-TR')} ₺
-              </div>
+            <div style={{ color: balanced ? T.color.green700 : T.color.crimson, flexShrink: 0 }}>
+              <IconCheck />
             </div>
+            <span style={{
+              fontSize: entryFont, fontWeight: 700,
+              color: balanced ? T.color.green700 : T.color.crimson,
+              fontVariantNumeric: 'tabular-nums',
+            }}>
+              Borç {formatTurkishAmount(debitTotal)} = Alacak {formatTurkishAmount(creditTotal)}
+            </span>
           </div>
         )}
       </div>
 
-      {/* Açıklama */}
-      {scene.explanation && (
+      {explanation && (
         <div style={{
-          width: '100%', marginTop: isVertical ? 20 : 18,
-          background: `${ACCENT}0A`, border: `1px solid ${ACCENT}20`,
-          borderLeft: `4px solid ${ACCENT}`, borderRadius: 10,
-          padding: '12px 16px',
-          opacity: interpolate(frame, [80, 100], [0, 1], { extrapolateRight: 'clamp' }),
+          margin: `${T.space.lg}px ${L.cardPad}px ${T.space.lg}px`,
+          background: `${T.color.gold500}22`,
+          borderLeft: `5px solid ${T.color.gold500}`,
+          borderRadius: T.radius.chip,
+          padding: T.space.md,
         }}>
-          <p style={{ fontSize: isVertical ? 13 : 14, color: PALETTE.TEXT_MID, lineHeight: 1.65, margin: 0 }}>
-            {scene.explanation}
-          </p>
+          <span style={{ fontSize: bodyFont, color: T.color.navy900, lineHeight: 1.5 }}>{explanation}</span>
         </div>
       )}
-
-      {scene.tts_url && <Audio src={scene.tts_url} />}
-    </div>
+    </CardShell>
   )
 }

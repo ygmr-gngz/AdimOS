@@ -48,16 +48,16 @@ export function MotivationFocusScene({ scene, brand }: Props) {
           borderRadius: T.radius.card,
           padding: '40px 36px',
         }}>
-          <div style={{ height: 4, borderRadius: 2, background: T.color.gold, marginBottom: 28, width: `${lineW * 100}%` }} />
+          <div style={{ height: 4, borderRadius: 2, background: T.color.gold500, marginBottom: 28, width: `${lineW * 100}%` }} />
           {title && (
-            <div style={{ fontSize: 52, fontWeight: 800, color: T.color.gold, fontFamily: T.font.display, lineHeight: 1.2, marginBottom: 20 }}>
+            <div style={{ fontSize: 52, fontWeight: 800, color: T.color.gold500, fontFamily: T.font.display, lineHeight: 1.2, marginBottom: 20 }}>
               {title}
             </div>
           )}
           <div style={{ fontSize: 42, fontWeight: 400, color: '#FFFFFF', fontFamily: T.font.body, lineHeight: 1.65 }}>
             {narration}
           </div>
-          <div style={{ height: 4, borderRadius: 2, background: T.color.gold, marginTop: 28, opacity: 0.5, width: `${lineW * 60}%` }} />
+          <div style={{ height: 4, borderRadius: 2, background: T.color.gold500, marginTop: 28, opacity: 0.5, width: `${lineW * 60}%` }} />
         </div>
       </AbsoluteFill>
 

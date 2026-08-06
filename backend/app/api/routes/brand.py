@@ -54,6 +54,29 @@ def _to_png_bytes(raw: bytes, mime: str) -> bytes:
     return buf.getvalue()
 
 
+# Alfa min üst sınırı: 250 (255 değil) — hafif JPEG/webp sıkıştırma artefaktları
+# kenarlarda alfa'yı 250-254 gibi değerlere kaydırabilir, gerçek şeffaflık yine
+# de tespit edilebilsin diye küçük tolerans bırakıldı.
+_OPAQUE_ALPHA_THRESHOLD = 250
+
+
+def _validate_transparency(png_bytes: bytes) -> None:
+    """
+    Marka logosu şeffaf arka planlı olmalı — opak bir dosya her render'da köşede
+    beyaz/renkli bir kutu olarak görünür ve fark edilmesi zor (canlı ortamda
+    haftalarca sessizce üretime giden bir kopya bu şekilde bulundu — 2026-08-04
+    postmortem: JPEG kaynaklı bir logo .convert('RGBA') ile PNG'ye çevrilmiş,
+    RGBA mode kazanmış ama alfa kanalı uçtan uca 255'te kalmış).
+    Raises ValueError — çağıran HTTPException'a çevirir.
+    """
+    from PIL import Image
+    import numpy as np
+    img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+    alpha = np.array(img)[:, :, 3]
+    if alpha.min() >= _OPAQUE_ALPHA_THRESHOLD:
+        raise ValueError("Logo şeffaf arka planlı PNG olmalı.")
+
+
 def _log_asset(file_name: str, file_path: str, public_url: str, mime: str, size: int) -> None:
     try:
         sb = get_supabase_client()
@@ -123,6 +146,15 @@ async def upload_logo(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"[brand] görsel dönüştürülemedi: {e}")
         raise HTTPException(422, detail={"error": "convert", "message": "Görsel işlenemedi. Farklı bir dosya deneyin."})
+
+    # 5b. Şeffaflık kapısı — opak bir logo her render'ı sessizce bozar (köşede
+    # beyaz/renkli kutu). JPEG kaynaklı dosyalar burada HER ZAMAN reddedilir
+    # (JPEG yapısal olarak alfa taşıyamaz) — bu doğru davranış, format hatası değil.
+    try:
+        _validate_transparency(png_bytes)
+    except ValueError as e:
+        logger.warning(f"[brand] opak logo reddedildi: filename={file.filename!r} mime={mime}")
+        raise HTTPException(422, detail={"error": "opaque", "message": str(e)})
 
     supabase = get_supabase_client()
     try:

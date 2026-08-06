@@ -23,6 +23,8 @@ export const ERROR_CODES = [
   "job_already_running",
   "cost_cap_exceeded",
   "feature_not_ready",
+  "layout_overflow",
+  "visual_content_missing",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -74,6 +76,10 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
     "İş için tanımlı maliyet üst sınırı aşıldı.",
   feature_not_ready:
     "Motivasyon videoları görsel kütüphanesi hazırlandıktan sonra açılacak.",
+  layout_overflow:
+    "İçerik ekrana sığmadı.",
+  visual_content_missing:
+    "Sahnede ne fotoğraf ne de metin-sahne işareti var — görsel içerik atanmalı.",
 };
 
 /** retryable=false olan kodlarda "Yeniden Dene" butonu gösterilmez */
@@ -96,6 +102,8 @@ export const NON_RETRYABLE_CODES = new Set<ErrorCode>(
       "job_already_running",
       "cost_cap_exceeded",
       "feature_not_ready",
+      "layout_overflow",
+      "visual_content_missing",
     ].includes(c)
   )
 );

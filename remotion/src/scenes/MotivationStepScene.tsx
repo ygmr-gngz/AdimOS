@@ -46,12 +46,12 @@ export function MotivationStepScene({ scene, brand }: Props) {
         paddingLeft: T.safe9x16.x, paddingRight: T.safe9x16.x,
       }}>
         <div style={{ opacity: numOp, transform: `scale(${0.6 + numScale * 0.4})`, transformOrigin: 'left center', display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
-          <div style={{ width: 72, height: 72, borderRadius: T.radius.badge, background: T.color.gold, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 72, height: 72, borderRadius: T.radius.badge, background: T.color.gold500, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ fontSize: 36, fontWeight: 900, color: T.color.navy900, fontFamily: T.font.display }}>
               {stepNumber}
             </span>
           </div>
-          <span style={{ fontSize: 26, fontWeight: 600, color: T.color.gold, fontFamily: T.font.body, letterSpacing: 1.5, textTransform: 'uppercase' as const }}>
+          <span style={{ fontSize: 26, fontWeight: 600, color: T.color.gold500, fontFamily: T.font.body, letterSpacing: 1.5, textTransform: 'uppercase' as const }}>
             Adım {stepNumber}
           </span>
         </div>
@@ -63,7 +63,7 @@ export function MotivationStepScene({ scene, brand }: Props) {
         </div>
 
         <div style={{ opacity: textOp }}>
-          <div style={{ fontSize: 40, fontWeight: 400, color: 'rgba(255,255,255,0.88)', fontFamily: T.font.body, lineHeight: 1.6, borderLeft: `4px solid ${T.color.gold}`, paddingLeft: 20 }}>
+          <div style={{ fontSize: 40, fontWeight: 400, color: 'rgba(255,255,255,0.88)', fontFamily: T.font.body, lineHeight: 1.6, borderLeft: `4px solid ${T.color.gold500}`, paddingLeft: 20 }}>
             {narration}
           </div>
         </div>

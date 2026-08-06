@@ -55,7 +55,7 @@ export function MotivationHookScene({ scene, brand }: Props) {
               {line}
             </div>
           ))}
-          <div style={{ marginTop: 20, width: 72, height: barH, background: T.color.gold, borderRadius: 3 }} />
+          <div style={{ marginTop: 20, width: 72, height: barH, background: T.color.gold500, borderRadius: 3 }} />
         </div>
       </AbsoluteFill>
 

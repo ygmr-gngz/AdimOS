@@ -54,7 +54,7 @@ export function MotivationOutroScene({ scene, brand }: Props) {
           </div>
         )}
 
-        <div style={{ opacity: logoOp, width: 60, height: 3, background: T.color.gold, borderRadius: 2, marginBottom: 32 }} />
+        <div style={{ opacity: logoOp, width: 60, height: 3, background: T.color.gold500, borderRadius: 2, marginBottom: 32 }} />
 
         {ctaText && (
           <div style={{ opacity: ctaOp, transform: `translateY(${ctaY}px)`, textAlign: 'center', marginBottom: 36 }}>
@@ -65,8 +65,8 @@ export function MotivationOutroScene({ scene, brand }: Props) {
         )}
 
         <div style={{ opacity: socialOp, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-          <div style={{ fontSize: 34, fontWeight: 700, color: T.color.gold, fontFamily: T.font.body }}>@adimmusavir</div>
-          <div style={{ fontSize: 26, color: 'rgba(255,255,255,0.55)', fontFamily: T.font.body, letterSpacing: 1 }}>YouTube · Instagram · TikTok</div>
+          <div style={{ fontSize: 34, fontWeight: 700, color: T.color.gold500, fontFamily: T.font.body }}>@adimmusavir</div>
+          <div style={{ fontSize: 26, color: 'rgba(255,255,255,0.55)', fontFamily: T.font.body, letterSpacing: 1 }}>YouTube · Instagram</div>
         </div>
       </AbsoluteFill>
 

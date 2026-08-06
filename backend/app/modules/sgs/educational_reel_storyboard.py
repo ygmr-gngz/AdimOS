@@ -15,6 +15,7 @@ Her sahne EducationalReelScene component'ine yüklenecek.
 """
 import json
 import logging
+import re
 import unicodedata
 from openai import OpenAI
 from app.core.config import settings
@@ -22,6 +23,54 @@ from app.core.content_constants import TR_SPS, CHARS_PER_SYLLABLE, budget_params
 
 logger = logging.getLogger(__name__)
 _client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+
+def _parse_turkish_amount(raw: str) -> float | None:
+    """'10.000' -> 10000.0, '10.000,50' -> 10000.5. Placeholder (XXX/YYY, rakamsız) -> None."""
+    if not raw or not re.search(r"\d", raw):
+        return None
+    s = raw.strip().replace(".", "").replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _check_journal_balance(scenes: list[dict]) -> list[str]:
+    """
+    AccountCardScene/JournalEntryScene sahnelerinde borç toplamı = alacak
+    toplamı mı? A.3 — borç≠alacak olan bir kayıt öğrenciye yanlış muhasebe
+    öğretir; sessizce geçilmez, HARD kapı (math_validation_failed).
+    Döner: sorun varsa açıklama metinleri, yoksa boş liste.
+    """
+    problems: list[str] = []
+    for s in scenes:
+        entries = s.get("journalEntry")
+        if not entries:
+            continue
+        debit_total = 0.0
+        credit_total = 0.0
+        has_placeholder = False
+        for line in entries:
+            amt = _parse_turkish_amount(str(line.get("amount", "")))
+            if amt is None:
+                has_placeholder = True
+                continue
+            if line.get("side") == "debit":
+                debit_total += amt
+            elif line.get("side") == "credit":
+                credit_total += amt
+        if has_placeholder:
+            problems.append(
+                f"sahne {s.get('id', '?')}: journalEntry tutarları placeholder "
+                f"(XXX/YYY) içeriyor, gerçek rakam olmalı"
+            )
+        elif abs(debit_total - credit_total) > 0.01:
+            problems.append(
+                f"sahne {s.get('id', '?')}: borç toplamı ({debit_total:.0f}) != "
+                f"alacak toplamı ({credit_total:.0f})"
+            )
+    return problems
 
 # İçerik serisi başlık şablonları (Section 11)
 SERIES_TITLE_TEMPLATES: dict[str, str] = {
@@ -195,7 +244,129 @@ talimatıdır, bu örnekler değil.
     }}
   ]
 }}
+
+{COMPONENT_ROUTING_RULE}
+AccountCardScene örneği:
+{json.dumps(_ACCOUNT_CARD_EXAMPLE, ensure_ascii=False, indent=2)}
+{ACCOUNT_CARD_FIELD_RULES}
+
+JournalEntryScene örneği:
+{json.dumps(_JOURNAL_ENTRY_EXAMPLE, ensure_ascii=False, indent=2)}
+
+TableScene örneği:
+{json.dumps(_TABLE_SCENE_EXAMPLE, ensure_ascii=False, indent=2)}
+
+CommonMistakeScene örneği:
+{json.dumps(_COMMON_MISTAKE_EXAMPLE, ensure_ascii=False, indent=2)}
+
+RuleBoxScene örneği:
+{json.dumps(_RULE_BOX_EXAMPLE, ensure_ascii=False, indent=2)}
 """
+
+# AccountCardScene alan uzunluk kuralları — A.3. "hesap tanımı" segmenti için
+# hangi component'in seçileceği (routing) A.5'in işi; bu kurallar alan
+# ŞEKLİNİN kendisi, routing'den bağımsız.
+ACCOUNT_CARD_FIELD_RULES = """
+ACCOUNTCARDSCENE ALAN KURALLARI (component: "AccountCardScene" seçildiyse ZORUNLU):
+- accountName: en fazla 4 kelime.
+- purpose: 12-25 kelime arası (ne çok kısa kart boş kalır, ne çok uzun taşar).
+- tip: 10-22 kelime arası.
+- entryCaption: en fazla 6 kelime.
+- journalEntry: en fazla 4 satır.
+- journalEntry[].amount: GERÇEK rakam — "XXX"/"YYY" gibi placeholder YASAK.
+  Türkçe binlik ayraçla yaz (nokta): "10.000". Yuvarlak, sade sayılar tercih
+  et (10.000 / 2.000 / 12.000 gibi) — öğrenci kafası karışmasın.
+- journalEntry toplam BORÇ (side="debit") tutarı = toplam ALACAK (side="credit")
+  tutarı ZORUNLU. Eşit değilse üretim kod tarafında reddedilir (math_validation_failed).
+- Borç/Alacak kural cümlesini YAZMA — bu alan koddan (nature'dan) türetilir,
+  props'tan gelmez.
+"""
+
+_ACCOUNT_CARD_EXAMPLE = {
+    "id": 99,
+    "component": "AccountCardScene",
+    "visual_source": "card",
+    "accountCode": "191",
+    "accountName": "İndirilecek KDV",
+    "nature": "A",
+    "purpose": "Alış faturalarında hesaplanan ve satış KDV'sinden indirilecek olan katma değer vergisini izlemek için kullanılan bir hesaptır.",
+    "journalEntry": [
+        {"code": "153", "name": "TİCARİ MALLAR", "side": "debit", "amount": "10.000"},
+        {"code": "191", "name": "İNDİRİLECEK KDV", "side": "debit", "amount": "2.000"},
+        {"code": "320", "name": "SATICILAR", "side": "credit", "amount": "12.000"},
+    ],
+    "entryCaption": "(Mal alış kaydı, KDV dahil)",
+    "tip": "İndirilecek KDV bir varlık hesabıdır ve daima borç bakiye verir.",
+    "voice_text": "İndirilecek KDV, alış faturalarındaki vergiyi izlediğin bir hesap.",
+}
+
+# A.5 — segment → component YÖNLENDİRME kuralı. Model hangi içerik için hangi
+# bileşeni seçeceğini burada öğrenir; _ALLOWED_COMPONENTS zaten izin veriyordu
+# ama hiçbir yerde NE ZAMAN kullanılacağı anlatılmıyordu (A.4 sonrası boşluk).
+COMPONENT_ROUTING_RULE = """
+BİLEŞEN SEÇİMİ (segment içeriğine göre) — varsayılan ReelConceptScene/ReelHookScene/
+ReelCtaScene YERİNE, içerik aşağıdaki türlerden biriyse özel kart bileşenini seç:
+  - Bir hesabı TANITIYORSA (kod, nitelik, amaç, tipik kayıt)  → AccountCardScene
+  - Sadece bir YEVMİYE KAYDI örneği veriyorsa (hesap tanıtımı yok) → JournalEntryScene
+  - İki hesap/kavramı YAN YANA KARŞILAŞTIRIYORSA               → TableScene
+  - Sık yapılan bir hatayı Yanlış/Doğru ÇİFTİ olarak gösteriyorsa → CommonMistakeScene
+  - Borç/Alacak ÇALIŞMA MANTIĞINI (kural listesi) özetliyorsa   → RuleBoxScene
+  - Kanca (0-5s) veya kapanış/CTA ise                           → ReelHookScene / ReelCtaScene
+Yukarıdakilerden hiçbiri uymuyorsa ReelConceptScene/ReelExampleScene kullan.
+Bir video genelde 2-4 kart bileşeni İÇERMELİDİR — hepsi ReelConceptScene olmasın.
+"""
+
+_JOURNAL_ENTRY_EXAMPLE = {
+    "id": 98,
+    "component": "JournalEntryScene",
+    "visual_source": "card",
+    "title": "Mal Satış Kaydı",
+    "journalEntry": [
+        {"code": "120", "name": "ALICILAR", "side": "debit", "amount": "12.000"},
+        {"code": "600", "name": "YURT İÇİ SATIŞLAR", "side": "credit", "amount": "10.000"},
+        {"code": "391", "name": "HESAPLANAN KDV", "side": "credit", "amount": "2.000"},
+    ],
+    "entryCaption": "(Vadeli satış kaydı)",
+    "explanation": "Satış anında KDV alacak tarafına yazılır — hesaplanan KDV bir borçtur.",
+    "voice_text": "Bir satış yaptığında yevmiyeye böyle kaydedersin.",
+}
+
+_TABLE_SCENE_EXAMPLE = {
+    "id": 97,
+    "component": "TableScene",
+    "visual_source": "card",
+    "title": "191 ile 391 Arasındaki Fark",
+    "subtitle": "İndirilecek KDV vs Hesaplanan KDV",
+    "headers": ["Özellik", "191", "391"],
+    "rows": [["Nitelik", "Aktif", "Pasif"], ["Doğar", "Alışta", "Satışta"], ["Bakiye", "Borç", "Alacak"]],
+    "voice_text": "İki KDV hesabını yan yana koyunca fark hemen görünüyor.",
+}
+
+_COMMON_MISTAKE_EXAMPLE = {
+    "id": 96,
+    "component": "CommonMistakeScene",
+    "visual_source": "card",
+    "title": "Sık Yapılan Hata",
+    "common_mistake": "İndirilecek KDV ile Hesaplanan KDV karıştırılıyor.",
+    "wrong_example": "İndirilecek KDV her zaman alacak hesabıdır.",
+    "correct_example": "İndirilecek KDV aktif bir hesaptır, borç bakiye verir.",
+    "explanation": "Aktif hesaplar borç artar mantığıyla çalışır.",
+    "voice_text": "Bu ikisini karıştırmak sınavda en çok net kaybettiren hatalardan biri.",
+}
+
+_RULE_BOX_EXAMPLE = {
+    "id": 95,
+    "component": "RuleBoxScene",
+    "visual_source": "card",
+    "title": "Borç-Alacak Çalışma Mantığı",
+    "nature": "A",
+    "rules": [
+        {"label": "Aktif", "left": "Borç → ARTAR", "right": "Alacak → AZALIR"},
+        {"label": "Pasif", "left": "Borç → AZALIR", "right": "Alacak → ARTAR"},
+    ],
+    "voice_text": "Bu dört satırı ezberlersen tüm yevmiye kayıtları kolaylaşır.",
+}
+
 
 # segment_type → component adı eşlemesi (post-processing fallback)
 _SEGMENT_COMPONENT: dict[str, str] = {
@@ -335,8 +506,14 @@ Video başlığı: {title}
             s["id"] = i
             # LLM bilinmeyen bileşen ürettiyse segment_type'dan türet
             if s.get("component") not in _ALLOWED_COMPONENTS:
+                _raw_component = s.get("component")
                 seg = s.get("segment_type") or (_default_types[i - 1] if i <= len(_default_types) else "content")
                 s["component"] = _SEGMENT_COMPONENT.get(seg, "ReelConceptScene")
+                logger.warning(
+                    "[reel-component-map] sahne=%d LLM geçersiz component üretti (%r) — "
+                    "segment_type=%s üzerinden %s'e düşüldü (A.5 yönlendirme kuralı izlenmedi)",
+                    i, _raw_component, seg, s["component"],
+                )
             # segment_type eksikse component'tan çıkar (reverse map)
             if not s.get("segment_type"):
                 _rev = {v: k for k, v in _SEGMENT_COMPONENT.items()}
@@ -347,6 +524,31 @@ Video başlığı: {title}
         return _scenes
 
     scenes = _attempt("")
+
+    # ── journalEntry borç=alacak doğrulaması — HARD kapı (math_validation_failed) ──
+    # Karakter uzunluğu kontrolünün aksine sessizce loglanıp geçilmez: borç≠alacak
+    # olan bir kayıt öğrenciye yanlış bilgi öğretir, video durdurulmalı.
+    for _bal_attempt in (1, 2):
+        balance_problems = _check_journal_balance(scenes)
+        if not balance_problems:
+            if _bal_attempt > 1:
+                logger.info("[journal-balance] deneme=%d/2 düzeltildi", _bal_attempt)
+            break
+        logger.warning("[journal-balance] deneme=%d/2 sorunlar: %s", _bal_attempt, balance_problems)
+        if _bal_attempt == 1:
+            scenes = _attempt(
+                "Önceki üretimde journalEntry borç/alacak dengesi hatalıydı: "
+                + "; ".join(balance_problems)
+                + ". Tüm journalEntry tutarlarını GERÇEK rakamla ver (XXX/YYY yasak) "
+                  "ve borç toplamı = alacak toplamı olacak şekilde düzelt."
+            )
+        else:
+            from app.errors.registry import PipelineErrorException
+            raise PipelineErrorException(
+                "math_validation_failed",
+                admin_detail={"reason": "journal_balance_mismatch", "problems": balance_problems},
+                stage="llm",
+            )
 
     # ── voice_text karakter aralığı — deterministik kontrol + 1 yeniden deneme ──
     # Şema seviyesinde zorlanamıyor (bkz. yukarıdaki not); sessizce geçilmiyor —
@@ -405,6 +607,30 @@ Video başlığı: {title}
                     "[voice-text-length] 2 denemede de karakter hedefi sağlanamadı — "
                     "downstream hece bütçesi kapısı son savunma."
                 )
+
+    # A.5/A.6 doğrulaması — her sahnenin bir bileşene eşlendiğini logla.
+    # A.6'da sessiz fallback kaldırılmadan önce bu logun gerçek bir dağılım
+    # göstermesi (hepsi ReelConceptScene DEĞİL) gerekir.
+    _card_components = {"AccountCardScene", "JournalEntryScene", "TableScene", "RuleBoxScene", "CommonMistakeScene"}
+    _component_counts: dict[str, int] = {}
+    for s in scenes:
+        comp = s.get("component", "?")
+        _component_counts[comp] = _component_counts.get(comp, 0) + 1
+        logger.info(
+            "[reel-component-map] sahne=%s component=%s segment_type=%s kart_mi=%s",
+            s.get("id", "?"), comp, s.get("segment_type", "?"), comp in _card_components,
+        )
+    _card_scene_count = sum(v for k, v in _component_counts.items() if k in _card_components)
+    logger.info(
+        "[reel-component-map] ÖZET topic=%r toplam_sahne=%d kart_sahne=%d dağılım=%s",
+        topic, len(scenes), _card_scene_count, _component_counts,
+    )
+    if _card_scene_count == 0:
+        logger.warning(
+            "[reel-component-map] UYARI: hiç kart bileşeni seçilmedi — tüm sahneler "
+            "eski ReelConceptScene/EducationalReelScene ailesine düştü. A.5 yönlendirme "
+            "kuralı çalışmıyor olabilir; A.6'da fallback kaldırılmadan bu araştırılmalı."
+        )
 
     if len(scenes) < 5:
         logger.warning(f"[reel_storyboard] Yetersiz sahne üretildi: {len(scenes)}/7")
