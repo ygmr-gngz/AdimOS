@@ -50,6 +50,10 @@ CONTENT_PIPELINES: dict[str, dict] = {
         "allowed_scenes": [
             "ReelHookScene", "ReelConceptScene", "AccountCardScene", "JournalEntryScene",
             "ReelExampleScene", "ReelMistakeScene", "ReelExamTipScene", "ReelCtaScene",
+            # A.4/A.5 kart bileşenleri — remotion/src/registry.ts EducationalReel
+            # girdisinde zaten vardı, bu liste (bağımsız, elle tutulan Python kopyası)
+            # güncellenmemişti (2026-08-06 postmortem: routing_failed).
+            "TableScene", "CommonMistakeScene", "RuleBoxScene",
             # geriye dönük uyumluluk — eski EducationalReelScene bazlı storyboard'lar
             "EducationalReelScene",
         ],
