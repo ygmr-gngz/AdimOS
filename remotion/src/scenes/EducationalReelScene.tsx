@@ -14,7 +14,7 @@
  *   - yoksa: lacivert gradyan zemini
  *   - motion: zoom_in / zoom_out / pan_left / pan_right / static
  */
-import { AbsoluteFill, Img, interpolate, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
+import { AbsoluteFill, Img, interpolate, useCurrentFrame, useVideoConfig } from 'remotion'
 import { Scene, BrandConfig, ReelSegmentType } from '../types'
 import { PALETTE } from '../brand'
 
@@ -100,7 +100,8 @@ export function EducationalReelScene({ scene, brand }: Props) {
     ? interpolate(frame, [0, 30], [0.85, 1], { extrapolateRight: 'clamp' })
     : 1
 
-  const audioSrc = scene.tts_url ?? scene.audio_url ?? undefined
+  // Ses artık burada DEĞİL, composition seviyesinde (EducationalReel120.tsx) —
+  // bkz. o dosyadaki 2026-08-07 notu.
 
   return (
     <AbsoluteFill style={{ overflow: 'hidden', fontFamily: brand.font_body }}>
@@ -310,8 +311,6 @@ export function EducationalReelScene({ scene, brand }: Props) {
           opacity: 0.4,
         }} />
       </AbsoluteFill>
-
-      {audioSrc && <Audio src={audioSrc} />}
     </AbsoluteFill>
   )
 }

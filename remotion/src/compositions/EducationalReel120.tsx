@@ -7,7 +7,7 @@
  *   AccountCardScene, TableScene, JournalEntryScene, RuleBoxScene, CommonMistakeScene
  *   EducationalReelScene — genel amaçlı (eski storyboard'lar için)
  */
-import { AbsoluteFill, Sequence } from 'remotion'
+import { AbsoluteFill, Audio, Sequence } from 'remotion'
 import { StoryboardJSON } from '../types'
 import { BrandOverlay } from '../components/BrandOverlay'
 import { BrandWatermark } from '../components/BrandWatermark'
@@ -96,17 +96,29 @@ export function EducationalReel120({ storyboard }: Props) {
 
   return (
     <AbsoluteFill style={{ background: '#0B2A4A', overflow: 'hidden' }}>
-      {timings.map(({ scene, start, durationFrames }) => (
-        <Sequence key={scene.id} from={start} durationInFrames={durationFrames}>
-          <AbsoluteFill>
-            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            <ReelScene scene={scene as any} brand={brand} />
-            {!CARD_BASED_COMPONENTS.has(scene.component as string) && (
-              <BrandWatermark theme="dark" opacity={0.08} logoUrl={brand?.logo_url} />
-            )}
-          </AbsoluteFill>
-        </Sequence>
-      ))}
+      {timings.map(({ scene, start, durationFrames }) => {
+        // Ses, bileşenden BAĞIMSIZ olarak burada (composition/Sequence seviyesinde)
+        // render edilir. 2026-08-07 postmortem: <Audio> önceden yalnızca
+        // EducationalReelScene.tsx'in İÇİNDE render ediliyordu — kart bileşenleri
+        // (AccountCardScene/TableScene/RuleBoxScene/CommonMistakeScene/JournalEntryScene)
+        // bu bileşenden geçmediği için sesleri hiç çalmıyordu (ölçüm: kart sahnelerinde
+        // %43 sessizlik, tam olarak açık zeminli kart aralıklarıyla örtüşüyordu).
+        // EducationalReelScene.tsx'teki iç <Audio> kaldırıldı — burada ÇİFT çalmasın diye.
+        const audioSrc = (scene as { tts_url?: string; audio_url?: string }).tts_url
+          ?? (scene as { tts_url?: string; audio_url?: string }).audio_url
+        return (
+          <Sequence key={scene.id} from={start} durationInFrames={durationFrames}>
+            <AbsoluteFill>
+              {audioSrc && <Audio src={audioSrc} />}
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              <ReelScene scene={scene as any} brand={brand} />
+              {!CARD_BASED_COMPONENTS.has(scene.component as string) && (
+                <BrandWatermark theme="dark" opacity={0.08} logoUrl={brand?.logo_url} />
+              )}
+            </AbsoluteFill>
+          </Sequence>
+        )
+      })}
 
       {/* Altyazı — sahne başına captions[] varsa */}
       {timings.map(({ scene, start }) => {
