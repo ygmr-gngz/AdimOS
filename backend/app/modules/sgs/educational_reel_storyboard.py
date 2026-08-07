@@ -173,10 +173,13 @@ def _fit_example_text(parts: list[str], target_min: int, target_max: int) -> str
     return text
 
 
-def _build_scene_schema(min_chars: int, max_chars: int) -> str:
+def _build_scene_schema(min_chars: int, max_chars: int, target_scene_count: int = 7) -> str:
     ex = {i: _fit_example_text(parts, min_chars, max_chars) for i, parts in _SCENE_EXAMPLE_PARTS.items()}
     return f"""
-Storyboard JSON formatı (sahne sayısı prompt'taki talimata göre belirlenir).
+Storyboard JSON formatı — aşağıdaki 7 sahne SADECE İÇERİK TÜRLERİNİN (hook,
+context, content, mistake, tip, cta) BİRER ÖRNEĞİDİR, sabit bir sahne sayısı
+DEĞİLDİR. Gerçek hedef {target_scene_count} sahne — eksikse 3./4. "content"
+tipi sahneleri (ek bilgi, ek örnek, ek kart bileşeni) çoğaltarak tamamla.
 ÖNEMLİ: Aşağıdaki voice_text ÖRNEKLERİ hem İÇERİK TÜRÜNÜ hem de HEDEF
 UZUNLUĞU (yaklaşık {min_chars}-{max_chars} karakter) gösterir — model somut
 örnekleri taklit eder. Kendi konunla değiştir ama YAKLAŞIK AYNI UZUNLUKTA
@@ -244,6 +247,10 @@ talimatıdır, bu örnekler değil.
     }}
   ]
 }}
+
+YUKARIDAKİ 7 SAHNE ÖRNEKTİR, ÇIKTI DEĞİLDİR. Gerçek "scenes" dizin
+{target_scene_count} eleman içermeli — 7'den azsa content/concept tipi
+sahneleri çoğaltarak tamamla.
 
 {COMPONENT_ROUTING_RULE}
 AccountCardScene örneği:
@@ -456,14 +463,28 @@ def generate_educational_reel_storyboard(
 
     _sc_min = _sc - 2
     _sc_max = _sc + 3
-    _scene_schema = _build_scene_schema(min_chars, max_chars)
+    _scene_schema = _build_scene_schema(min_chars, max_chars, _sc)
 
     def _attempt(extra_feedback: str) -> list[dict]:
         """Tek bir GPT üretim denemesi — prompt kur, çağır, sahneleri normalize et."""
         combined = f"{syllable_feedback or ''}\n{extra_feedback}".strip()
         feedback_note = f"\nDÜZELTME GEREKLİ (önceki üretimden): {combined}\n" if combined else ""
 
+        # Sahne sayısı talimatı hem BAŞTA (primacy) hem SONDA (recency) tekrarlanıyor —
+        # 2026-08-07 bulgusu: talimat yalnızca promptun en sonunda, aşağıdaki 7 sahnelik
+        # somut JSON örneğinden SONRA geliyordu; model tutarlı biçimde örnekteki 7-8
+        # sahne yapısına çıpalanıp sayı talimatını görmezden geliyordu.
+        _scene_count_instruction = (
+            f"SAHNE SAYISI (ZORUNLU): {_sc_min}–{_sc_max} sahne üret, hedef {_sc}. "
+            f"Aşağıdaki JSON örneği yalnızca İÇERİK TÜRÜ ve UZUNLUK göstergesidir — "
+            f"7 sahnelik SABİT bir şablon DEĞİLDİR. {_sc} sahneye ulaşmak için "
+            f"'content'/'concept' tipi sahneleri (3. bilgi, 4. bilgi, ek örnek, ek kart "
+            f"bileşeni gibi) ÇOĞALT. Örnekteki sahne sayısından AZ üretme."
+        )
+
         prompt = f"""Aşağıdaki SGS konusu için EducationalReel120 storyboard üret.
+
+{_scene_count_instruction}
 
 Konu: {topic}
 Ders / Alan: {subject}
@@ -471,8 +492,14 @@ Video başlığı: {title}
 {series_label}{desc_note}{budget_note}{feedback_note}
 {_scene_schema}
 
-ÖNEMLİ: {_sc_min}–{_sc_max} sahne üret (ideal: {_sc}). Her sahnede voice_text zorunlu. Sadece JSON döndür.
+ÖNEMLİ (tekrar): {_sc_min}–{_sc_max} sahne üret (hedef {_sc}). Her sahnede voice_text zorunlu. Sadece JSON döndür.
 """
+        logger.info(
+            "[reel-prompt] bütçe=%ss hedef_sahne=%d aralık=%d-%d hedef_karakter=%s "
+            "prompt_uzunluk=%d karakter",
+            budget_seconds, _sc, _sc_min, _sc_max, target_chars, len(prompt),
+        )
+        logger.debug("[reel-prompt] tam metin:\n%s", prompt)
         try:
             raw = _client.chat.completions.create(
                 model="gpt-4o",
@@ -525,6 +552,18 @@ Video başlığı: {title}
         return _scenes
 
     scenes = _attempt("")
+
+    if not (_sc_min <= len(scenes) <= _sc_max):
+        logger.warning(
+            "[reel-scene-count] istenen=%d (%d-%d) üretilen=%d — model sahne sayısı "
+            "talimatına uymadı, fark=%+d",
+            _sc, _sc_min, _sc_max, len(scenes), len(scenes) - _sc,
+        )
+    else:
+        logger.info(
+            "[reel-scene-count] istenen=%d (%d-%d) üretilen=%d — OK",
+            _sc, _sc_min, _sc_max, len(scenes),
+        )
 
     # ── journalEntry borç=alacak doğrulaması — HARD kapı (math_validation_failed) ──
     # Karakter uzunluğu kontrolünün aksine sessizce loglanıp geçilmez: borç≠alacak

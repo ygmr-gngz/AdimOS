@@ -265,7 +265,7 @@ def _syllable_budget_params(
 
 
 def _check_syllable_budget(
-    storyboard: dict, budget_seconds: float
+    storyboard: dict, budget_seconds: float, target_scene_count: int | None = None,
 ) -> tuple[bool, str | None]:
     """
     reels_short için sahne hece bütçesi doğrulaması.
@@ -277,9 +277,17 @@ def _check_syllable_budget(
     ama önceki eşik (yalnızca üst sınır) bunu hiç yakalamıyordu — alt sınır
     hesaplanıp scene_details'e yazılıyor ama pass/fail'e hiç etki etmiyordu.
     Şimdi -%15'te de kesiliyor (üsttekinden sıkı — sistematik sapma eksi yönde).
+
+    target_scene_count: generate_educational_reel_storyboard'a VERİLEN hedef sahne
+    sayısı. 2026-08-07 (2. bulgu): önceden burada len(scenes) (GERÇEK üretilen
+    sayı, örn. model talimatı görmezden gelip 8 üretmişse 8) kullanılıyordu —
+    bu da "sahne başına ~33 hece hedefle" gibi, üretim anında modele verilen
+    hedeften (~24 hece, target_scene_count=11 ile) FARKLI bir sayı üretiyordu.
+    Şimdi ikisi de aynı budget_params(budget_seconds, n) çağrısından geliyor.
     """
     scenes = storyboard.get("scenes", [])
-    total_budget, syl_per_scene, _ = _syllable_budget_params(budget_seconds, len(scenes))
+    _n = target_scene_count if (target_scene_count and target_scene_count > 0) else len(scenes)
+    total_budget, syl_per_scene, _ = _syllable_budget_params(budget_seconds, _n)
     tolerance = max(3, round(syl_per_scene * 0.15))
     lo, hi = syl_per_scene - tolerance, syl_per_scene + tolerance
 
@@ -502,13 +510,19 @@ def _regen_storyboard_for_duration(
     if sb_new is None:
         return None, None
 
+    # _generate_storyboard_for_regen'in reels_short için üretim anında kullandığı
+    # hedef sahne sayısıyla AYNI hesap — aksi halde bu doğrulama len(scenes) (GERÇEK
+    # üretilen, modelin talimatı hiç görmezden gelmiş olabileceği sayı) kullanır ve
+    # "sahne başına X hece" mesajı üretim anında modele söylenenden farklı çıkar.
+    _, _, _target_sc = _syllable_budget_params(corrected_seconds)
+
     feedback = correction_hint
     for attempt in (1, 2):
         scenes = sb_new.get("scenes", [])
-        total_budget, _, _ = _syllable_budget_params(corrected_seconds, len(scenes))
+        total_budget, _, _ = _syllable_budget_params(corrected_seconds, _target_sc)
         actual_syl = sum(_syllable_count(s.get("voice_text") or "") for s in scenes)
         pct = ((actual_syl / total_budget) - 1) * 100 if total_budget else 0.0
-        ok, detail = _check_syllable_budget(sb_new, corrected_seconds)
+        ok, detail = _check_syllable_budget(sb_new, corrected_seconds, target_scene_count=_target_sc)
         logger.warning(
             "[syllable-budget] tur=%d bütçe_saniye=%.1f hedef_hece=%d üretilen_hece=%d "
             "sapma=%%%.0f deneme=%d/2",
@@ -1443,11 +1457,13 @@ def _run_pipeline_inner(
                     deviation = tts_total_sec - req
                     pct = abs(deviation / req) * 100
                     ratio = req / tts_total_sec if tts_total_sec > 0 else 1.0
-                    # Sönümlü düzeltme: tam orantılı (ratio) yerine %60'ı uygulanır —
+                    # Sönümlü düzeltme: tam orantılı (ratio) yerine %40'ı uygulanır —
                     # aksi halde sistem hedefin üstünden altına salınıyordu (105s→38.6s
-                    # ölçüldü). Taban "mevcut" = bu turu üretmek için kullanılan bütçe
-                    # (_dur_corrected_sec), sabit req değil — iteratif olarak yakınsar.
-                    _damped_corrected = _dur_corrected_sec * (1 + (ratio - 1) * 0.6)
+                    # ölçüldü, katsayı %60 iken). Taban "mevcut" = bu turu üretmek için
+                    # kullanılan bütçe (_dur_corrected_sec), sabit req değil — iteratif
+                    # olarak yakınsar. 2026-08-07: %60 hâlâ fazla agresifti (34.9s
+                    # ölçülünce bütçe 85.9'a fırlıyordu, %146 artış) — %40'a düşürüldü.
+                    _damped_corrected = _dur_corrected_sec * (1 + (ratio - 1) * 0.4)
                     _damped_corrected = max(
                         min(_damped_corrected, float(req) * 1.5), float(req) * 0.5
                     )
@@ -1464,10 +1480,15 @@ def _run_pipeline_inner(
                     )
                     if _dur_turn < 2:
                         direction = "kısalt" if deviation > 0 else "uzat"
+                        # Sahne başına hece hedefi budget_params'tan (_damped_corrected
+                        # için) türetiliyor — önceden "20-25"/"28-35" olarak ayrıca
+                        # hardcode edilmişti, üretim anındaki gerçek hedeften (~24-33
+                        # hece, bütçeye göre) farklı bir sayı söylüyordu.
+                        _, _hint_syl_per_scene, _ = _syllable_budget_params(_damped_corrected)
                         _dur_correction_hint = (
                             f"ÖNEMLİ DÜZELTME: Önceki storyboard ölçülen süre {tts_total_sec:.1f}s, "
                             f"hedef {req:.0f}s. voice_text içeriklerini %{pct:.0f} oranında {direction}. "
-                            f"Sahne başına {'20-25' if deviation > 0 else '28-35'} hece kullan."
+                            f"Sahne başına ~{_hint_syl_per_scene} hece kullan."
                         )
                         _dur_corrected_sec = _damped_corrected
                         continue  # storyboard yeniden üret
@@ -2143,7 +2164,9 @@ def render_callback(body: RenderCallback, background_tasks: BackgroundTasks):
                 # turunda henüz kayıtlı değilse ilk render req ile üretildiği için
                 # req_sec varsayılır.
                 mevcut = float(admin_detail.get("last_budget_seconds") or req_sec)
-                corrected_sec = mevcut * (1 + (ratio - 1) * 0.6)
+                # %60→%40: bkz. pre-render döngüsündeki aynı revizyon (2026-08-07,
+                # 34.9s ölçülünce 85.9'a fırlama — %146 artış — sönümleme yetersizdi).
+                corrected_sec = mevcut * (1 + (ratio - 1) * 0.4)
                 corrected_sec = max(min(corrected_sec, req_sec * 1.5), req_sec * 0.5)
 
                 rendered_scenes = (job_full.get("storyboard") or {}).get("scenes", [])
@@ -2153,11 +2176,14 @@ def render_callback(body: RenderCallback, background_tasks: BackgroundTasks):
                 gercek_sps = actual_syllables / actual if actual else 0.0
 
                 direction = "kısalt" if deviation > 0 else "uzat"
+                # bkz. pre-render döngüsündeki aynı düzeltme — hardcode "20-25"/"28-35"
+                # yerine budget_params'tan (corrected_sec için) türetilen gerçek hedef.
+                _, _hint_syl_per_scene, _ = _syllable_budget_params(corrected_sec)
                 hint = (
                     f"ÖNEMLİ DÜZELTME: Render edilmiş videonun ffprobe ile ölçülen gerçek "
                     f"süresi {actual:.1f}s, hedef {req_sec:.0f}s. voice_text içeriklerini "
                     f"%{pct:.0f} oranında {direction}. Sahne başına "
-                    f"{'20-25' if deviation > 0 else '28-35'} hece kullan."
+                    f"~{_hint_syl_per_scene} hece kullan."
                 )
                 next_turn = turn + 1
                 logger.warning(
