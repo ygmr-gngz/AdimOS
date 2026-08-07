@@ -15,6 +15,20 @@ shared/content-types.json değiştiğinde:
 """
 from app.core.generated_constants import TR_SPS, CHARS_PER_SYLLABLE, VISUAL_SURFACE_MINIMUMS  # noqa: F401
 
+# reels_short sahne pacing — TEK KAYNAK (2026-08-07 öncesi video.py ve
+# educational_reel_storyboard.py'de bağımsız olarak "8.0" hardcode edilmişti,
+# aynı duplike-sabit hatası tekrar etmesin diye buraya taşındı).
+# Ölçüm: 4 ardışık regen turunda model doğal olarak ~26 hece/sahne (~5.9sn,
+# TR_SPS=4.42 ile) üretti, sahne sayısını zorlayınca değil. Sahne sayısını
+# büyütmek (eski 8.0sn varsayımı) yerine sahne uzunluğunu sabit tutup sahne
+# SAYISINI bütçeyle ölçeklemek gerekiyor — bkz. video.py _syllable_budget_params.
+NATURAL_SCENE_SECONDS = 5.5
+
+
+def scene_count_for_budget(budget_seconds: float) -> int:
+    """budget_seconds için doğal sahne sayısı — round(budget / NATURAL_SCENE_SECONDS)."""
+    return max(1, round(budget_seconds / NATURAL_SCENE_SECONDS))
+
 
 def budget_params(budget_seconds: float, scene_count: int) -> tuple[int, int, int, int]:
     """

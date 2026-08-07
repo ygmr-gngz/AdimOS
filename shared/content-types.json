@@ -1,7 +1,7 @@
 {
   "constants": {
-    "TR_SPS": 4.15,
-    "TR_SPS_note": "Türkçe hece/saniye — TTS'ten ölçülen gerçek değer (aralık 4.04-4.35, ortalama ~4.15). Eski varsayılan 4.8 hiç ölçülmemişti.",
+    "TR_SPS": 4.42,
+    "TR_SPS_note": "Türkçe hece/saniye — TTS'ten ölçülen gerçek değer. Yeniden kalibre edildi (2026-08-07): reels_short regen turlarında ölçülen aralık 4.30-4.49, ortalama ~4.42 (önceki 4.15, ayrı bir ölçüm turundan — aralık 4.04-4.35). Eski varsayılan 4.8 hiç ölçülmemişti.",
     "CHARS_PER_SYLLABLE": 2.7,
     "CHARS_PER_SYLLABLE_note": "Türkçede ortalama karakter/hece — hece bütçesini voice_text karakter limitine çevirir."
   },

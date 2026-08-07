@@ -19,7 +19,7 @@ import re
 import unicodedata
 from openai import OpenAI
 from app.core.config import settings
-from app.core.content_constants import TR_SPS, CHARS_PER_SYLLABLE, budget_params
+from app.core.content_constants import TR_SPS, CHARS_PER_SYLLABLE, budget_params, scene_count_for_budget
 
 logger = logging.getLogger(__name__)
 _client = OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -405,14 +405,15 @@ def generate_educational_reel_storyboard(
 ) -> dict:
     """
     EducationalReel120 composition için storyboard üretir.
-    scene_count verilmezse ceil(budget_seconds / 8.0) ile hesaplanır.
+    scene_count verilmezse content_constants.scene_count_for_budget ile hesaplanır
+    (NATURAL_SCENE_SECONDS=5.5 — tek kaynak, video.py._syllable_budget_params ile
+    aynı fonksiyonu kullanır; önceden burada ayrıca "8.0" hardcode edilmişti).
     voice_text karakter sınırı üretim sonrası deterministik kontrol edilir ve
     aşılırsa 1 kez yeniden denenir — OpenAI structured outputs strict:true bile
     string maxLength'i şema seviyesinde zorlamıyor (bkz. CHARS_PER_SYLLABLE notu),
     o yüzden şemaya güvenmek yerine burada ölçülüyor.
     Döner: tam storyboard dict (video_type, scenes, brand vb.)
     """
-    import math as _math
     from app.modules.content.pronunciation_dict import latex_to_spoken_turkish  # noqa: F401
 
     series_label = ""
@@ -426,7 +427,7 @@ def generate_educational_reel_storyboard(
     target_chars: int | None = None
     budget_note = ""
     if budget_seconds is not None:
-        _sc = scene_count if (scene_count and scene_count > 0) else _math.ceil(budget_seconds / 8.0)
+        _sc = scene_count if (scene_count and scene_count > 0) else scene_count_for_budget(budget_seconds)
         _sc = max(1, _sc)
         # Tek kaynak: hece bütçesi kapısı (video.py _check_syllable_budget) ve
         # buradaki karakter sınırı artık AYNI fonksiyondan geliyor. Önceki hata:

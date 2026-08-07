@@ -47,6 +47,12 @@ CONTENT_PIPELINES: dict[str, dict] = {
         "aspect": "9:16",
         "fps": 30,
         "duration_range": (45, 130),
+        # NOT: motivation'daki scene_count_range gibi şu an hiçbir validator
+        # tarafından okunmuyor (grep doğrulandı) — salt dokümantasyon/gelecekteki
+        # bir kapı için. Gerçek sahne sayısı kısıtı educational_reel_storyboard.py
+        # prompt'undaki _sc_min/_sc_max (NATURAL_SCENE_SECONDS=5.5 tabanlı) yumuşak
+        # sınırıdır ve min_reel_scenes=5 (channel_profile.py) sert alt sınırıdır.
+        "scene_count_range": (5, 12),
         "allowed_scenes": [
             "ReelHookScene", "ReelConceptScene", "AccountCardScene", "JournalEntryScene",
             "ReelExampleScene", "ReelMistakeScene", "ReelExamTipScene", "ReelCtaScene",

@@ -10,7 +10,7 @@ from pydantic import BaseModel, field_validator
 from openai import RateLimitError as OpenAIRateLimitError, APITimeoutError
 from app.db.supabase import get_supabase_client
 from app.core.config import settings
-from app.core.content_constants import TR_SPS, budget_params
+from app.core.content_constants import TR_SPS, budget_params, scene_count_for_budget
 from app.modules.content.pronunciation_dict import apply_pronunciation_dict
 from app.modules.content.quality_gates import (
     check_storyboard_quality,
@@ -251,15 +251,14 @@ def _syllable_budget_params(
 ) -> tuple[int, int, int]:
     """
     (toplam_hece_bütçesi, sahne_başına_hece, sahne_sayısı) hesaplar.
-    scene_count verilmezse ceil(budget_seconds / 8.0) kullanılır.
-    8.0 = ortalama sahne süresi saniye cinsinden (tek değişim noktası).
+    scene_count verilmezse content_constants.scene_count_for_budget kullanılır
+    (NATURAL_SCENE_SECONDS=5.5 — tek kaynak, bkz. o modülün docstring'i).
     Hece/karakter matematiği app.core.content_constants.budget_params'a
     devredildi — hece bütçesi kapısı ve karakter sınırı artık TEK
     fonksiyondan besleniyor (bkz. o fonksiyonun docstring'i — daha önce
     bu ikisi bağımsız hesaplanıp sistematik olarak birbirinden sapmıştı).
     """
-    import math
-    n = scene_count if (scene_count and scene_count > 0) else math.ceil(budget_seconds / 8.0)
+    n = scene_count if (scene_count and scene_count > 0) else scene_count_for_budget(budget_seconds)
     n = max(1, n)
     total, per_scene, _, _ = budget_params(budget_seconds, n)
     return total, per_scene, n
@@ -394,28 +393,21 @@ def _generate_storyboard_for_regen(
     corrected_seconds: float,
     correction_hint: str,
     job_id: str = "",
-    previous_scene_count: int | None = None,
 ) -> dict | None:
     """
     Tek bir üretim denemesi — hece bütçesi doğrulaması yapmaz.
     Desteklenmeyen içerik tipleri için None döner.
     _regen_storyboard_for_duration tarafından (gerekirse 2 kez) çağrılır.
 
-    previous_scene_count: verilirse sahne sayısı buna SABİTLENİR (ceil(budget/8.0)
-    ile yeniden hesaplanmaz). 2026-08-07 bulgusu: sahne sayısı düzeltilmiş süreyle
-    orantılı büyüdüğünde (8→10→12 sahne, 60→75→90s) sahne başına hece/karakter
-    hedefi (target_chars) sabit kalıyordu (~84) — model karakter sınırına hece
-    sınırından daha güçlü tepki verdiği için bu, düzeltmenin modele hiç ulaşmaması
-    anlamına geliyordu. Bir süre düzeltme turunda amaç YENİ sahneler eklemek değil,
-    AYNI sahnelerin daha uzun konuşmasını sağlamak — o yüzden regen'de sahne sayısı
-    sabit tutulup hedef karakter/hece büyümeye bırakılıyor.
+    2026-08-07 (2. revizyon): sahne sayısı önceki turdan SABİTLENMİYOR —
+    corrected_seconds'tan NATURAL_SCENE_SECONDS (5.5sn, content_constants.py)
+    ile yeniden ölçekleniyor. İlk deneme (previous_scene_count sabitleme)
+    yanlış çıktı: model doğal sahne uzunluğunu (~26 hece/~5.9sn) aşmıyor,
+    bunun yerine bütçe büyüdükçe sahne SAYISI artmalı — sahne uzunluğu değil.
     """
     if content_type == "reels_short":
         from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
-        if previous_scene_count and previous_scene_count > 0:
-            _, _, _regen_sc = _syllable_budget_params(corrected_seconds, previous_scene_count)
-        else:
-            _, _, _regen_sc = _syllable_budget_params(corrected_seconds)
+        _, _, _regen_sc = _syllable_budget_params(corrected_seconds)
         sb_new = generate_educational_reel_storyboard(
             title=payload.title,
             topic=payload.topic or payload.title,
@@ -493,7 +485,6 @@ def _regen_storyboard_for_duration(
     correction_hint: str,
     turn: int = 0,
     job_id: str = "",
-    previous_scene_count: int | None = None,
 ) -> tuple[dict | None, dict | None]:
     """
     Süre düzeltmesiyle storyboard yeniden üretir, ardından hece bütçesini
@@ -501,20 +492,13 @@ def _regen_storyboard_for_duration(
     konu_anlatimi — _generate_storyboard_for_regen'in desteklediği TÜM
     tiplerde uygulanır, yalnızca reels_short'a özel değildir.
 
-    previous_scene_count: bir önceki turun sahne sayısı — bkz.
-    _generate_storyboard_for_regen docstring'i (sahne sayısı sabit tutulup
-    hedef karakter/hece büyümeye bırakılıyor).
-
     Döner: (storyboard, None)                       → başarı
            (None, None)                              → içerik tipi desteklenmiyor
            (None, {"reason": ..., ...})               → 2 denemede de hece bütçesi
                                                           aşıldı — çağıran job'u
                                                           TTS'e göndermeden durdurmalı
     """
-    sb_new = _generate_storyboard_for_regen(
-        content_type, payload, brand, corrected_seconds, correction_hint, job_id,
-        previous_scene_count=previous_scene_count,
-    )
+    sb_new = _generate_storyboard_for_regen(content_type, payload, brand, corrected_seconds, correction_hint, job_id)
     if sb_new is None:
         return None, None
 
@@ -534,10 +518,7 @@ def _regen_storyboard_for_duration(
             return sb_new, None
         if attempt == 1:
             feedback = detail or feedback
-            sb_new = _generate_storyboard_for_regen(
-                content_type, payload, brand, corrected_seconds, feedback, job_id,
-                previous_scene_count=previous_scene_count,
-            )
+            sb_new = _generate_storyboard_for_regen(content_type, payload, brand, corrected_seconds, feedback, job_id)
             if sb_new is None:
                 return None, None
 
@@ -1175,7 +1156,6 @@ def _run_pipeline_inner(
                     content_type, payload, brand,
                     _dur_corrected_sec, _dur_correction_hint or "",
                     turn=_dur_turn, job_id=job_id,
-                    previous_scene_count=len(storyboard.get("scenes", [])),
                 )
                 if _budget_exceeded is not None:
                     logger.error(

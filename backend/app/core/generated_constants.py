@@ -3,7 +3,7 @@
 # To regenerate: python backend/scripts/generate_content_constants.py
 # To verify in CI: python backend/scripts/generate_content_constants.py --check
 
-TR_SPS: float = 4.15
+TR_SPS: float = 4.42
 CHARS_PER_SYLLABLE: float = 2.7
 
 # canonical content_type -> {min_visual_surfaces, min_photos, max_photos?}
