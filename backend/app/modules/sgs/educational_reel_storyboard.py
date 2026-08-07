@@ -390,6 +390,32 @@ _ALLOWED_COMPONENTS = set(_SEGMENT_COMPONENT.values()) | {
     "EducationalReelScene",
 }
 
+# component → visual_source. 2026-08-07 postmortem: backend reels sahnelerine
+# visual_source hiç YAZMIYORDU (yalnızca motivasyon jeneratörü yazıyordu,
+# video.py _attach_visual_assets). LLM'in few-shot örnekten kopyalaması umuluyordu
+# ama context/content/mistake/tip örnekleri (id 2-6, _build_scene_schema) hiç
+# visual_source göstermiyordu — model çoğu zaman bu alanı boş bırakıyordu.
+# Sonuç: EducationalReelScene.tsx'teki A.6 kapısı (visual_content_missing) fotoğrafsız
+# VE visual_source='text_only' olmayan her metin-sahnede ateşliyordu. Değerler
+# migrations/014_p0_schema_fixes.sql'deki video_scenes_visual_source_check CHECK
+# kısıtıyla birebir eşleşmeli ('photo','card','table','journal','board','text_only').
+# "EducationalReelScene" (bare, geriye dönük uyumluluk adı) burada YOK — gerçek
+# görsel ihtiyacı segment_type'a göre değişir, tek bir sabit değere indirgenemez;
+# bu isim gelirse de sessizce varsayılan atamak yerine hata verilir.
+VISUAL_SOURCE_BY_COMPONENT: dict[str, str] = {
+    "AccountCardScene":   "card",
+    "JournalEntryScene":  "journal",
+    "TableScene":         "table",
+    "CommonMistakeScene": "card",
+    "RuleBoxScene":       "board",
+    "ReelHookScene":      "text_only",
+    "ReelCtaScene":       "text_only",
+    "ReelConceptScene":   "text_only",
+    "ReelExampleScene":   "text_only",
+    "ReelExamTipScene":   "text_only",
+    "ReelMistakeScene":   "text_only",
+}
+
 
 def _apply_series_title(title: str, topic: str, content_series: str | None) -> str:
     """İçerik serisine göre video başlığını şablondan üretir."""
@@ -648,6 +674,20 @@ Video başlığı: {title}
                     "downstream hece bütçesi kapısı son savunma."
                 )
 
+    # visual_source ataması — component adından deterministik türetilir (LLM'e
+    # bırakılmıyor, bkz. VISUAL_SOURCE_BY_COMPONENT tanımı). Eşlemede olmayan
+    # bileşen adı = kod hatası (yeni component eklenip burası güncellenmemiş) —
+    # sessiz varsayılan YOK, hard fail.
+    for s in scenes:
+        comp = s.get("component", "?")
+        if comp not in VISUAL_SOURCE_BY_COMPONENT:
+            raise RuntimeError(
+                f"visual_source_mapping_missing: component={comp!r} (sahne {s.get('id', '?')}) "
+                f"VISUAL_SOURCE_BY_COMPONENT eşlemesinde yok — yeni bir bileşen eklenmiş "
+                f"olabilir, educational_reel_storyboard.py'de eşlemeyi güncelleyin."
+            )
+        s["visual_source"] = VISUAL_SOURCE_BY_COMPONENT[comp]
+
     # A.5/A.6 doğrulaması — her sahnenin bir bileşene eşlendiğini logla.
     # A.6'da sessiz fallback kaldırılmadan önce bu logun gerçek bir dağılım
     # göstermesi (hepsi ReelConceptScene DEĞİL) gerekir.
@@ -657,8 +697,8 @@ Video başlığı: {title}
         comp = s.get("component", "?")
         _component_counts[comp] = _component_counts.get(comp, 0) + 1
         logger.info(
-            "[reel-component-map] sahne=%s component=%s segment_type=%s kart_mi=%s",
-            s.get("id", "?"), comp, s.get("segment_type", "?"), comp in _card_components,
+            "[reel-component-map] sahne=%s component=%s segment_type=%s kart_mi=%s visual_source=%s",
+            s.get("id", "?"), comp, s.get("segment_type", "?"), comp in _card_components, s.get("visual_source"),
         )
     _card_scene_count = sum(v for k, v in _component_counts.items() if k in _card_components)
     logger.info(
