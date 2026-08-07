@@ -260,6 +260,9 @@ def transcribe_word_timestamps(audio_bytes: bytes, scene_index: int | str = "?")
             response_format="verbose_json",
             timestamp_granularities=["word"],
             prompt=_WHISPER_DOMAIN_PROMPT,
+            language="tr",  # dil tespiti Türkçeyi Azericeyle karıştırıyordu (ə karakteri,
+                             # "özətlə/hesablarını/əzbərlə") — pipeline zaten her zaman
+                             # Türkçe ürettiği için otomatik tespite hiç gerek yok.
         )
     except Exception as exc:
         logger.error(f"[caption] sahne {scene_index} whisper transkript hatası: {exc}")

@@ -271,7 +271,13 @@ def _check_syllable_budget(
     """
     reels_short için sahne hece bütçesi doğrulaması.
     Bütçe = budget_seconds × TR_SPS hece/s; sahne başına hedef süreden türetilir.
-    Toplam sahne hece sayısı %20'den fazla aşarsa (False, detay) döner.
+
+    Tolerans ASİMETRİK (2026-08-07, üç ardışık regen turunda ~%-43/-50 sapma
+    görüldükten sonra): fazla üretim doğrudan zarar verir (süre kapısına takılır,
+    kart taşar) → +%20'de kes. Eksik üretim regen turlarıyla telafi edilebilir
+    ama önceki eşik (yalnızca üst sınır) bunu hiç yakalamıyordu — alt sınır
+    hesaplanıp scene_details'e yazılıyor ama pass/fail'e hiç etki etmiyordu.
+    Şimdi -%15'te de kesiliyor (üsttekinden sıkı — sistematik sapma eksi yönde).
     """
     scenes = storyboard.get("scenes", [])
     total_budget, syl_per_scene, _ = _syllable_budget_params(budget_seconds, len(scenes))
@@ -285,11 +291,16 @@ def _check_syllable_budget(
         total_syl += syl
         if syl < lo or syl > hi:
             scene_details.append(f"sahne {s.get('id', '?')}: {syl} hece")
-    if total_syl > total_budget * 1.20:
-        pct = (total_syl / total_budget - 1) * 100
+
+    deviation = (total_syl / total_budget - 1) if total_budget else 0.0
+    if deviation > 0.20 or deviation < -0.15:
+        pct = deviation * 100
+        if deviation > 0:
+            yon_msg = f"Hece bütçesi aşıldı: {total_syl:.0f}/{total_budget:.0f} hece (%{pct:.0f} fazla). DAHA KISA yaz."
+        else:
+            yon_msg = f"Hece bütçesi yetersiz: {total_syl:.0f}/{total_budget:.0f} hece (%{-pct:.0f} eksik). DAHA UZUN yaz."
         detail = (
-            f"Hece bütçesi aşıldı: {total_syl:.0f}/{total_budget:.0f} hece "
-            f"(%{pct:.0f} fazla). Sahne başına ~{syl_per_scene} hece (±{tolerance}) hedefle."
+            f"{yon_msg} Sahne başına ~{syl_per_scene} hece (±{tolerance}) hedefle."
             + (f" Sorunlu: {'; '.join(scene_details[:4])}" if scene_details else "")
         )
         return False, detail
@@ -383,15 +394,28 @@ def _generate_storyboard_for_regen(
     corrected_seconds: float,
     correction_hint: str,
     job_id: str = "",
+    previous_scene_count: int | None = None,
 ) -> dict | None:
     """
     Tek bir üretim denemesi — hece bütçesi doğrulaması yapmaz.
     Desteklenmeyen içerik tipleri için None döner.
     _regen_storyboard_for_duration tarafından (gerekirse 2 kez) çağrılır.
+
+    previous_scene_count: verilirse sahne sayısı buna SABİTLENİR (ceil(budget/8.0)
+    ile yeniden hesaplanmaz). 2026-08-07 bulgusu: sahne sayısı düzeltilmiş süreyle
+    orantılı büyüdüğünde (8→10→12 sahne, 60→75→90s) sahne başına hece/karakter
+    hedefi (target_chars) sabit kalıyordu (~84) — model karakter sınırına hece
+    sınırından daha güçlü tepki verdiği için bu, düzeltmenin modele hiç ulaşmaması
+    anlamına geliyordu. Bir süre düzeltme turunda amaç YENİ sahneler eklemek değil,
+    AYNI sahnelerin daha uzun konuşmasını sağlamak — o yüzden regen'de sahne sayısı
+    sabit tutulup hedef karakter/hece büyümeye bırakılıyor.
     """
     if content_type == "reels_short":
         from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
-        _, _, _regen_sc = _syllable_budget_params(corrected_seconds)
+        if previous_scene_count and previous_scene_count > 0:
+            _, _, _regen_sc = _syllable_budget_params(corrected_seconds, previous_scene_count)
+        else:
+            _, _, _regen_sc = _syllable_budget_params(corrected_seconds)
         sb_new = generate_educational_reel_storyboard(
             title=payload.title,
             topic=payload.topic or payload.title,
@@ -469,6 +493,7 @@ def _regen_storyboard_for_duration(
     correction_hint: str,
     turn: int = 0,
     job_id: str = "",
+    previous_scene_count: int | None = None,
 ) -> tuple[dict | None, dict | None]:
     """
     Süre düzeltmesiyle storyboard yeniden üretir, ardından hece bütçesini
@@ -476,13 +501,20 @@ def _regen_storyboard_for_duration(
     konu_anlatimi — _generate_storyboard_for_regen'in desteklediği TÜM
     tiplerde uygulanır, yalnızca reels_short'a özel değildir.
 
+    previous_scene_count: bir önceki turun sahne sayısı — bkz.
+    _generate_storyboard_for_regen docstring'i (sahne sayısı sabit tutulup
+    hedef karakter/hece büyümeye bırakılıyor).
+
     Döner: (storyboard, None)                       → başarı
            (None, None)                              → içerik tipi desteklenmiyor
            (None, {"reason": ..., ...})               → 2 denemede de hece bütçesi
                                                           aşıldı — çağıran job'u
                                                           TTS'e göndermeden durdurmalı
     """
-    sb_new = _generate_storyboard_for_regen(content_type, payload, brand, corrected_seconds, correction_hint, job_id)
+    sb_new = _generate_storyboard_for_regen(
+        content_type, payload, brand, corrected_seconds, correction_hint, job_id,
+        previous_scene_count=previous_scene_count,
+    )
     if sb_new is None:
         return None, None
 
@@ -502,7 +534,10 @@ def _regen_storyboard_for_duration(
             return sb_new, None
         if attempt == 1:
             feedback = detail or feedback
-            sb_new = _generate_storyboard_for_regen(content_type, payload, brand, corrected_seconds, feedback, job_id)
+            sb_new = _generate_storyboard_for_regen(
+                content_type, payload, brand, corrected_seconds, feedback, job_id,
+                previous_scene_count=previous_scene_count,
+            )
             if sb_new is None:
                 return None, None
 
@@ -1140,6 +1175,7 @@ def _run_pipeline_inner(
                     content_type, payload, brand,
                     _dur_corrected_sec, _dur_correction_hint or "",
                     turn=_dur_turn, job_id=job_id,
+                    previous_scene_count=len(storyboard.get("scenes", [])),
                 )
                 if _budget_exceeded is not None:
                     logger.error(
