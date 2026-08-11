@@ -435,9 +435,13 @@ def _generate_storyboard_for_regen(
     elif content_type == "motivasyon":
         from app.modules.content.motivation_generator import generate_motivation_storyboard
         result = generate_motivation_storyboard(
+            # İlk turda bankadan seçildiyse payload.topic zaten yazılmıştı (bkz.
+            # _run_pipeline_inner motivasyon dalı) — regen AYNI konuyu kullanır,
+            # yeniden rastgele seçmez.
             topic=payload.topic or payload.title,
             duration=max(15, int(corrected_seconds)),
             platform="reels",
+            job_id=job_id,
         )
         scenes = []
         for i, scene in enumerate(result.get("scenes", []), 1):
@@ -998,7 +1002,23 @@ def _run_pipeline_inner(
 
         elif content_type == "motivasyon":
             from app.modules.content.motivation_generator import generate_motivation_storyboard
-            topic_text = payload.topic or payload.title
+            if payload.topic:
+                topic_text = payload.topic
+            else:
+                # B.6.3 — kullanıcı konu girmedi: bankadan, son 60 günde
+                # kullanılmayan bir konu seçilir. payload.topic'e YALIN başlık
+                # yazılır (regen turlarında aynı konu tekrar kullanılsın VE
+                # content_history dedup eşleşmesi banka title'ıyla birebir
+                # tutsun diye) — zenginleştirilmiş bağlam yalnızca bu ilk
+                # üretim çağrısına, ayrı bir değişkenle geçirilir.
+                from app.core.content_bank_motivation import select_topic, format_topic_for_prompt
+                _bank_entry = select_topic()
+                payload.topic = _bank_entry["title"]
+                topic_text = format_topic_for_prompt(_bank_entry)
+                logger.info(
+                    "[sgs-content] %s konu girilmedi, bankadan seçildi: #%s %s",
+                    job_id[:8], _bank_entry["id"], _bank_entry["title"],
+                )
             # requested_duration_seconds Pydantic validator ile int garantili
             raw_dur = payload.requested_duration_seconds
             if raw_dur is None and payload.target_duration_minutes:
@@ -1008,6 +1028,7 @@ def _run_pipeline_inner(
                 topic=topic_text,
                 duration=duration_sec,
                 platform="reels",
+                job_id=job_id,
             )
             scenes = []
             for i, scene in enumerate(result.get("scenes", []), 1):
