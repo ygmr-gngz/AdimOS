@@ -173,7 +173,8 @@ def _fit_example_text(parts: list[str], target_min: int, target_max: int) -> str
     return text
 
 
-def _build_scene_schema(min_chars: int, max_chars: int, target_scene_count: int = 7) -> str:
+def _build_scene_schema(min_chars: int, max_chars: int, target_scene_count: int = 7, min_card_scenes: int | None = None) -> str:
+    _min_cards = min_card_scenes if min_card_scenes is not None else min_card_scenes_for(target_scene_count)
     ex = {i: _fit_example_text(parts, min_chars, max_chars) for i, parts in _SCENE_EXAMPLE_PARTS.items()}
     return f"""
 Storyboard JSON formatı — aşağıdaki 7 sahne SADECE İÇERİK TÜRLERİNİN (hook,
@@ -252,7 +253,7 @@ YUKARIDAKİ 7 SAHNE ÖRNEKTİR, ÇIKTI DEĞİLDİR. Gerçek "scenes" dizin
 {target_scene_count} eleman içermeli — 7'den azsa content/concept tipi
 sahneleri çoğaltarak tamamla.
 
-{COMPONENT_ROUTING_RULE}
+{_component_routing_rule(_min_cards, target_scene_count)}
 AccountCardScene örneği:
 {json.dumps(_ACCOUNT_CARD_EXAMPLE, ensure_ascii=False, indent=2)}
 {ACCOUNT_CARD_FIELD_RULES}
@@ -307,10 +308,28 @@ _ACCOUNT_CARD_EXAMPLE = {
     "voice_text": "İndirilecek KDV, alış faturalarındaki vergiyi izlediğin bir hesap.",
 }
 
+CARD_COMPONENTS = {
+    "AccountCardScene", "JournalEntryScene", "TableScene",
+    "RuleBoxScene", "CommonMistakeScene",
+}
+
+
+def min_card_scenes_for(scene_count: int) -> int:
+    """Hedef sahne sayısına göre minimum kart bileşeni sayısı.
+
+    2026-08-08 bulgusu: sahne sayısı 8→11'e çıkarılınca (NATURAL_SCENE_SECONDS
+    kalibrasyonu) A.5'in sabit "2-4 kart" kuralı ORANLA ölçeklenmedi — 11
+    sahnede 1 kart (%9) üretildi, önceki 8 sahnelik denemelerde 4-5 kart
+    (%50-63) üretiliyordu. Sabit sayı yerine orana bağlandı.
+    """
+    return max(3, round(scene_count * 0.4))
+
+
 # A.5 — segment → component YÖNLENDİRME kuralı. Model hangi içerik için hangi
 # bileşeni seçeceğini burada öğrenir; _ALLOWED_COMPONENTS zaten izin veriyordu
 # ama hiçbir yerde NE ZAMAN kullanılacağı anlatılmıyordu (A.4 sonrası boşluk).
-COMPONENT_ROUTING_RULE = """
+def _component_routing_rule(min_card_scenes: int, scene_count: int) -> str:
+    return f"""
 BİLEŞEN SEÇİMİ (segment içeriğine göre) — varsayılan ReelConceptScene/ReelHookScene/
 ReelCtaScene YERİNE, içerik aşağıdaki türlerden biriyse özel kart bileşenini seç:
   - Bir hesabı TANITIYORSA (kod, nitelik, amaç, tipik kayıt)  → AccountCardScene
@@ -320,7 +339,11 @@ ReelCtaScene YERİNE, içerik aşağıdaki türlerden biriyse özel kart bileşe
   - Borç/Alacak ÇALIŞMA MANTIĞINI (kural listesi) özetliyorsa   → RuleBoxScene
   - Kanca (0-5s) veya kapanış/CTA ise                           → ReelHookScene / ReelCtaScene
 Yukarıdakilerden hiçbiri uymuyorsa ReelConceptScene/ReelExampleScene kullan.
-Bir video genelde 2-4 kart bileşeni İÇERMELİDİR — hepsi ReelConceptScene olmasın.
+KART SAYISI (ZORUNLU): {scene_count} sahnenin EN AZ {min_card_scenes} tanesi yukarıdaki
+5 kart bileşeninden biri OLMALI (AccountCardScene/JournalEntryScene/TableScene/
+CommonMistakeScene/RuleBoxScene) — hepsi ReelConceptScene/ReelHookScene/ReelCtaScene
+olmasın. Konuda hesap/yevmiye/karşılaştırma/hata/kural içeriği varsa bunu kart
+bileşenine ÇEVİR, düz metin sahnesi olarak bırakma.
 """
 
 _JOURNAL_ENTRY_EXAMPLE = {
@@ -489,7 +512,8 @@ def generate_educational_reel_storyboard(
 
     _sc_min = _sc - 2
     _sc_max = _sc + 3
-    _scene_schema = _build_scene_schema(min_chars, max_chars, _sc)
+    _min_cards = min_card_scenes_for(_sc)
+    _scene_schema = _build_scene_schema(min_chars, max_chars, _sc, _min_cards)
 
     def _attempt(extra_feedback: str) -> list[dict]:
         """Tek bir GPT üretim denemesi — prompt kur, çağır, sahneleri normalize et."""
@@ -591,6 +615,46 @@ Video başlığı: {title}
             _sc, _sc_min, _sc_max, len(scenes),
         )
 
+    # ── kart bileşeni sayısı — 1 yeniden deneme ──────────────────────────
+    # 2026-08-08 bulgusu: sahne sayısı 8→11'e çıkarılınca A.5'in sabit "2-4 kart"
+    # kuralı ORANLA ölçeklenmedi, 11 sahnede 1 kart üretildi (%9, önceki 8
+    # sahnelik denemelerde %50-63'tü). min_card_scenes_for ile orana bağlandı;
+    # eşiğin altında kalırsa journal-balance/voice-text-length ÖNCESİ (yapıyı
+    # önce düzelt, sonra içerik/uzunluk kontrolüne geç) bir kez geri beslenir.
+    # Hâlâ yetersizse hard fail YOK (içerik-kalitesi kaygısı, doğruluk kapısı
+    # değil) — yalnızca loglanır, tıpkı önceki card_scene_count==0 uyarısı gibi.
+    # _min_cards yukarıda (_scene_schema kurulurken) zaten hesaplandı.
+    _card_count_now = sum(1 for s in scenes if s.get("component") in CARD_COMPONENTS)
+    if _card_count_now < _min_cards:
+        logger.warning(
+            "[reel-card-count] deneme=1/2 istenen_min=%d üretilen=%d/%d — yeniden deneniyor",
+            _min_cards, _card_count_now, len(scenes),
+        )
+        scenes = _attempt(
+            f"Önceki üretimde yalnızca {_card_count_now} sahne kart bileşeni kullandı, "
+            f"en az {_min_cards} olmalıydı. Hesap tanımı/yevmiye kaydı/karşılaştırma/"
+            f"sık hata/borç-alacak kuralı içeren 'content' tipi sahneleri "
+            f"AccountCardScene/JournalEntryScene/TableScene/CommonMistakeScene/"
+            f"RuleBoxScene'e ÇEVİR — düz metin (ReelConceptScene) olarak bırakma."
+        )
+        _card_count_now = sum(1 for s in scenes if s.get("component") in CARD_COMPONENTS)
+        if _card_count_now < _min_cards:
+            logger.warning(
+                "[reel-card-count] deneme=2/2 istenen_min=%d üretilen=%d/%d — hâlâ yetersiz, "
+                "hard fail yok (içerik kalitesi kaygısı, doğrulama kapısı değil)",
+                _min_cards, _card_count_now, len(scenes),
+            )
+        else:
+            logger.info(
+                "[reel-card-count] deneme=2/2 istenen_min=%d üretilen=%d/%d — düzeldi",
+                _min_cards, _card_count_now, len(scenes),
+            )
+    else:
+        logger.info(
+            "[reel-card-count] istenen_min=%d üretilen=%d/%d — OK",
+            _min_cards, _card_count_now, len(scenes),
+        )
+
     # ── journalEntry borç=alacak doğrulaması — HARD kapı (math_validation_failed) ──
     # Karakter uzunluğu kontrolünün aksine sessizce loglanıp geçilmez: borç≠alacak
     # olan bir kayıt öğrenciye yanlış bilgi öğretir, video durdurulmalı.
@@ -690,26 +754,26 @@ Video başlığı: {title}
 
     # A.5/A.6 doğrulaması — her sahnenin bir bileşene eşlendiğini logla.
     # A.6'da sessiz fallback kaldırılmadan önce bu logun gerçek bir dağılım
-    # göstermesi (hepsi ReelConceptScene DEĞİL) gerekir.
-    _card_components = {"AccountCardScene", "JournalEntryScene", "TableScene", "RuleBoxScene", "CommonMistakeScene"}
+    # göstermesi (hepsi ReelConceptScene DEĞİL) gerekir. Bu, kart-sayısı
+    # yeniden deneme(ler)inden SONRAKİ nihai dağılımı yansıtır.
     _component_counts: dict[str, int] = {}
     for s in scenes:
         comp = s.get("component", "?")
         _component_counts[comp] = _component_counts.get(comp, 0) + 1
         logger.info(
             "[reel-component-map] sahne=%s component=%s segment_type=%s kart_mi=%s visual_source=%s",
-            s.get("id", "?"), comp, s.get("segment_type", "?"), comp in _card_components, s.get("visual_source"),
+            s.get("id", "?"), comp, s.get("segment_type", "?"), comp in CARD_COMPONENTS, s.get("visual_source"),
         )
-    _card_scene_count = sum(v for k, v in _component_counts.items() if k in _card_components)
+    _card_scene_count = sum(v for k, v in _component_counts.items() if k in CARD_COMPONENTS)
     logger.info(
-        "[reel-component-map] ÖZET topic=%r toplam_sahne=%d kart_sahne=%d dağılım=%s",
-        topic, len(scenes), _card_scene_count, _component_counts,
+        "[reel-component-map] ÖZET topic=%r toplam_sahne=%d kart_sahne=%d (min=%d) dağılım=%s",
+        topic, len(scenes), _card_scene_count, _min_cards, _component_counts,
     )
-    if _card_scene_count == 0:
+    if _card_scene_count < _min_cards:
         logger.warning(
-            "[reel-component-map] UYARI: hiç kart bileşeni seçilmedi — tüm sahneler "
-            "eski ReelConceptScene/EducationalReelScene ailesine düştü. A.5 yönlendirme "
-            "kuralı çalışmıyor olabilir; A.6'da fallback kaldırılmadan bu araştırılmalı."
+            "[reel-component-map] UYARI: kart sahnesi hedefin altında (%d/%d) — "
+            "A.5 yönlendirme kuralı 2 denemede de tam çalışmadı.",
+            _card_scene_count, _min_cards,
         )
 
     if len(scenes) < 5:

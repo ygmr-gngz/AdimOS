@@ -19,7 +19,7 @@ import { RuleBoxScene } from '../scenes/RuleBoxScene'
 import { CommonMistakeScene } from '../scenes/CommonMistakeScene'
 import { JournalEntryScene } from '../scenes/JournalEntryScene'
 import { FPS } from '../brand'
-import { TRANSITION_FRAMES, resolveSceneDurationSeconds } from '../utils'
+import { TRANSITION_FRAMES, resolveSceneDurationSeconds, getSceneTimings } from '../utils'
 
 interface Props { storyboard: StoryboardJSON }
 
@@ -85,14 +85,7 @@ export function EducationalReel120({ storyboard }: Props) {
     return captions
   })
 
-  let cursor = 0
-  const timings = scenes.map(scene => {
-    const start = cursor
-    const safeSec = resolveSceneDurationSeconds(scene.duration_seconds, scene.id)
-    const durationFrames = Math.max(TRANSITION_FRAMES + 1, Math.round(safeSec * FPS) + TRANSITION_FRAMES)
-    cursor += durationFrames
-    return { scene, start, durationFrames }
-  })
+  const timings = getSceneTimings(scenes)
 
   return (
     <AbsoluteFill style={{ background: '#0B2A4A', overflow: 'hidden' }}>

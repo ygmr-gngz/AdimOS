@@ -38,6 +38,28 @@ export function kenBurnsScale(
   return zoomOut ? 1.14 - progress * 0.08 : 1.06 + progress * 0.08
 }
 
+export interface SceneTiming {
+  scene: StoryboardJSON['scenes'][number]
+  start: number
+  durationFrames: number
+}
+
+// EducationalReel120.tsx'in sahne-kürsör hesabıyla AYNI formül — tek kaynak.
+// Card-still özelliği (2026-08-08) bunu composition DIŞINDAN (server/index.ts,
+// Lambda still render öncesi hangi frame'in hangi sahnenin ortası olduğunu
+// bulmak için) de kullanıyor; iki bağımsız kopya olursa still yanlış sahneden
+// alınır — bu sınıf hatayı bu session zaten birkaç kez gördük.
+export function getSceneTimings(scenes: StoryboardJSON['scenes']): SceneTiming[] {
+  let cursor = 0
+  return scenes.map(scene => {
+    const start = cursor
+    const safeSec = resolveSceneDurationSeconds(scene.duration_seconds, scene.id)
+    const durationFrames = Math.max(TRANSITION_FRAMES + 1, Math.round(safeSec * FPS) + TRANSITION_FRAMES)
+    cursor += durationFrames
+    return { scene, start, durationFrames }
+  })
+}
+
 export function getTotalFrames(storyboard: StoryboardJSON | undefined | null): number {
   if (!storyboard?.scenes?.length) return 900   // fallback: 30 sn
   return storyboard.scenes.reduce((acc, s) => {

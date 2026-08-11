@@ -33,10 +33,10 @@
 import express from 'express'
 import { createClient } from '@supabase/supabase-js'
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
-import { renderMediaOnLambda, getRenderProgress } from '@remotion/lambda/client'
+import { renderMediaOnLambda, getRenderProgress, renderStillOnLambda } from '@remotion/lambda/client'
 import WebSocket from 'ws'
 import type { RenderRequest, RenderResponse } from '../types'
-import { TRANSITION_FRAMES, resolveSceneDurationSeconds } from '../utils'
+import { TRANSITION_FRAMES, resolveSceneDurationSeconds, getSceneTimings } from '../utils'
 
 // ── Supabase client (modül düzeyinde bir kere oluştur) ───────────
 // Node 20'de native WebSocket yok; ws paketi transport olarak verilir.
@@ -429,6 +429,18 @@ async function _supabaseUpload(buf: Buffer, jobId: string): Promise<string> {
     .from(VIDEO_BUCKET)
     .upload(stoPath, buf, { contentType: 'video/mp4', upsert: true })
   if (error) throw new Error(`Supabase upload hatası: ${error.message}`)
+  return sb.storage.from(VIDEO_BUCKET).getPublicUrl(stoPath).data.publicUrl
+}
+
+// Kart still'i (PNG) — aynı bucket, ayrı klasör (stills/), video upload'ıyla
+// aynı desen (_supabaseUpload'ın PNG karşılığı).
+async function _supabaseUploadStill(buf: Buffer, jobId: string, sceneId: number | string): Promise<string> {
+  const sb      = _supabase()
+  const stoPath = `stills/${jobId}_${sceneId}.png`
+  const { error } = await sb.storage
+    .from(VIDEO_BUCKET)
+    .upload(stoPath, buf, { contentType: 'image/png', upsert: true })
+  if (error) throw new Error(`Supabase still upload hatası: ${error.message}`)
   return sb.storage.from(VIDEO_BUCKET).getPublicUrl(stoPath).data.publicUrl
 }
 
@@ -934,6 +946,93 @@ app.post('/render', (req, res) => {
   })
 
   _processQueue()
+})
+
+// ── POST /stills ──────────────────────────────────────────────────
+// 2026-08-08: kart bileşeni içeren sahnelerden Instagram carousel/post için
+// still (PNG) çıkarır — video üretiminden ücretsiz yan çıktı. Backend hangi
+// sahnelerin "kart" olduğuna karar verir (VISUAL_SOURCE_BY_COMPONENT, Python
+// tarafı); bu endpoint yalnızca verilen scene_id'ler için still üretir, kart
+// olup olmadığını kendi bilmez — iş kuralı tekrar burada TANIMLANMAZ.
+// Video render'ından SONRA, ayrı ve bağımsız çağrılır — _renderQueue'ya
+// girmez (o sırada aynı job için eşzamanlı video render'ı zaten bitmiştir).
+interface StillsRequest {
+  job_id: string
+  storyboard: RenderRequest['storyboard']
+  scene_ids: (number | string)[]
+}
+
+app.post('/stills', async (req, res) => {
+  const { job_id, storyboard, scene_ids } = req.body as StillsRequest
+
+  if (!job_id || !storyboard || !Array.isArray(scene_ids) || scene_ids.length === 0) {
+    return res.status(400).json({ error: 'job_id, storyboard ve scene_ids (boş olmayan dizi) gerekli' })
+  }
+  if (!LAMBDA_FUNCTION || !SERVE_URL) {
+    return res.status(503).json({ error: 'Lambda yapılandırılmamış' })
+  }
+  if (_isGuardrailHit()) {
+    return res.status(429).json({
+      error: `Günlük Lambda maliyet limiti aşıldı ($${_dailyCostUsd.toFixed(3)} / $${COST_LIMIT_USD})`,
+    })
+  }
+
+  const rawType     = String(storyboard.video_type ?? '')
+  const videoFormat = storyboard.format ?? '9:16'
+  const { compositionId } = resolveComposition(rawType, videoFormat)
+  if (!compositionId || !ALLOWED_COMPOSITIONS.has(compositionId)) {
+    return res.status(422).json({ error: 'unknown_or_disallowed_composition', composition_id: compositionId })
+  }
+
+  const timings = getSceneTimings(storyboard.scenes)
+  const timingById = new Map(timings.map(t => [String(t.scene.id), t]))
+
+  const results: { scene_id: number | string; url: string }[] = []
+  const failures: { scene_id: number | string; error: string }[] = []
+
+  for (const sceneId of scene_ids) {
+    const timing = timingById.get(String(sceneId))
+    if (!timing) {
+      console.warn(`[stills] job=${job_id} sahne=${sceneId} storyboard'da bulunamadı — atlandı`)
+      failures.push({ scene_id: sceneId, error: 'scene_not_found_in_storyboard' })
+      continue
+    }
+    const frame = timing.start + Math.floor(timing.durationFrames / 2)
+    try {
+      const result = await renderStillOnLambda({
+        region:       LAMBDA_REGION,
+        functionName: LAMBDA_FUNCTION,
+        serveUrl:     SERVE_URL,
+        composition:  compositionId,
+        inputProps:   { storyboard },
+        imageFormat:  'png',
+        privacy:      'private',
+        frame,
+      })
+
+      // Maliyet — best-effort: estimatedPrice şekli sürüm arası değişebilir,
+      // sayısal alan yoksa sessizce atlanır (still'ler zaten tek kare, ucuz).
+      const priceAmount = (result.estimatedPrice as unknown as { amount?: number })?.amount
+      if (typeof priceAmount === 'number' && isFinite(priceAmount)) {
+        _addCost(priceAmount)
+      }
+
+      const buf = await _s3Download(result.bucketName, result.outKey)
+      const url = await _supabaseUploadStill(buf, job_id, sceneId)
+      console.log(`[stills] job=${job_id} sahne=${sceneId} frame=${frame} → ${url}`)
+      results.push({ scene_id: sceneId, url })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[stills] job=${job_id} sahne=${sceneId} HATA: ${msg}`)
+      failures.push({ scene_id: sceneId, error: msg })
+    }
+  }
+
+  console.log(
+    `[stills] job=${job_id} tamamlandı: ${results.length}/${scene_ids.length} başarılı` +
+    (failures.length ? ` başarısız=${JSON.stringify(failures)}` : ''),
+  )
+  res.json({ ok: true, stills: results, failures })
 })
 
 // ── SERVE_URL'den Lambda S3 bucket adını çıkar ───────────────────

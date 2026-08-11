@@ -604,6 +604,66 @@ def _upload_tts(audio_bytes: bytes, filename: str) -> str:
     return sb.storage.from_(VIDEO_BUCKET).get_public_url(path)
 
 
+def _generate_card_stills(job_id: str, storyboard: dict) -> None:
+    """
+    2026-08-08: reels render'ı bittiğinde kart sahnelerinden (AccountCardScene/
+    JournalEntryScene/TableScene/CommonMistakeScene/RuleBoxScene) 1080x1920 PNG
+    still çıkarır (Instagram carousel/tekil post için — video üretiminden
+    ücretsiz yan çıktı) ve video_jobs.publish_package.card_stills'e yazar.
+
+    Best-effort: render zaten 'ready_for_review' — bu adım başarısız olsa da
+    job'u FAILED yapmaz, yalnızca loglanır. render-callback'ten background_tasks
+    ile (yanıtı bekletmeden) çağrılır.
+    """
+    from app.modules.sgs.educational_reel_storyboard import CARD_COMPONENTS
+
+    remotion_url = settings.REMOTION_URL
+    is_configured = bool(
+        remotion_url and "localhost" not in remotion_url and "127.0.0.1" not in remotion_url
+    )
+    if not is_configured:
+        return
+
+    scenes = storyboard.get("scenes", [])
+    card_scene_ids = [s["id"] for s in scenes if s.get("component") in CARD_COMPONENTS]
+    if not card_scene_ids:
+        logger.info(f"[card-stills] {job_id[:8]} kart sahnesi yok, atlandı")
+        return
+
+    import httpx
+    try:
+        resp = httpx.post(
+            f"{remotion_url}/stills",
+            json={"job_id": job_id, "storyboard": storyboard, "scene_ids": card_scene_ids},
+            timeout=180,
+        )
+        if resp.status_code != 200:
+            logger.error(f"[card-stills] {job_id[:8]} HTTP {resp.status_code}: {resp.text[:300]}")
+            return
+        data = resp.json()
+        stills = data.get("stills") or []
+        failures = data.get("failures") or []
+        if failures:
+            logger.warning(f"[card-stills] {job_id[:8]} kısmi başarısızlık: {failures}")
+        if not stills:
+            logger.warning(f"[card-stills] {job_id[:8]} hiç still üretilmedi ({len(card_scene_ids)} istendi)")
+            return
+
+        urls = [s["url"] for s in stills]
+        sb = get_supabase_client()
+        existing = sb.table("video_jobs").select("publish_package").eq("id", job_id).execute()
+        prior_package = (existing.data or [{}])[0].get("publish_package") or {}
+        sb.table("video_jobs").update({
+            "publish_package": {**prior_package, "card_stills": urls},
+        }).eq("id", job_id).execute()
+        logger.info(
+            f"[card-stills] {job_id[:8]} {len(urls)}/{len(card_scene_ids)} still yüklendi ve "
+            "publish_package.card_stills'e yazıldı"
+        )
+    except Exception as e:
+        logger.error(f"[card-stills] {job_id[:8]} hata: {e}")
+
+
 # ── Quiz storyboard üretimi ───────────────────────────────────
 
 def _build_quiz_storyboard(
@@ -2246,6 +2306,14 @@ def render_callback(body: RenderCallback, background_tasks: BackgroundTasks):
         f"[video] {body.job_id[:8]} postcheck_passed → ready_for_review "
         f"url={body.video_url} dur={actual_dur}"
     )
+
+    # Kart still'leri — yalnızca reels_short (Instagram carousel/post yan çıktısı).
+    # Yanıtı bekletmez; başarısızlık job durumunu etkilemez (bkz. fonksiyon docstring'i).
+    from app.pipelines.registry import canonical_type
+    storyboard_for_stills = job_full.get("storyboard") or {}
+    if canonical_type(job_full.get("type", "")) == "educational_reel" and storyboard_for_stills.get("scenes"):
+        background_tasks.add_task(_generate_card_stills, body.job_id, storyboard_for_stills)
+
     return {"ok": True}
 
 
