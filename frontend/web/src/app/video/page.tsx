@@ -8,7 +8,7 @@ import toast from 'react-hot-toast'
 import {
   Film, Plus, X, ChevronRight, CheckCircle, XCircle,
   Clock, RefreshCw, AlertTriangle, Loader2, Image as ImageIcon, Zap,
-  LayoutGrid, ArrowLeftRight, ListOrdered,
+  LayoutGrid, ArrowLeftRight, ListOrdered, Download,
 } from 'lucide-react'
 import videoService, {
   VideoJob, VideoScene, VideoStatus, VideoType, VideoFormat,
@@ -159,6 +159,92 @@ function InfographicPreview({ storyboard }: { storyboard: Record<string, unknown
           {footer}
         </p>
       )}
+    </div>
+  )
+}
+
+// ── Kart görselleri indirme ────────────────────────────────────
+// Supabase public URL'leri cross-origin olduğu için düz <a download> her
+// tarayıcıda indirmeyi garanti etmez — fetch → blob → geçici object URL
+// daha güvenilir. Tek seferde çoklu indirmenin popup engelleyiciye takılmaması
+// için sırayla, aralarda küçük bir gecikmeyle tetikleniyor (zip bağımlılığı yok).
+async function downloadImage(url: string, filename: string): Promise<void> {
+  const res = await fetch(url)
+  const blob = await res.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = objectUrl
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(objectUrl)
+}
+
+function CardStillsSection({ jobTitle, urls }: { jobTitle: string; urls: string[] }) {
+  const [downloadingAll, setDownloadingAll] = useState(false)
+
+  const handleDownloadAll = async () => {
+    setDownloadingAll(true)
+    try {
+      for (let i = 0; i < urls.length; i++) {
+        await downloadImage(urls[i], `${jobTitle || 'kart'}-${i + 1}.png`)
+        if (i < urls.length - 1) await new Promise(r => setTimeout(r, 300))
+      }
+    } catch {
+      toast.error('Bazı görseller indirilemedi')
+    } finally {
+      setDownloadingAll(false)
+    }
+  }
+
+  return (
+    <div style={{ padding: '16px 28px', borderTop: '1px solid #f1f5f9' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div>
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#0B2A4A' }}>
+            Kart Görselleri
+          </p>
+          <p style={{ margin: '2px 0 0', fontSize: 12, color: '#94a3b8' }}>
+            Paylaşılabilir görseller — Instagram carousel veya tekil post için
+          </p>
+        </div>
+        <Button variant="secondary" onClick={handleDownloadAll} disabled={downloadingAll}>
+          {downloadingAll
+            ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+            : <Download size={14} />}
+          Tümünü indir ({urls.length})
+        </Button>
+      </div>
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+        gap: 12, maxHeight: 260, overflowY: 'auto', paddingRight: 4,
+      }}>
+        {urls.map((url, i) => (
+          <div key={url} style={{
+            border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden', background: '#fafafa',
+          }}>
+            <div style={{ aspectRatio: '9 / 16', background: '#0B2A4A', overflow: 'hidden' }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={url}
+                alt={`Kart görseli ${i + 1}`}
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              />
+            </div>
+            <button
+              onClick={() => downloadImage(url, `${jobTitle || 'kart'}-${i + 1}.png`)}
+              style={{
+                width: '100%', border: 'none', borderTop: '1px solid #e2e8f0', background: '#fff',
+                padding: '6px 0', cursor: 'pointer', fontSize: 12, color: '#475569',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+              }}
+            >
+              <Download size={12} /> İndir
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -342,6 +428,12 @@ function PreviewModal({ job, onClose, onApprove, onReject }: {
             ))}
           </div>
         </div>
+
+        {/* Kart görselleri — yalnızca card_stills doluysa (reels dışındaki
+            türlerde ve henüz render tamamlanmamış işlerde boş/yok, bölüm hiç görünmez) */}
+        {!!job.publish_package?.card_stills?.length && (
+          <CardStillsSection jobTitle={job.title} urls={job.publish_package.card_stills} />
+        )}
 
         {/* Alt butonlar */}
         {job.status === 'ready_for_review' && (

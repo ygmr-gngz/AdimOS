@@ -38,6 +38,11 @@ export interface VideoScene {
   status: 'pending' | 'tts_done' | 'render_done' | 'failed'
 }
 
+export interface PublishPackage {
+  card_stills?: string[]
+  [key: string]: unknown
+}
+
 export interface VideoJob {
   id: string
   type: VideoType
@@ -53,6 +58,7 @@ export interface VideoJob {
   created_at: string
   updated_at: string
   scenes?: VideoScene[]
+  publish_package?: PublishPackage
 }
 
 export interface CreateVideoPayload {
