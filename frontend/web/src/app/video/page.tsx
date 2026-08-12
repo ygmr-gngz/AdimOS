@@ -6,13 +6,14 @@ import AppShell from '@/components/layout/AppShell'
 import Button from '@/components/ui/Button'
 import toast from 'react-hot-toast'
 import {
-  Film, Plus, X, ChevronRight, CheckCircle, XCircle,
+  Film, Plus, X, ChevronRight, ChevronDown, CheckCircle, XCircle,
   Clock, RefreshCw, AlertTriangle, Loader2, Image as ImageIcon, Zap,
   LayoutGrid, ArrowLeftRight, ListOrdered, Download,
 } from 'lucide-react'
 import videoService, {
   VideoJob, VideoScene, VideoStatus, VideoType, VideoFormat,
   CreateVideoPayload, VIDEO_STATUS_LABELS, VIDEO_STATUS_COLORS, VIDEO_TYPE_LABELS, getTypeLabel,
+  CardStillBackground, CARD_STILL_BACKGROUND_LABELS,
 } from '@/services/video.service'
 
 // ── Durum badge ───────────────────────────────────────────────
@@ -181,8 +182,23 @@ async function downloadImage(url: string, filename: string): Promise<void> {
   URL.revokeObjectURL(objectUrl)
 }
 
-function CardStillsSection({ jobTitle, urls }: { jobTitle: string; urls: string[] }) {
+const BACKGROUND_OPTIONS: CardStillBackground[] = ['canvas', 'navy', 'white']
+
+function CardStillsSection({ jobId, jobTitle, initialUrls, initialBackground }: {
+  jobId: string
+  jobTitle: string
+  initialUrls: string[]
+  initialBackground?: CardStillBackground
+}) {
+  // Varsayılan KATLANMIŞ — bölüm açıkken video görünmez oluyordu (kullanıcı
+  // geri bildirimi: "kartları kapatıp nasıl videoyu izleyeceğim"). Modal
+  // maxHeight:90vh + overflow:hidden olduğu için sabit yükseklikli bir bölüm
+  // videoyu sıkıştırıyordu; katlanınca yalnızca bu tek satır yer kaplıyor.
+  const [expanded, setExpanded] = useState(false)
   const [downloadingAll, setDownloadingAll] = useState(false)
+  const [urls, setUrls] = useState(initialUrls)
+  const [background, setBackground] = useState<CardStillBackground>(initialBackground ?? 'canvas')
+  const [regenerating, setRegenerating] = useState(false)
 
   const handleDownloadAll = async () => {
     setDownloadingAll(true)
@@ -198,53 +214,109 @@ function CardStillsSection({ jobTitle, urls }: { jobTitle: string; urls: string[
     }
   }
 
+  const handleBackgroundChange = async (next: CardStillBackground) => {
+    if (next === background || regenerating) return
+    setRegenerating(true)
+    try {
+      const res = await videoService.regenerateCardStills(jobId, next)
+      setUrls(res.card_stills)
+      setBackground(res.background)
+      toast.success('Kart görselleri yeniden üretildi')
+    } catch {
+      toast.error('Fon değiştirilemedi — render servisini kontrol edin')
+    } finally {
+      setRegenerating(false)
+    }
+  }
+
   return (
-    <div style={{ padding: '16px 28px', borderTop: '1px solid #f1f5f9' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <div>
-          <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#0B2A4A' }}>
-            Kart Görselleri
-          </p>
-          <p style={{ margin: '2px 0 0', fontSize: 12, color: '#94a3b8' }}>
+    <div style={{ borderTop: '1px solid #f1f5f9', flexShrink: 0 }}>
+      <button
+        onClick={() => setExpanded(v => !v)}
+        style={{
+          width: '100%', border: 'none', background: 'none', cursor: 'pointer',
+          padding: '12px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ChevronDown size={16} color="#64748b" style={{
+            transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s',
+          }} />
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#0B2A4A' }}>
+            Kart Görselleri ({urls.length})
+          </span>
+          <span style={{ fontSize: 12, color: '#94a3b8' }}>
             Paylaşılabilir görseller — Instagram carousel veya tekil post için
-          </p>
-        </div>
-        <Button variant="secondary" onClick={handleDownloadAll} disabled={downloadingAll}>
+          </span>
+        </span>
+        <span
+          role="button"
+          onClick={e => { e.stopPropagation(); handleDownloadAll() }}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#2B7FE0',
+            opacity: downloadingAll ? 0.6 : 1,
+          }}
+        >
           {downloadingAll
             ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
             : <Download size={14} />}
-          Tümünü indir ({urls.length})
-        </Button>
-      </div>
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
-        gap: 12, maxHeight: 260, overflowY: 'auto', paddingRight: 4,
-      }}>
-        {urls.map((url, i) => (
-          <div key={url} style={{
-            border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden', background: '#fafafa',
-          }}>
-            <div style={{ aspectRatio: '9 / 16', background: '#0B2A4A', overflow: 'hidden' }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={url}
-                alt={`Kart görseli ${i + 1}`}
-                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-              />
-            </div>
-            <button
-              onClick={() => downloadImage(url, `${jobTitle || 'kart'}-${i + 1}.png`)}
-              style={{
-                width: '100%', border: 'none', borderTop: '1px solid #e2e8f0', background: '#fff',
-                padding: '6px 0', cursor: 'pointer', fontSize: 12, color: '#475569',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-              }}
-            >
-              <Download size={12} /> İndir
-            </button>
+          Tümünü indir
+        </span>
+      </button>
+
+      {expanded && (
+        <div style={{ padding: '0 28px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>Fon:</span>
+            {BACKGROUND_OPTIONS.map(opt => (
+              <button
+                key={opt}
+                onClick={() => handleBackgroundChange(opt)}
+                disabled={regenerating}
+                style={{
+                  border: `1.5px solid ${background === opt ? '#0B2A4A' : '#e2e8f0'}`,
+                  background: background === opt ? '#0B2A4A' : '#fff',
+                  color: background === opt ? '#fff' : '#475569',
+                  borderRadius: 20, padding: '4px 12px', fontSize: 12, fontWeight: 600,
+                  cursor: regenerating ? 'default' : 'pointer', opacity: regenerating ? 0.6 : 1,
+                }}
+              >
+                {CARD_STILL_BACKGROUND_LABELS[opt]}
+              </button>
+            ))}
+            {regenerating && <Loader2 size={14} style={{ animation: 'spin 1s linear infinite', color: '#94a3b8' }} />}
           </div>
-        ))}
-      </div>
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+            gap: 12, maxHeight: 260, overflowY: 'auto', paddingRight: 4,
+          }}>
+            {urls.map((url, i) => (
+              <div key={url} style={{
+                border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden', background: '#fafafa',
+              }}>
+                <div style={{ aspectRatio: '9 / 16', background: '#0B2A4A', overflow: 'hidden' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    alt={`Kart görseli ${i + 1}`}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  />
+                </div>
+                <button
+                  onClick={() => downloadImage(url, `${jobTitle || 'kart'}-${i + 1}.png`)}
+                  style={{
+                    width: '100%', border: 'none', borderTop: '1px solid #e2e8f0', background: '#fff',
+                    padding: '6px 0', cursor: 'pointer', fontSize: 12, color: '#475569',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                  }}
+                >
+                  <Download size={12} /> İndir
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -432,7 +504,12 @@ function PreviewModal({ job, onClose, onApprove, onReject }: {
         {/* Kart görselleri — yalnızca card_stills doluysa (reels dışındaki
             türlerde ve henüz render tamamlanmamış işlerde boş/yok, bölüm hiç görünmez) */}
         {!!job.publish_package?.card_stills?.length && (
-          <CardStillsSection jobTitle={job.title} urls={job.publish_package.card_stills} />
+          <CardStillsSection
+            jobId={job.id}
+            jobTitle={job.title}
+            initialUrls={job.publish_package.card_stills}
+            initialBackground={job.publish_package.card_stills_background}
+          />
         )}
 
         {/* Alt butonlar */}
@@ -596,7 +673,10 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
   }
 
   const validateContent = () => {
-    if (type === 'gorsel_post' || type === 'motivasyon' || type === 'reels_short') {
+    // motivasyon: konu boş bırakılabilir — backend SGS içerik bankasından
+    // (select_topic, son 60 günde kullanılmayan) otomatik seçer.
+    if (type === 'motivasyon') return true
+    if (type === 'gorsel_post' || type === 'reels_short') {
       if (!topic.trim()) { toast.error('Konu zorunludur'); return false }
       return true
     }
@@ -612,7 +692,7 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
       if (!autoTitle) {
         if (type === 'reels_short') autoTitle = 'Kısa İçerik'
         else if (type === 'gorsel_post') autoTitle = `${topic} — İnfografik`
-        else if (type === 'motivasyon') autoTitle = `${topic} — Motivasyon`
+        else if (type === 'motivasyon') autoTitle = topic ? `${topic} — Motivasyon` : 'SGS Motivasyon'
         else autoTitle = `${lessonName} — ${topic}`
       }
       const job = await videoService.createJob({
@@ -702,14 +782,14 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
         </div>
       )}
 
-      {/* Motivasyon — konu zorunlu */}
+      {/* Motivasyon — konu opsiyonel, boşsa SGS içerik bankasından seçilir */}
       {type === 'motivasyon' && (
         <div>
           <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>
-            Motivasyon Konusu <span style={{ color: '#ef4444' }}>*</span>
+            Motivasyon Konusu <span style={{ color: '#94a3b8', fontWeight: 400 }}>(boş bırakılırsa otomatik seçilir)</span>
           </label>
           <input value={topic} onChange={e => setTopic(e.target.value)}
-            placeholder="Örn: SGS sınavına son hafta motivasyonu"
+            placeholder="Boş bırak — SGS içerik bankasından, son 60 günde kullanılmayan bir konu seçilir"
             style={INP} />
           <p style={{ margin: '6px 0 0', fontSize: 12, color: '#94a3b8' }}>
             15-30 saniye, dikey format (9:16), kinetik tipografi
@@ -909,7 +989,7 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
     if (!autoTitle) {
       if (type === 'reels_short') autoTitle = 'Kısa İçerik'
       else if (type === 'gorsel_post') autoTitle = `${topic} — İnfografik`
-      else if (type === 'motivasyon') autoTitle = `${topic} — Motivasyon`
+      else if (type === 'motivasyon') autoTitle = topic ? `${topic} — Motivasyon` : 'SGS Motivasyon'
       else autoTitle = `${lessonName} — ${topic}`
     }
     const typeDef = WIZARD_TYPES.find(t => t.type === type)
@@ -921,7 +1001,8 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
         { label: 'Ders', value: lessonName },
         { label: 'Konu', value: topic },
       ] : []),
-      ...(type === 'motivasyon' || type === 'gorsel_post' ? [{ label: 'Konu', value: topic }] : []),
+      ...(type === 'motivasyon' ? [{ label: 'Konu', value: topic || '(otomatik seçilecek — SGS içerik bankası)' }] : []),
+      ...(type === 'gorsel_post' ? [{ label: 'Konu', value: topic }] : []),
       ...(type === 'gorsel_post' ? [{ label: 'Şablon', value: templateDef?.label ?? infographicTemplate }] : []),
       ...(type !== 'gorsel_post' ? [
         { label: 'Platform', value: format === '16:9' ? 'YouTube (16:9 yatay)' : 'Reels / Shorts (9:16 dikey)' },

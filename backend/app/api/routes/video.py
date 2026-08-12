@@ -608,16 +608,25 @@ def _upload_tts(audio_bytes: bytes, filename: str) -> str:
     return sb.storage.from_(VIDEO_BUCKET).get_public_url(path)
 
 
-def _generate_card_stills(job_id: str, storyboard: dict) -> None:
+CARD_STILL_BACKGROUNDS = {"canvas", "navy", "white"}  # bridge server/index.ts BACKGROUND_HEX ile birebir
+
+
+def _generate_card_stills(job_id: str, storyboard: dict, background: str = "canvas") -> list[str] | None:
     """
     2026-08-08: reels render'ı bittiğinde kart sahnelerinden (AccountCardScene/
     JournalEntryScene/TableScene/CommonMistakeScene/RuleBoxScene) 1080x1920 PNG
     still çıkarır (Instagram carousel/tekil post için — video üretiminden
     ücretsiz yan çıktı) ve video_jobs.publish_package.card_stills'e yazar.
 
-    Best-effort: render zaten 'ready_for_review' — bu adım başarısız olsa da
-    job'u FAILED yapmaz, yalnızca loglanır. render-callback'ten background_tasks
-    ile (yanıtı bekletmeden) çağrılır.
+    background: 'canvas' (varsayılan) | 'navy' | 'white' — yalnızca sayfa
+    zemini değişir, kartın kendi zemini (surface) sabit kalır (CardShell.tsx).
+
+    İki çağıran:
+      1. render-callback → background_tasks (fire-and-forget, best-effort,
+         render zaten 'ready_for_review', bu adım job'u FAILED yapmaz).
+      2. POST /jobs/{id}/card-stills (panelden manuel, senkron — dönüş değeri
+         doğrudan kullanıcıya yansır, bu yüzden None/list ayrımı önemli).
+    Döner: başarılı URL listesi, veya hiçbir şey üretilemediyse None.
     """
     from app.modules.sgs.educational_reel_storyboard import CARD_COMPONENTS
 
@@ -626,24 +635,27 @@ def _generate_card_stills(job_id: str, storyboard: dict) -> None:
         remotion_url and "localhost" not in remotion_url and "127.0.0.1" not in remotion_url
     )
     if not is_configured:
-        return
+        return None
 
     scenes = storyboard.get("scenes", [])
     card_scene_ids = [s["id"] for s in scenes if s.get("component") in CARD_COMPONENTS]
     if not card_scene_ids:
         logger.info(f"[card-stills] {job_id[:8]} kart sahnesi yok, atlandı")
-        return
+        return None
 
     import httpx
     try:
         resp = httpx.post(
             f"{remotion_url}/stills",
-            json={"job_id": job_id, "storyboard": storyboard, "scene_ids": card_scene_ids},
+            json={
+                "job_id": job_id, "storyboard": storyboard,
+                "scene_ids": card_scene_ids, "background": background,
+            },
             timeout=180,
         )
         if resp.status_code != 200:
             logger.error(f"[card-stills] {job_id[:8]} HTTP {resp.status_code}: {resp.text[:300]}")
-            return
+            return None
         data = resp.json()
         stills = data.get("stills") or []
         failures = data.get("failures") or []
@@ -651,21 +663,23 @@ def _generate_card_stills(job_id: str, storyboard: dict) -> None:
             logger.warning(f"[card-stills] {job_id[:8]} kısmi başarısızlık: {failures}")
         if not stills:
             logger.warning(f"[card-stills] {job_id[:8]} hiç still üretilmedi ({len(card_scene_ids)} istendi)")
-            return
+            return None
 
         urls = [s["url"] for s in stills]
         sb = get_supabase_client()
         existing = sb.table("video_jobs").select("publish_package").eq("id", job_id).execute()
         prior_package = (existing.data or [{}])[0].get("publish_package") or {}
         sb.table("video_jobs").update({
-            "publish_package": {**prior_package, "card_stills": urls},
+            "publish_package": {**prior_package, "card_stills": urls, "card_stills_background": background},
         }).eq("id", job_id).execute()
         logger.info(
-            f"[card-stills] {job_id[:8]} {len(urls)}/{len(card_scene_ids)} still yüklendi ve "
-            "publish_package.card_stills'e yazıldı"
+            f"[card-stills] {job_id[:8]} fon={background} {len(urls)}/{len(card_scene_ids)} still "
+            "yüklendi ve publish_package.card_stills'e yazıldı"
         )
+        return urls
     except Exception as e:
         logger.error(f"[card-stills] {job_id[:8]} hata: {e}")
+        return None
 
 
 # ── Quiz storyboard üretimi ───────────────────────────────────
@@ -1888,6 +1902,35 @@ def get_job(job_id: str):
     )
     job["scenes"] = scenes
     return job
+
+
+class CardStillsRequestBody(BaseModel):
+    background: str = "canvas"   # 'canvas' | 'navy' | 'white'
+
+
+@router.post("/jobs/{job_id}/card-stills")
+def regenerate_card_stills(job_id: str, body: CardStillsRequestBody = CardStillsRequestBody()):
+    """
+    Panelden manuel tetiklenir — mevcut kart still'lerini FARKLI bir sayfa
+    zeminiyle yeniden üretir (Instagram'da farklı fon tercih edilebiliyor).
+    Senkron: sonucu doğrudan döner (render-callback'teki otomatik/fire-and-forget
+    çağrının aksine — kullanıcı burada anında geri bildirim bekliyor).
+    """
+    if body.background not in CARD_STILL_BACKGROUNDS:
+        raise HTTPException(
+            422, f"Geçersiz background: '{body.background}'. Geçerli: {sorted(CARD_STILL_BACKGROUNDS)}"
+        )
+    job = _get_job(job_id)
+    storyboard = job.get("storyboard") or {}
+    if not storyboard.get("scenes"):
+        raise HTTPException(422, "Bu iş için storyboard/sahne bulunamadı.")
+
+    urls = _generate_card_stills(job_id, storyboard, background=body.background)
+    if urls is None:
+        raise HTTPException(
+            502, "Kart still üretimi başarısız oldu (render servisi veya Lambda hatası — logları kontrol edin)."
+        )
+    return {"ok": True, "background": body.background, "card_stills": urls}
 
 
 def _bridge_to_content_automation(job: dict) -> None:

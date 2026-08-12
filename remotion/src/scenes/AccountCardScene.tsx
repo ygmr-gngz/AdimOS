@@ -43,6 +43,7 @@ interface AccountCardSceneProps {
    *  T.layout9x16) değişiyor. 16:9 için genişlik kullanan gerçek bir
    *  2 sütunlu düzen ayrı bir tasarım kararı — burada değil. */
   format?: '9:16' | '16:9'
+  canvasColor?: string   // still fon override (2026-08-08) — kart zemini etkilenmez
 }
 
 // ── İkonlar — SVG, 24×24, 2px çizgi, currentColor (emoji yasak) ──────
@@ -127,6 +128,7 @@ export function AccountCardScene({
   entryCaption,
   tip,
   format = '9:16',
+  canvasColor,
 }: AccountCardSceneProps) {
   const frame = useCurrentFrame()
   const { fps, height: videoHeight } = useVideoConfig()
@@ -211,7 +213,7 @@ export function AccountCardScene({
   const tipFont   = L.font.tip.target   * scale
 
   return (
-    <AbsoluteFill style={{ background: T.color.canvas, fontFamily: T.font.body }}>
+    <AbsoluteFill style={{ background: canvasColor ?? T.color.canvas, fontFamily: T.font.body }}>
       {/* Güvenli alan bandı (top→bottom) içinde dikey ortalama — kart artık
           üste sıkışıp altta boşluk bırakmıyor, kendi yüksekliği ne olursa
           olsun bu bant içinde ortalanıyor. */}

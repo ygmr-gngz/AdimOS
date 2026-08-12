@@ -17,6 +17,7 @@ interface CommonMistakeSceneProps {
   bullet_points?: string[]
   voice_text?: string
   format?: '9:16' | '16:9'
+  canvasColor?: string   // still fon override (2026-08-08) — kart zemini etkilenmez
 }
 
 export function CommonMistakeScene({
@@ -27,6 +28,7 @@ export function CommonMistakeScene({
   explanation,
   bullet_points = [],
   format = '9:16',
+  canvasColor,
 }: CommonMistakeSceneProps) {
   const frame = useCurrentFrame()
   const { fps, height: videoHeight } = useVideoConfig()
@@ -86,7 +88,7 @@ export function CommonMistakeScene({
   const labelFont = L.font.label.target * scale
 
   return (
-    <CardShell format={format} opacity={cardOpacity} translateY={cardY}>
+    <CardShell format={format} opacity={cardOpacity} translateY={cardY} canvasColor={canvasColor}>
       <div style={{ padding: `${T.space.lg}px ${L.cardPad}px 0` }}>
         {/* Başlık */}
         <div style={{

@@ -956,18 +956,34 @@ app.post('/render', (req, res) => {
 // olup olmadığını kendi bilmez — iş kuralı tekrar burada TANIMLANMAZ.
 // Video render'ından SONRA, ayrı ve bağımsız çağrılır — _renderQueue'ya
 // girmez (o sırada aynı job için eşzamanlı video render'ı zaten bitmiştir).
+// Sayfa (canvas) zemin seçenekleri — kartın kendi zemini (surface) HER ZAMAN
+// aynı kalır, yalnızca dış AbsoluteFill rengi değişir (bkz. CardShell.tsx).
+// RuleBoxScene kapsam dışı — zaten tam ekran koyu zemin, "sayfa zemini" kavramı yok.
+const BACKGROUND_HEX: Record<string, string> = {
+  canvas: '#F4F6FA',  // varsayılan, mevcut
+  navy:   '#001645',  // koyu marka lacivertı
+  white:  '#FFFFFF',  // sade
+}
+
 interface StillsRequest {
   job_id: string
   storyboard: RenderRequest['storyboard']
   scene_ids: (number | string)[]
+  background?: string   // 'canvas' | 'navy' | 'white' — verilmezse bileşenin kendi varsayımı (canvas)
 }
 
 app.post('/stills', async (req, res) => {
-  const { job_id, storyboard, scene_ids } = req.body as StillsRequest
+  const { job_id, storyboard, scene_ids, background } = req.body as StillsRequest
 
   if (!job_id || !storyboard || !Array.isArray(scene_ids) || scene_ids.length === 0) {
     return res.status(400).json({ error: 'job_id, storyboard ve scene_ids (boş olmayan dizi) gerekli' })
   }
+  if (background && !(background in BACKGROUND_HEX)) {
+    return res.status(400).json({
+      error: 'unknown_background', message: `background '${background}' tanınmıyor — geçerli: ${Object.keys(BACKGROUND_HEX).join(', ')}`,
+    })
+  }
+  const canvasColor = background ? BACKGROUND_HEX[background] : undefined
   if (!LAMBDA_FUNCTION || !SERVE_URL) {
     return res.status(503).json({ error: 'Lambda yapılandırılmamış' })
   }
@@ -998,13 +1014,24 @@ app.post('/stills', async (req, res) => {
       continue
     }
     const frame = timing.start + Math.floor(timing.durationFrames / 2)
+    // canvasColor yalnızca RENDER EDİLEN sahneye enjekte edilir — diğer
+    // sahnelere sızmasının bir zararı olmazdı (tek kare yakalanıyor) ama
+    // storyboard'u gereksiz yere değiştirmemek için sadece hedef sahne klonlanıyor.
+    const stillStoryboard = canvasColor
+      ? {
+          ...storyboard,
+          scenes: storyboard.scenes.map(s =>
+            String(s.id) === String(sceneId) ? { ...s, canvasColor } : s,
+          ),
+        }
+      : storyboard
     try {
       const result = await renderStillOnLambda({
         region:       LAMBDA_REGION,
         functionName: LAMBDA_FUNCTION,
         serveUrl:     SERVE_URL,
         composition:  compositionId,
-        inputProps:   { storyboard },
+        inputProps:   { storyboard: stillStoryboard },
         imageFormat:  'png',
         privacy:      'private',
         frame,

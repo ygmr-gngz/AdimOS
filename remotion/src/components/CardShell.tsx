@@ -15,12 +15,16 @@ interface CardShellProps {
   opacity: number
   translateY: number
   children: React.ReactNode
+  // Sayfa (canvas) zemini override — kart still özelliği (2026-08-08): aynı kart
+  // farklı Instagram fonlarında da üretilebilsin diye. Kartın kendi zemini
+  // (surface) buradan ETKİLENMEZ — yalnızca dıştaki AbsoluteFill rengi değişir.
+  canvasColor?: string
 }
 
-export function CardShell({ format = '9:16', opacity, translateY, children }: CardShellProps) {
+export function CardShell({ format = '9:16', opacity, translateY, children, canvasColor }: CardShellProps) {
   const L = format === '16:9' ? T.layout16x9 : T.layout9x16
   return (
-    <AbsoluteFill style={{ background: T.color.canvas, fontFamily: T.font.body }}>
+    <AbsoluteFill style={{ background: canvasColor ?? T.color.canvas, fontFamily: T.font.body }}>
       <div style={{
         position: 'absolute', top: L.safeTop, bottom: L.safeBottom, left: L.safeX, right: L.safeX,
         display: 'flex', flexDirection: 'column', justifyContent: 'center',

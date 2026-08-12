@@ -15,10 +15,11 @@ interface TableSceneProps {
   highlight_col?: number  // vurgulu sütun indeksi (0-bazlı)
   voice_text?: string
   format?: '9:16' | '16:9'
+  canvasColor?: string   // still fon override (2026-08-08) — kart zemini etkilenmez
 }
 
 export function TableScene({
-  title, subtitle, headers, rows, highlight_col, format = '9:16',
+  title, subtitle, headers, rows, highlight_col, format = '9:16', canvasColor,
 }: TableSceneProps) {
   const frame = useCurrentFrame()
   const { fps, height: videoHeight } = useVideoConfig()
@@ -69,7 +70,7 @@ export function TableScene({
   const entryFont = L.font.entry.target * scale
 
   return (
-    <CardShell format={format} opacity={cardOpacity} translateY={cardY}>
+    <CardShell format={format} opacity={cardOpacity} translateY={cardY} canvasColor={canvasColor}>
       <div style={{ padding: `${T.space.lg}px ${L.cardPad}px 0` }}>
         {title && (
           <div style={{ fontSize: titleFont, fontWeight: 800, color: T.color.navy900, lineHeight: 1.15 }}>

@@ -38,8 +38,17 @@ export interface VideoScene {
   status: 'pending' | 'tts_done' | 'render_done' | 'failed'
 }
 
+export type CardStillBackground = 'canvas' | 'navy' | 'white'
+
+export const CARD_STILL_BACKGROUND_LABELS: Record<CardStillBackground, string> = {
+  canvas: 'Açık (varsayılan)',
+  navy:   'Lacivert',
+  white:  'Beyaz',
+}
+
 export interface PublishPackage {
   card_stills?: string[]
+  card_stills_background?: CardStillBackground
   [key: string]: unknown
 }
 
@@ -174,6 +183,13 @@ const videoService = {
 
   async regenerateJob(jobId: string): Promise<VideoJob> {
     const { data } = await apiClient.post(`/video/jobs/${jobId}/regenerate`)
+    return data
+  },
+
+  async regenerateCardStills(jobId: string, background: CardStillBackground): Promise<{
+    ok: boolean; background: CardStillBackground; card_stills: string[]
+  }> {
+    const { data } = await apiClient.post(`/video/jobs/${jobId}/card-stills`, { background })
     return data
   },
 

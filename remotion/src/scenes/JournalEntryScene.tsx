@@ -33,6 +33,7 @@ interface FlatProps {
   explanation?: string
   voice_text?: string
   format?: '9:16' | '16:9'
+  canvasColor?: string   // still fon override (2026-08-08) — kart zemini etkilenmez
 }
 
 interface LegacyJournalRow {
@@ -90,7 +91,7 @@ function normalizeProps(props: JournalEntrySceneProps): FlatProps {
 }
 
 export function JournalEntryScene(rawProps: JournalEntrySceneProps) {
-  const { title, journalEntry = [], entryCaption, explanation, format = '9:16' } = normalizeProps(rawProps)
+  const { title, journalEntry = [], entryCaption, explanation, format = '9:16', canvasColor } = normalizeProps(rawProps)
   const frame = useCurrentFrame()
   const { fps, height: videoHeight } = useVideoConfig()
 
@@ -130,7 +131,7 @@ export function JournalEntryScene(rawProps: JournalEntrySceneProps) {
   const entryFont = L.font.entry.target * scale
 
   return (
-    <CardShell format={format} opacity={cardOpacity} translateY={cardY}>
+    <CardShell format={format} opacity={cardOpacity} translateY={cardY} canvasColor={canvasColor}>
       <div style={{ padding: `${T.space.lg}px ${L.cardPad}px 0` }}>
         {title && (
           <div style={{
