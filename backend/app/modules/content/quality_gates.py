@@ -229,7 +229,22 @@ def normalize_loudness(audio_bytes: bytes) -> bytes:
             return audio_bytes
         stats = json.loads(m.group(0))
 
-        # Geçiş 2 — ölçülen değerlerle uygula (linear=true → doğal dinamik korunur)
+        # Geçiş 2 — ölçülen değerlerle uygula (linear=true → doğal dinamik korunur).
+        # EK GÜVENLİK: linear=true modu TP hedefini garanti ETMEZ (ffmpeg'in bilinen
+        # bir sınırlaması — doğal dinamiği korumak için tepe noktalarını sıkıştırmaz,
+        # yalnızca ölçülen değerlere göre doğrusal kazanç uygular). Gözlemlenen (job
+        # 71170434): LUFS -16.76 (hedefe yakın, doğru) ama true peak -1.06 dBTP
+        # (hedef -1.5, kırpma sınırına dayanmış — AAC sıkıştırmasında/telefon
+        # hoparlöründe duyulabilir bozulma).
+        #
+        # alimiter zincirin sonuna eklenip TP'yi zorluyor — AMA ffmpeg'in alimiter'ı
+        # varsayılan olarak level=true (otomatik telafi kazancı) kullanır: limiti
+        # uyguladıktan SONRA çıkışı girişle aynı algısal seviyeye getirmek için
+        # tepe noktalarını GERİ YÜKSELTİR — limiter'ın amacını tamamen geçersiz
+        # kılar (ölçüldü: level=true iken limit=0.75 → TP=+0.08, limit=0.6 → TP=+0.60,
+        # yani limiti DÜŞÜRMEK tepe seviyesini ARTIRDI). level=disabled ile bu
+        # otomatik telafi kapatılınca limit=0.891 gerçekten TP'yi -1.5'in altında
+        # tutuyor (ölçüldü: 3 farklı gerçek TTS örneğinde TP -1.53..-1.96 arası).
         out_path = src_path + "_norm.mp3"
         apply_result = subprocess.run(
             [
@@ -238,7 +253,8 @@ def normalize_loudness(audio_bytes: bytes) -> bytes:
                     f"loudnorm=I={_LUFS_TARGET}:TP={_LUFS_TP}:LRA={_LUFS_LRA}:"
                     f"measured_I={stats['input_i']}:measured_TP={stats['input_tp']}:"
                     f"measured_LRA={stats['input_lra']}:measured_thresh={stats['input_thresh']}:"
-                    f"offset={stats.get('target_offset', 0)}:linear=true"
+                    f"offset={stats.get('target_offset', 0)}:linear=true,"
+                    f"alimiter=limit=0.891:level=disabled"
                 ),
                 "-ar", "48000", out_path,
             ],
@@ -386,6 +402,7 @@ def run_postcheck(
       file_size_bytes      : int
       audio_volume_db      : float | None
       integrated_lufs      : float | None
+      true_peak_dbtp       : float | None
       duration_check       : dict | None
     """
     report: dict = {
@@ -396,6 +413,7 @@ def run_postcheck(
         "file_size_bytes": 0,
         "audio_volume_db": None,
         "integrated_lufs": None,
+        "true_peak_dbtp": None,
         "duration_check": None,
     }
 
@@ -482,6 +500,25 @@ def run_postcheck(
             stats = json.loads(m.group(0))
             integrated_lufs = float(stats["input_i"])
             report["integrated_lufs"] = integrated_lufs
+
+            # ── True peak (M4 devamı) — ORTALAMA seviye (LUFS) doğru olsa da
+            # tepe noktaları kırpma sınırına dayanabilir (normalize_loudness'ın
+            # linear=true modu TP'yi garanti etmiyor — bkz. o fonksiyondaki not).
+            # LUFS geçince ses "iyi" sayılıyordu, bu kapı olmadığı için kırpma
+            # kırpması yayına kadar fark edilmiyordu. TP kontrolü LUFS'tan ÖNCE
+            # yapılıyor — daha kritik/duyulabilir bir bozulma.
+            true_peak = stats.get("input_tp")
+            if true_peak is not None:
+                true_peak = float(true_peak)
+                report["true_peak_dbtp"] = true_peak
+                if true_peak > _LUFS_TP:
+                    report["first_failure_code"] = "failed_audio_validation"
+                    report["first_failure_message"] = (
+                        f"True peak {true_peak:.2f} dBTP, hedef üst sınır {_LUFS_TP} dBTP "
+                        f"aşıldı — kırpma kaynaklı bozulma riski (AAC sıkıştırma/telefon hoparlörü)."
+                    )
+                    return report
+
             if not (-18.0 <= integrated_lufs <= -14.0):
                 report["first_failure_code"] = "lufs_validation_failed"
                 report["first_failure_message"] = (
