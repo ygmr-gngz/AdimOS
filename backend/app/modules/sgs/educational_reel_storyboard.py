@@ -483,13 +483,13 @@ def generate_educational_reel_storyboard(
     target_chars: int | None = None
     budget_note = ""
     if budget_seconds is not None:
-        _sc = scene_count if (scene_count and scene_count > 0) else scene_count_for_budget(budget_seconds)
+        _sc = scene_count if (scene_count and scene_count > 0) else scene_count_for_budget(budget_seconds, "reels_short")
         _sc = max(1, _sc)
         # Tek kaynak: hece bütçesi kapısı (video.py _check_syllable_budget) ve
         # buradaki karakter sınırı artık AYNI fonksiyondan geliyor. Önceki hata:
         # ikisi bağımsız hesaplanıyordu ve farklı budget_seconds/scene_count
         # değerlerinden sistematik olarak sapıyordu (bkz. budget_params docstring).
-        _total_syl, _syl_per_scene, min_chars, max_chars = budget_params(budget_seconds, _sc)
+        _total_syl, _syl_per_scene, min_chars, max_chars = budget_params(budget_seconds, _sc, "reels_short")
         _tolerance = max(3, round(_syl_per_scene * 0.15))
         target_chars = round(_syl_per_scene * CHARS_PER_SYLLABLE)
         budget_note = (
@@ -508,7 +508,7 @@ def generate_educational_reel_storyboard(
         # budget_seconds verilmediğinde de few-shot örneği makul bir uzunlukta
         # olmalı — DEFAULT_DURATION_SECONDS (Remotion tarafı, 15s/sahne) ile
         # tutarlı bir orta değer.
-        _, _default_syl_per_scene, min_chars, max_chars = budget_params(15 * _sc, _sc)
+        _, _default_syl_per_scene, min_chars, max_chars = budget_params(15 * _sc, _sc, "reels_short")
 
     _sc_min = _sc - 2
     _sc_max = _sc + 3

@@ -57,6 +57,25 @@ def generate(raw: dict) -> str:
         lines.append(f"    {t['canonical']!r}: {entry!r},")
     lines.append("}")
     lines.append("")
+
+    lines.append("# canonical content_type -> {default, min, max} hedef süre (saniye) — yalnızca")
+    lines.append("# tanımlı olan türler için (henüz hepsinde yok, veri uydurulmaz)")
+    lines.append("TYPE_DURATIONS: dict[str, dict] = {")
+    for t in types:
+        if "duration" in t:
+            lines.append(f"    {t['canonical']!r}: {t['duration']!r},")
+    lines.append("}")
+    lines.append("")
+
+    lines.append("# canonical content_type -> doğal sahne süresi (sn) — scene_count_for_budget'ın")
+    lines.append("# tek kaynağı. Tür bazlı: her türün içerik yoğunluğu farklı (görsel mi anlatıyor,")
+    lines.append("# yalnızca söz mü taşıyor) — bkz. content-types.json *_note alanları.")
+    lines.append("NATURAL_SCENE_SECONDS: dict[str, float] = {")
+    for t in types:
+        if "natural_scene_seconds" in t:
+            lines.append(f"    {t['canonical']!r}: {t['natural_scene_seconds']!r},")
+    lines.append("}")
+    lines.append("")
     return "\n".join(lines)
 
 

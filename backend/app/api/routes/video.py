@@ -10,7 +10,7 @@ from pydantic import BaseModel, field_validator
 from openai import RateLimitError as OpenAIRateLimitError, APITimeoutError
 from app.db.supabase import get_supabase_client
 from app.core.config import settings
-from app.core.content_constants import TR_SPS, budget_params, scene_count_for_budget
+from app.core.content_constants import TR_SPS, budget_params, scene_count_for_budget, NATURAL_SCENE_SECONDS
 from app.modules.content.pronunciation_dict import apply_pronunciation_dict
 from app.modules.content.quality_gates import (
     check_storyboard_quality,
@@ -178,14 +178,28 @@ def _remotion_warm_up(url: str, job_id: str) -> bool:
 
 # ── TTS — retry + pronunciation + cost tracking ───────────────
 
+_TTS_HARD_TIMEOUT_SEC = 75  # sahne başına üst sınır (60-90sn aralığı) — bkz. fonksiyon docstring'i
+
+
 def _tts_bytes(text: str) -> tuple[bytes, int]:
     """
     OpenAI TTS — env'den gelen ses kimliği, exponential backoff.
     Pronunciation + TR normalizasyonu uygulanır.
+
+    2026-08-08 postmortem: OpenAI client'a verilen timeout=60.0 gerçek bir
+    hangı engellemedi — bir iş 45 dk 'tts_generating' durumunda takılıp
+    watchdog'a kaldı. httpx/SDK'nın kendi timeout'una güvenmek yerine
+    ThreadPoolExecutor.result(timeout=...) ile BAĞIMSIZ, Python tarafında
+    zorlanan bir üst sınır konuldu — SDK'nın timeout'u neden ateşlemediğini
+    bilmesek de, biz kendi beklememizi kesin olarak durdurabiliyoruz.
+    Not: alttaki thread gerçekten öldürülemez (Python'da mümkün değil),
+    shutdown(wait=False) ile arka planda bırakılır — biz beklemeyiz.
+
     Returns: (ses_baytları, karakter_sayısı)
     Raises: PipelineErrorException — kota / auth hatası
-            RuntimeError — geçici hata sonrası tüm denemeler başarısız
+            RuntimeError — geçici hata (timeout dahil) sonrası tüm denemeler başarısız
     """
+    import concurrent.futures
     from openai import OpenAI
     from app.modules.content.openai_classifier import classify_openai_error
     from app.errors.registry import PipelineErrorException
@@ -201,7 +215,7 @@ def _tts_bytes(text: str) -> tuple[bytes, int]:
         logger.warning(f"[tts] metin {len(text)} kara kısaltıldı (limit {_TTS_MAX})")
 
     char_count = len(text)
-    client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=60.0)
+    client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=_TTS_HARD_TIMEOUT_SEC)
 
     voice = settings.TTS_VOICE_ID
     model = settings.TTS_MODEL
@@ -209,16 +223,28 @@ def _tts_bytes(text: str) -> tuple[bytes, int]:
 
     last_err = None
     for attempt, wait in enumerate(_TTS_BACKOFF, 1):
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         try:
-            resp = client.audio.speech.create(
-                model=model,
-                voice=voice,
-                input=text,
-                speed=speed,
+            future = executor.submit(
+                client.audio.speech.create,
+                model=model, voice=voice, input=text, speed=speed,
             )
+            try:
+                resp = future.result(timeout=_TTS_HARD_TIMEOUT_SEC)
+            except concurrent.futures.TimeoutError:
+                last_err = f"hard-timeout>{_TTS_HARD_TIMEOUT_SEC}s"
+                logger.warning(
+                    f"[tts] sert zaman aşımı (>{_TTS_HARD_TIMEOUT_SEC}s) "
+                    f"attempt={attempt} retry_in={wait}s"
+                )
+                executor.shutdown(wait=False)   # arka plandaki thread'i bekleme
+                time.sleep(wait)
+                continue
+            executor.shutdown(wait=False)
             logger.info(f"[tts] attempt={attempt} ok chars={char_count} voice={voice}")
             return resp.content, char_count
         except OpenAIRateLimitError as e:
+            executor.shutdown(wait=False)
             last_err = e
             kind = classify_openai_error(e)
             if kind == "insufficient_quota":
@@ -230,10 +256,12 @@ def _tts_bytes(text: str) -> tuple[bytes, int]:
             logger.warning(f"[tts] rate_limit attempt={attempt} retry_in={wait}s")
             time.sleep(wait)
         except APITimeoutError as e:
+            executor.shutdown(wait=False)
             last_err = e
             logger.warning(f"[tts] timeout attempt={attempt} retry_in={wait}s")
             time.sleep(wait)
         except Exception as e:
+            executor.shutdown(wait=False)
             raise RuntimeError(f"[tts] OpenAI hatası: {e}") from e
 
     raise RuntimeError(f"[tts] {len(_TTS_BACKOFF)} denemeden sonra başarısız: {last_err}")
@@ -247,28 +275,31 @@ def _syllable_count(text: str) -> int:
 
 
 def _syllable_budget_params(
-    budget_seconds: float, scene_count: int | None = None
+    budget_seconds: float, content_type: str, scene_count: int | None = None
 ) -> tuple[int, int, int]:
     """
     (toplam_hece_bütçesi, sahne_başına_hece, sahne_sayısı) hesaplar.
-    scene_count verilmezse content_constants.scene_count_for_budget kullanılır
-    (NATURAL_SCENE_SECONDS=5.5 — tek kaynak, bkz. o modülün docstring'i).
+    scene_count verilmezse content_constants.scene_count_for_budget kullanılır —
+    content_type'a göre TÜR BAZLI NATURAL_SCENE_SECONDS ile (bkz. o modülün
+    docstring'i; 2026-08-08 — reels_short=5.5, motivasyon=8.5, ayrı ayrı ölçüldü).
+    content_type ZORUNLU: scene_count verilse bile sessiz varsayılan risk
+    almamak için istenir (API'nin ne için çağrıldığı her zaman açık kalsın).
     Hece/karakter matematiği app.core.content_constants.budget_params'a
     devredildi — hece bütçesi kapısı ve karakter sınırı artık TEK
     fonksiyondan besleniyor (bkz. o fonksiyonun docstring'i — daha önce
     bu ikisi bağımsız hesaplanıp sistematik olarak birbirinden sapmıştı).
     """
-    n = scene_count if (scene_count and scene_count > 0) else scene_count_for_budget(budget_seconds)
+    n = scene_count if (scene_count and scene_count > 0) else scene_count_for_budget(budget_seconds, content_type)
     n = max(1, n)
-    total, per_scene, _, _ = budget_params(budget_seconds, n)
+    total, per_scene, _, _ = budget_params(budget_seconds, n, content_type)
     return total, per_scene, n
 
 
 def _check_syllable_budget(
-    storyboard: dict, budget_seconds: float, target_scene_count: int | None = None,
+    storyboard: dict, budget_seconds: float, content_type: str, target_scene_count: int | None = None,
 ) -> tuple[bool, str | None]:
     """
-    reels_short için sahne hece bütçesi doğrulaması.
+    reels_short/motivasyon için sahne hece bütçesi doğrulaması.
     Bütçe = budget_seconds × TR_SPS hece/s; sahne başına hedef süreden türetilir.
 
     Tolerans ASİMETRİK (2026-08-07, üç ardışık regen turunda ~%-43/-50 sapma
@@ -287,7 +318,7 @@ def _check_syllable_budget(
     """
     scenes = storyboard.get("scenes", [])
     _n = target_scene_count if (target_scene_count and target_scene_count > 0) else len(scenes)
-    total_budget, syl_per_scene, _ = _syllable_budget_params(budget_seconds, _n)
+    total_budget, syl_per_scene, _ = _syllable_budget_params(budget_seconds, content_type, _n)
     tolerance = max(3, round(syl_per_scene * 0.15))
     lo, hi = syl_per_scene - tolerance, syl_per_scene + tolerance
 
@@ -415,7 +446,7 @@ def _generate_storyboard_for_regen(
     """
     if content_type == "reels_short":
         from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
-        _, _, _regen_sc = _syllable_budget_params(corrected_seconds)
+        _, _, _regen_sc = _syllable_budget_params(corrected_seconds, content_type)
         sb_new = generate_educational_reel_storyboard(
             title=payload.title,
             topic=payload.topic or payload.title,
@@ -500,12 +531,14 @@ def _regen_storyboard_for_duration(
     job_id: str = "",
 ) -> tuple[dict | None, dict | None]:
     """
-    Süre düzeltmesiyle storyboard yeniden üretir, ardından hece bütçesini
-    doğrular (en fazla 2 deneme). Bu doğrulama reels_short/motivasyon/
-    konu_anlatimi — _generate_storyboard_for_regen'in desteklediği TÜM
-    tiplerde uygulanır, yalnızca reels_short'a özel değildir.
+    Süre düzeltmesiyle storyboard yeniden üretir, ardından — yalnızca
+    NATURAL_SCENE_SECONDS'ta tanımlı türler için (reels_short, motivasyon) —
+    hece bütçesini doğrular (en fazla 2 deneme). konu_anlatimi/soru_cozum için
+    hece doğrulaması hiç ÖLÇÜLMEDİ (uzun-form ders içeriği için hece/sahne
+    kavramı hiç kurulmadı) — o türler için sessizce YANLIŞ bir pacing sabitiyle
+    "geçti" saymak yerine bu adım açıkça ATLANIR (aşağıdaki content_type kontrolü).
 
-    Döner: (storyboard, None)                       → başarı
+    Döner: (storyboard, None)                       → başarı / doğrulama atlandı
            (None, None)                              → içerik tipi desteklenmiyor
            (None, {"reason": ..., ...})               → 2 denemede de hece bütçesi
                                                           aşıldı — çağıran job'u
@@ -515,19 +548,26 @@ def _regen_storyboard_for_duration(
     if sb_new is None:
         return None, None
 
+    if content_type not in NATURAL_SCENE_SECONDS:
+        logger.info(
+            "[syllable-budget] content_type=%s için ölçülmüş pacing yok — hece doğrulaması atlandı",
+            content_type,
+        )
+        return sb_new, None
+
     # _generate_storyboard_for_regen'in reels_short için üretim anında kullandığı
     # hedef sahne sayısıyla AYNI hesap — aksi halde bu doğrulama len(scenes) (GERÇEK
     # üretilen, modelin talimatı hiç görmezden gelmiş olabileceği sayı) kullanır ve
     # "sahne başına X hece" mesajı üretim anında modele söylenenden farklı çıkar.
-    _, _, _target_sc = _syllable_budget_params(corrected_seconds)
+    _, _, _target_sc = _syllable_budget_params(corrected_seconds, content_type)
 
     feedback = correction_hint
     for attempt in (1, 2):
         scenes = sb_new.get("scenes", [])
-        total_budget, _, _ = _syllable_budget_params(corrected_seconds, _target_sc)
+        total_budget, _, _ = _syllable_budget_params(corrected_seconds, content_type, _target_sc)
         actual_syl = sum(_syllable_count(s.get("voice_text") or "") for s in scenes)
         pct = ((actual_syl / total_budget) - 1) * 100 if total_budget else 0.0
-        ok, detail = _check_syllable_budget(sb_new, corrected_seconds, target_scene_count=_target_sc)
+        ok, detail = _check_syllable_budget(sb_new, corrected_seconds, content_type, target_scene_count=_target_sc)
         logger.warning(
             "[syllable-budget] tur=%d bütçe_saniye=%.1f hedef_hece=%d üretilen_hece=%d "
             "sapma=%%%.0f deneme=%d/2",
@@ -959,7 +999,16 @@ def _run_pipeline_inner(
         _set_status(job_id, "scripting")
         logger.info(f"[video] {job_id} senaryo oluşturuluyor content_type={content_type}")
 
-        if content_type == "soru_cozum" and payload.questions:
+        if payload.pre_storyboard:
+            # Resume — regenerate_job kısmi ilerleme modu: storyboard zaten
+            # var (bazı sahnelerin tts_url'i de dolu olabilir), baştan
+            # üretilmez. TTS döngüsü tts_url dolu sahneleri zaten atlıyor
+            # (bkz. o döngüdeki not) — burada yalnızca senaryo üretimi atlanır.
+            storyboard = payload.pre_storyboard
+            logger.info(
+                f"[video] {job_id[:8]} pre_storyboard ile devam (resume) — senaryo üretimi atlandı"
+            )
+        elif content_type == "soru_cozum" and payload.questions:
             if payload.format == "9:16":
                 # Dikey kısa quiz — SplitQuizVerticalScene kalır
                 storyboard = _build_quiz_storyboard(
@@ -1035,10 +1084,15 @@ def _run_pipeline_inner(
                     job_id[:8], _bank_entry["id"], _bank_entry["title"],
                 )
             # requested_duration_seconds Pydantic validator ile int garantili
+            from app.core.content_constants import TYPE_DURATIONS
+            _mot_dur = TYPE_DURATIONS["motivasyon"]
             raw_dur = payload.requested_duration_seconds
             if raw_dur is None and payload.target_duration_minutes:
                 raw_dur = payload.target_duration_minutes * 60
-            duration_sec: int = raw_dur if (raw_dur and 15 <= raw_dur <= 300) else 120
+            duration_sec: int = (
+                raw_dur if (raw_dur and _mot_dur["min"] <= raw_dur <= _mot_dur["max"])
+                else _mot_dur["default"]
+            )
             result = generate_motivation_storyboard(
                 topic=topic_text,
                 duration=duration_sec,
@@ -1070,7 +1124,7 @@ def _run_pipeline_inner(
             # EducationalReel120 — GPT storyboard + EducationalReelScene bileşeni
             from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
             _reel_budget_sec = float(payload.requested_duration_seconds or 120)
-            _, _, _reel_sc = _syllable_budget_params(_reel_budget_sec)
+            _, _, _reel_sc = _syllable_budget_params(_reel_budget_sec, content_type)
             storyboard = generate_educational_reel_storyboard(
                 title=payload.title,
                 topic=payload.topic or payload.title,
@@ -1086,7 +1140,7 @@ def _run_pipeline_inner(
                 s["id"] = i
 
             # ── Hece bütçesi kontrolü — TTS'den önce, 1 yeniden deneme ──────
-            _syl_ok, _syl_detail = _check_syllable_budget(storyboard, _reel_budget_sec)
+            _syl_ok, _syl_detail = _check_syllable_budget(storyboard, _reel_budget_sec, content_type)
             if not _syl_ok:
                 logger.warning(
                     "[video] %s hece bütçesi aşıldı — 1 yeniden deneme: %s",
@@ -1106,7 +1160,7 @@ def _run_pipeline_inner(
                 storyboard["format"] = payload.format or "9:16"
                 for i, s in enumerate(storyboard.get("scenes", []), 1):
                     s["id"] = i
-                _syl_ok2, _syl_detail2 = _check_syllable_budget(storyboard, _reel_budget_sec)
+                _syl_ok2, _syl_detail2 = _check_syllable_budget(storyboard, _reel_budget_sec, content_type)
                 if not _syl_ok2:
                     logger.warning(
                         "[video] %s 2. deneme sonrası hece aşımı devam ediyor: %s — devam edildi",
@@ -1312,7 +1366,23 @@ def _run_pipeline_inner(
                 }
                 for s in storyboard["scenes"]
             ]
-            sb.table("video_scenes").insert(scene_records).execute()
+            # Resume (pre_storyboard) yolunda sahneler zaten kayıtlı olabilir —
+            # kör insert ya benzersizlik kısıtına takılır ya da yinelenen satır
+            # üretir (aşağıdaki scene_index sıralı işleme mantığını bozar).
+            # Yalnızca henüz kaydedilmemiş sahneleri ekle. _dur_turn>0 yolunda
+            # zaten yukarıda delete edildiği için burası no-op kalır.
+            _existing_indices = {
+                r["scene_index"] for r in
+                (sb.table("video_scenes").select("scene_index").eq("job_id", job_id).execute().data or [])
+            }
+            _new_records = [r for r in scene_records if r["scene_index"] not in _existing_indices]
+            if _new_records:
+                sb.table("video_scenes").insert(_new_records).execute()
+            if _existing_indices:
+                logger.info(
+                    "[video] %s resume: %d sahne zaten kayıtlı, %d yeni eklendi",
+                    job_id[:8], len(_existing_indices), len(_new_records),
+                )
 
             _set_status(job_id, "tts_generating")
             logger.info(
@@ -1331,9 +1401,27 @@ def _run_pipeline_inner(
                 voice_text = (scene_row.get("voice_text") or "").strip()
                 if not voice_text:
                     continue
+                if scene_row.get("tts_url"):
+                    # Resume — bu sahne önceki (kesintiye uğramış) turda zaten
+                    # üretilmişti. Yeniden üretme — hem parasal maliyet hem de
+                    # OpenAI'a gereksiz çağrı.
+                    logger.info(
+                        "[tts] sahne=%s/%s zaten hazır (resume) — atlandı",
+                        scene_row["scene_index"] + 1, len(scenes_in_db),
+                    )
+                    continue
+                logger.info(
+                    "[tts] sahne=%s/%s başlıyor",
+                    scene_row["scene_index"] + 1, len(scenes_in_db),
+                )
+                _tts_scene_t0 = time.monotonic()
                 try:
                     audio_bytes, char_count = _tts_bytes(voice_text)
                     total_tts_chars += char_count
+                    logger.info(
+                        "[tts] sahne=%s tamamlandı (%.1fs)",
+                        scene_row["scene_index"] + 1, time.monotonic() - _tts_scene_t0,
+                    )
 
                     # ses seviyesi kontrolü — sessiz TTS yeniden üretilir
                     vol_ok, mean_vol = check_audio_volume(audio_bytes)
@@ -1579,12 +1667,18 @@ def _run_pipeline_inner(
                         # Sahne başına hece hedefi budget_params'tan (_damped_corrected
                         # için) türetiliyor — önceden "20-25"/"28-35" olarak ayrıca
                         # hardcode edilmişti, üretim anındaki gerçek hedeften (~24-33
-                        # hece, bütçeye göre) farklı bir sayı söylüyordu.
-                        _, _hint_syl_per_scene, _ = _syllable_budget_params(_damped_corrected)
+                        # hece, bütçeye göre) farklı bir sayı söylüyordu. Yalnızca
+                        # NATURAL_SCENE_SECONDS'ta ölçülmüş türler için (konu_anlatimi
+                        # gibi ölçülmemiş bir türde tahmini sayı UYDURULMAZ).
+                        if content_type in NATURAL_SCENE_SECONDS:
+                            _, _hint_syl_per_scene, _ = _syllable_budget_params(_damped_corrected, content_type)
+                            _hint_suffix = f" Sahne başına ~{_hint_syl_per_scene} hece kullan."
+                        else:
+                            _hint_suffix = ""
                         _dur_correction_hint = (
                             f"ÖNEMLİ DÜZELTME: Önceki storyboard ölçülen süre {tts_total_sec:.1f}s, "
-                            f"hedef {req:.0f}s. voice_text içeriklerini %{pct:.0f} oranında {direction}. "
-                            f"Sahne başına ~{_hint_syl_per_scene} hece kullan."
+                            f"hedef {req:.0f}s. voice_text içeriklerini %{pct:.0f} oranında {direction}."
+                            f"{_hint_suffix}"
                         )
                         _dur_corrected_sec = _damped_corrected
                         continue  # storyboard yeniden üret
@@ -2041,10 +2135,37 @@ def _rebuild_payload_from_job(job: dict) -> "CreateVideoPayload":
 def regenerate_job(job_id: str, background_tasks: BackgroundTasks):
     job = _get_job(job_id)
     sb = get_supabase_client()
-    sb.table("video_scenes").delete().eq("job_id", job_id).execute()
-    _set_status(job_id, "pending", {"storyboard": None, "video_url": None, "error_message": None})
+
+    # Kısmi ilerleme kontrolü (2026-08-08) — TTS'in bir kısmı zaten
+    # tamamlanmışsa (örn. watchdog dış servis kesintisinde işi durdurduysa)
+    # baştan başlamak hem gereksiz OpenAI maliyeti hem zaman kaybı. Storyboard
+    # + en az 1 sahnenin tts_url'i varsa RESUME modunda devam edilir —
+    # video_scenes SİLİNMEZ, storyboard KORUNUR; senaryo yeniden üretilmez,
+    # yalnızca eksik sahnelerin TTS'i tamamlanır (bkz. _run_pipeline_inner
+    # pre_storyboard dalı ve TTS döngüsündeki tts_url atlama mantığı).
+    storyboard = job.get("storyboard") or {}
+    existing_scenes = (
+        sb.table("video_scenes").select("scene_index, tts_url").eq("job_id", job_id).execute().data or []
+    )
+    done_count = sum(1 for s in existing_scenes if s.get("tts_url"))
 
     rebuilt = _rebuild_payload_from_job(job)
+
+    if storyboard.get("scenes") and done_count > 0:
+        logger.info(
+            "[video] %s kısmi ilerlemeyle devam ediliyor: %d/%d sahne zaten hazır",
+            job_id[:8], done_count, len(existing_scenes),
+        )
+        rebuilt.pre_storyboard = storyboard
+        _set_status(job_id, "pending", {"error_message": None})
+        background_tasks.add_task(_run_pipeline, job_id, rebuilt)
+        return {
+            "message": f"Kaldığı yerden devam ediyor ({done_count}/{len(existing_scenes)} sahne hazır)",
+            "job_id": job_id,
+        }
+
+    sb.table("video_scenes").delete().eq("job_id", job_id).execute()
+    _set_status(job_id, "pending", {"storyboard": None, "video_url": None, "error_message": None})
     background_tasks.add_task(_run_pipeline, job_id, rebuilt)
     return {"message": "Yeniden üretim başlatıldı", "job_id": job_id}
 
@@ -2303,12 +2424,19 @@ def render_callback(body: RenderCallback, background_tasks: BackgroundTasks):
                 direction = "kısalt" if deviation > 0 else "uzat"
                 # bkz. pre-render döngüsündeki aynı düzeltme — hardcode "20-25"/"28-35"
                 # yerine budget_params'tan (corrected_sec için) türetilen gerçek hedef.
-                _, _hint_syl_per_scene, _ = _syllable_budget_params(corrected_sec)
+                # Yalnızca NATURAL_SCENE_SECONDS'ta ölçülmüş türler için — ölçülmemiş
+                # bir türde (konu_anlatimi gibi) tahmini sayı UYDURULMAZ.
+                from app.pipelines.registry import canonical_type as _canonical_type
+                _cb_content_type = _canonical_type(job_full.get("type", ""))
+                if _cb_content_type in NATURAL_SCENE_SECONDS:
+                    _, _hint_syl_per_scene, _ = _syllable_budget_params(corrected_sec, _cb_content_type)
+                    _hint_suffix = f" Sahne başına ~{_hint_syl_per_scene} hece kullan."
+                else:
+                    _hint_suffix = ""
                 hint = (
                     f"ÖNEMLİ DÜZELTME: Render edilmiş videonun ffprobe ile ölçülen gerçek "
                     f"süresi {actual:.1f}s, hedef {req_sec:.0f}s. voice_text içeriklerini "
-                    f"%{pct:.0f} oranında {direction}. Sahne başına "
-                    f"~{_hint_syl_per_scene} hece kullan."
+                    f"%{pct:.0f} oranında {direction}.{_hint_suffix}"
                 )
                 next_turn = turn + 1
                 logger.warning(
@@ -2439,7 +2567,7 @@ def preview_storyboard(payload: PreviewPayload):
         if payload.type in ("reel", "educational_reel"):
             from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
             _prev_budget = float(payload.requested_duration_seconds or 120)
-            _, _, _prev_sc = _syllable_budget_params(_prev_budget)
+            _, _, _prev_sc = _syllable_budget_params(_prev_budget, "reels_short")
             storyboard = generate_educational_reel_storyboard(
                 title=payload.title,
                 topic=payload.topic or payload.title,

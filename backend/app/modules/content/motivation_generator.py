@@ -229,11 +229,19 @@ def generate_motivation_storyboard(
     #    ölçüydü ("ev"=1 hece, "değerlendirilebileceği"=9 hece). WORDS_PER_SECOND/
     #    word_budget tamamen kaldırıldı, motivasyon da reels'in kullandığı AYNI
     #    budget_params()/TR_SPS hece sistemini kullanıyor artık.
-    scene_count = scene_count_for_budget(duration)
-    step_count = max(2, scene_count - 5)
+    # step_count'un alt sınırı (2) scene_count_for_budget'ın hesapladığından daha
+    # büyük bir toplam sahne sayısı zorlayabilir (kısa bütçelerde — örn. 45s/8.5=5,
+    # ama 5 sabit sahne + minimum 2 adım = 7). scene_count bu noktadan SONRA
+    # gerçek toplama göre YENİDEN hesaplanmalı — aksi halde hece bütçesi (ve
+    # promptun kendisi) 5 sahneye göre kurulur ama model 7 sahne üretir, aradaki
+    # 2 sahnelik fark hedefin üzerine "bedavadan" hece ekler (ölçüldü: sapma
+    # +45%/+83%/+20% — SAHNE ŞABLONU'nda "7 sahne" yazarken HECE BÜTÇESİ'nde
+    # "5 sahne" yazmanın çelişkisiydi, modelin hatası değildi).
+    step_count = max(2, scene_count_for_budget(duration, "motivasyon") - 5)
+    scene_count = step_count + 5
     avg_sec = duration / scene_count
 
-    total_syl, syl_per_scene, min_chars, max_chars = budget_params(duration, scene_count)
+    total_syl, syl_per_scene, min_chars, max_chars = budget_params(duration, scene_count, "motivasyon")
     tolerance = max(3, round(syl_per_scene * 0.15))
     target_chars = round(syl_per_scene * CHARS_PER_SYLLABLE)
     budget_note = (
@@ -270,6 +278,14 @@ def generate_motivation_storyboard(
         # tekrarlanıyordu: tur1 %-51, tur2 %-58 — düzelmiyor, rastgele dalgalanıyordu).
         user_msg += f"\n\nÖNEMLİ DÜZELTME (önceki üretimden): {correction_hint}"
 
+    logger.info(
+        "[motivation-prompt] job=%s duration=%ss hedef_sahne=%d adim_sahnesi=%d "
+        "hedef_hece=%d sahne_basi_hece=%d correction_hint=%s prompt_uzunluk=%d",
+        job_id[:8] if job_id else "-", duration, scene_count, step_count,
+        total_syl, syl_per_scene, bool(correction_hint), len(user_msg),
+    )
+    logger.debug("[motivation-prompt] tam metin:\n%s", user_msg)
+
     result: dict = {}
     scenes: list[dict] = []
     sgs_elements: set[str] = set()
@@ -283,7 +299,11 @@ def generate_motivation_storyboard(
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": user_msg},
             ],
-            temperature=0.82,
+            # 2026-08-08: 0.82 → 0.5. Doğallık kelime seçiminden değil içerik
+            # bankasından geliyor (SGS bağlamı, somut adım, gerçek duygu) —
+            # yüksek sıcaklık burada doğallık değil uzunluk kumarı üretiyordu
+            # (aynı 60s hedefte 3 denemede sapma +45%/+54%/+65% ölçüldü).
+            temperature=0.5,
             max_tokens=3000,
             caller="motivation_generator",
         )

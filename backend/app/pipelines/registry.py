@@ -70,7 +70,7 @@ CONTENT_PIPELINES: dict[str, dict] = {
         "composition": "MotivationVideo",
         "aspect": "9:16",
         "fps": 30,
-        "duration_range": (30, 130),
+        "duration_range": (30, 90),  # shared/content-types.json motivasyon.duration ile aynı (2026-08-08: 130→90)
         "scene_count_range": (12, 20),
         "avg_scene_seconds": (4, 7),
         "allowed_scenes": [

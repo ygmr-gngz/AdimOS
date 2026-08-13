@@ -584,9 +584,13 @@ const TYPE_DEFAULTS: Partial<Record<VideoType, { format: VideoFormat; minutes: n
   konu_anlatimi: { format: '16:9', minutes: 12 },
   soru_cozum:    { format: '16:9', minutes: 8  },
   reels_short:   { format: '9:16', minutes: 1  },
-  motivasyon:    { format: '9:16', minutes: 1  },
+  motivasyon:    { format: '9:16', minutes: 1  },   // saniye alanı ayrı — bkz. MOTIVATION_DURATION
   gorsel_post:   { format: '9:16', minutes: 1  },
 }
+
+// Motivasyon dakika yerine saniye bazlı — shared/content-types.json motivasyon.duration
+// ile aynı değerler (2026-08-08: varyansın kümülatif etkisini azaltmak için 60→45).
+const MOTIVATION_DURATION = { default: 45, min: 30, max: 90 }
 
 const INP: React.CSSProperties = {
   width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10,
@@ -643,6 +647,7 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
   )
   const [format, setFormat] = useState<VideoFormat>('16:9')
   const [targetMinutes, setTargetMinutes] = useState(12)
+  const [motivationSeconds, setMotivationSeconds] = useState(MOTIVATION_DURATION.default)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -652,6 +657,7 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
     setType(t)
     const d = TYPE_DEFAULTS[t]
     if (d) { setFormat(d.format); setTargetMinutes(d.minutes) }
+    if (t === 'motivasyon') setMotivationSeconds(MOTIVATION_DURATION.default)
   }
 
   const updateQuestion = (qi: number, field: string, value: string) => {
@@ -703,8 +709,8 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
         topic: topic.trim() || undefined,
         description: description.trim() || undefined,
         format,
-        target_duration_minutes: targetMinutes,
-        requested_duration_seconds: targetMinutes * 60,  // saniye — backend kalite kapısı için
+        target_duration_minutes: type === 'motivasyon' ? undefined : targetMinutes,
+        requested_duration_seconds: type === 'motivasyon' ? motivationSeconds : targetMinutes * 60,  // saniye — backend kalite kapısı için
         duration_tolerance_seconds: 8,
         // M8: backend content_track'i artık zorunlu kılıyor (danışan hattı TÜRMOB
         // uyum kapısını buradan tetikliyor). Bu panelde henüz hat seçici UI yok —
@@ -932,18 +938,33 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
         </div>
       </div>
 
-      {/* Süre */}
-      <div>
-        <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>
-          Hedef Süre (dakika)
-        </label>
-        <input type="number" min={1} max={60} value={targetMinutes}
-          onChange={e => setTargetMinutes(Number(e.target.value))}
-          style={{ ...INP, maxWidth: 140 }} />
-        <p style={{ margin: '6px 0 0', fontSize: 12, color: '#94a3b8' }}>
-          {format === '9:16' ? 'Kısa içerik için önerilen: 1 dakika' : type === 'soru_cozum' ? 'Önerilen: 8–15 dakika' : 'Önerilen: 10–15 dakika'}
-        </p>
-      </div>
+      {/* Süre — motivasyon saniye bazlı (doğal süresi dakikadan kısa), diğerleri dakika */}
+      {type === 'motivasyon' ? (
+        <div>
+          <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>
+            Hedef Süre (saniye)
+          </label>
+          <input type="number" min={MOTIVATION_DURATION.min} max={MOTIVATION_DURATION.max} value={motivationSeconds}
+            onChange={e => setMotivationSeconds(Number(e.target.value))}
+            style={{ ...INP, maxWidth: 140 }} />
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: '#94a3b8' }}>
+            Önerilen: {MOTIVATION_DURATION.default} saniye ({MOTIVATION_DURATION.min}-{MOTIVATION_DURATION.max} arası) —
+            motivasyon videosu doğası gereği kısa: bir durum, bir duygu, birkaç adım, bir kapanış.
+          </p>
+        </div>
+      ) : (
+        <div>
+          <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>
+            Hedef Süre (dakika)
+          </label>
+          <input type="number" min={1} max={60} value={targetMinutes}
+            onChange={e => setTargetMinutes(Number(e.target.value))}
+            style={{ ...INP, maxWidth: 140 }} />
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: '#94a3b8' }}>
+            {format === '9:16' ? 'Kısa içerik için önerilen: 1 dakika' : type === 'soru_cozum' ? 'Önerilen: 8–15 dakika' : 'Önerilen: 10–15 dakika'}
+          </p>
+        </div>
+      )}
 
       {/* Gelişmiş ayarlar */}
       <div>
@@ -1006,7 +1027,7 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
       ...(type === 'gorsel_post' ? [{ label: 'Şablon', value: templateDef?.label ?? infographicTemplate }] : []),
       ...(type !== 'gorsel_post' ? [
         { label: 'Platform', value: format === '16:9' ? 'YouTube (16:9 yatay)' : 'Reels / Shorts (9:16 dikey)' },
-        { label: 'Hedef Süre', value: `${targetMinutes} dakika (${targetMinutes * 60} sn)` },
+        { label: 'Hedef Süre', value: type === 'motivasyon' ? `${motivationSeconds} saniye` : `${targetMinutes} dakika (${targetMinutes * 60} sn)` },
       ] : [{ label: 'Format', value: '9:16 dikey — statik görsel' }]),
       ...(type === 'soru_cozum' && showQuestions ? [{ label: 'Soru Girişi', value: 'Manuel (4 soru)' }] : []),
       ...(description.trim() ? [{ label: 'Not', value: description.trim() }] : []),

@@ -14,3 +14,17 @@ VISUAL_SURFACE_MINIMUMS: dict[str, dict] = {
     'motivasyon': {'min_visual_surfaces': 7, 'min_photos': 5},
     'gorsel_post': {'min_visual_surfaces': 3, 'min_photos': 0},
 }
+
+# canonical content_type -> {default, min, max} hedef süre (saniye) — yalnızca
+# tanımlı olan türler için (henüz hepsinde yok, veri uydurulmaz)
+TYPE_DURATIONS: dict[str, dict] = {
+    'motivasyon': {'default': 45, 'min': 30, 'max': 90},
+}
+
+# canonical content_type -> doğal sahne süresi (sn) — scene_count_for_budget'ın
+# tek kaynağı. Tür bazlı: her türün içerik yoğunluğu farklı (görsel mi anlatıyor,
+# yalnızca söz mü taşıyor) — bkz. content-types.json *_note alanları.
+NATURAL_SCENE_SECONDS: dict[str, float] = {
+    'reels_short': 5.5,
+    'motivasyon': 8.5,
+}
