@@ -229,15 +229,25 @@ def generate_motivation_storyboard(
     #    ölçüydü ("ev"=1 hece, "değerlendirilebileceği"=9 hece). WORDS_PER_SECOND/
     #    word_budget tamamen kaldırıldı, motivasyon da reels'in kullandığı AYNI
     #    budget_params()/TR_SPS hece sistemini kullanıyor artık.
-    # step_count'un alt sınırı (2) scene_count_for_budget'ın hesapladığından daha
+    # step_count'un alt sınırı scene_count_for_budget'ın hesapladığından daha
     # büyük bir toplam sahne sayısı zorlayabilir (kısa bütçelerde — örn. 45s/8.5=5,
-    # ama 5 sabit sahne + minimum 2 adım = 7). scene_count bu noktadan SONRA
-    # gerçek toplama göre YENİDEN hesaplanmalı — aksi halde hece bütçesi (ve
-    # promptun kendisi) 5 sahneye göre kurulur ama model 7 sahne üretir, aradaki
-    # 2 sahnelik fark hedefin üzerine "bedavadan" hece ekler (ölçüldü: sapma
-    # +45%/+83%/+20% — SAHNE ŞABLONU'nda "7 sahne" yazarken HECE BÜTÇESİ'nde
-    # "5 sahne" yazmanın çelişkisiydi, modelin hatası değildi).
-    step_count = max(2, scene_count_for_budget(duration, "motivasyon") - 5)
+    # ama 5 sabit sahne + min adım ≥ taban). scene_count bu noktadan SONRA gerçek
+    # toplama göre YENİDEN hesaplanmalı — aksi halde hece bütçesi (ve promptun
+    # kendisi) yanlış sahne sayısına göre kurulur (2026-08-08, 1. bulgu).
+    #
+    # 2026-08-08, 2. bulgu — "ölü bölge": taban=2 iken 45-62 saniye ARALIĞININ
+    # TAMAMI aynı toplama (7) yuvarlanıyordu (45/8.5≈5→tabanla 7; 57.7/8.5≈7→zaten
+    # 7) — süre düzeltme turunun TEK kaldıracı (sahne sayısı) bu ~17sn'lik aralıkta
+    # tamamen işlevsizdi (ölçülen canlı arıza: 45→57.7 düzeltmesinde hedef_hece
+    # 266'da sabit kaldı, model %56/%45 altında kaldı). Kontrollü deney (sabit 7
+    # sahne, sahne-başı hedefi 38→50→65 arası değiştirerek): gerçek çıktı
+    # 35.6→36.0→44.1 — SAPTANMIŞ ORANTISIZ tepki (hedef %71 arttı, çıktı %24
+    # arttı) — modelin ~35-44 hece/sahne civarında doğal bir tavanı var, hedefi
+    # yükseltmek güvenilir bir çözüm değil. Taban 2→1 indirilince doğal yuvarlama
+    # aralıkları normale döndü (her biri ~8.5sn genişliğinde, taban tarafından
+    # yapay olarak genişletilmiyor) — 45→57.7 artık 6→7 sahneye karşılık geliyor,
+    # kaldıraç tekrar çalışıyor.
+    step_count = max(1, scene_count_for_budget(duration, "motivasyon") - 5)
     scene_count = step_count + 5
     avg_sec = duration / scene_count
 
