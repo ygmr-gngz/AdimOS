@@ -13,9 +13,9 @@ videosu olabilirdi, SGS'ye özgü hiçbir şey yoktu (B.0). Bu dosya artık:
   - adım sırası sızıntısını engeller (B.5 — önceden buradaydı, korunuyor)
 """
 import logging
-import math
 import re
 from app.core.llm_client import chat_json as llm_json
+from app.core.content_constants import scene_count_for_budget, budget_params, TR_SPS, CHARS_PER_SYLLABLE
 from app.core.content_bank_motivation import (
     CLOSING_BANK,
     HOOK_FORMULAS,
@@ -96,16 +96,6 @@ def _find_outro_scene(scenes: list[dict]) -> dict | None:
     return None
 
 
-# Türkçe kadın sesi için 2.8 kelime/saniye
-WORDS_PER_SECOND = 2.8
-
-
-def word_budget(seconds: int) -> tuple[int, int]:
-    lo = int(seconds * WORDS_PER_SECOND * 0.92)
-    hi = int(seconds * WORDS_PER_SECOND * 1.08)
-    return lo, hi
-
-
 _SYSTEM_PROMPT = """Sen SGS (Staja Giriş Sınavı) ve SMMM adaylarının koçusun.
 Adım Müşavir adına Türkçe motivasyon reels içeriği üretiyorsun.
 
@@ -133,27 +123,27 @@ _SGS_TERMS_BLOCK = (
 
 _USER_TEMPLATE = """Konu: {topic}
 Hedef süre: {duration} saniye
-Kelime bütçesi: {words_lo}–{words_hi} kelime (toplam tüm narration alanları)
+{budget_note}
 Sahne sayısı: {scene_count} sahne, ortalama {avg_sec:.1f} sn/sahne
 
 Aşağıdaki sahne şablonunu AYNEN uygula. Her sahne için:
 - component: tam adı (değiştirme)
 - title: ekranda büyük gösterilen kısa başlık (max 8 kelime)
 - narration: seslendirilecek Türkçe metin (ekran gösterimi için)
-- spoken_text: TTS'e gidecek kelime bütçesine uygun metin (narration ile aynı olabilir)
+- spoken_text: TTS'e gidecek hece bütçesine uygun metin (narration ile aynı olabilir)
 - image_search_query: arka plan fotoğrafı için İngilizce arama terimi
 
-SAHNE ŞABLONU:
-1. MotivationHookScene (4–5 sn) — Güçlü ve doğrudan kanca. "Merhaba" ile başlama.
-   İlk 5 saniye, 8-14 kelime, TEK cümle. Aşağıdaki formül tiplerinden birini kullan:
+SAHNE ŞABLONU ({scene_count} sahne — akış hook → problem → empati → {step_count} adım → odak → outro):
+Hook DIŞINDAKİ her sahne yaklaşık {syl_per_scene} hece içermeli (bkz. HECE BÜTÇESİ) —
+sahne türüne göre "kısa/uzun sahne" diye ayrı bir süre varsayma, hepsi eşit ağırlıkta.
+1. MotivationHookScene — Güçlü ve doğrudan kanca. "Merhaba" ile başlama. Kasıtlı olarak
+   diğer sahnelerden KISA: 8-14 kelime, TEK cümle. Aşağıdaki formül tiplerinden birini kullan:
 {hook_formulas}
-2. MotivationProblemScene (8–12 sn) — SGS adayının yaşadığı duyguyu/problemi somut tanımla.
-3. MotivationEmpathyScene (10–15 sn) — Yalnız olmadığını hissettir. Destekleyici alıntı tarzı.
-4. MotivationStepScene (5–7 sn) — Somut, uygulanabilir öneri #1. step_number=1 ekle.
-5. MotivationStepScene (5–7 sn) — Farklı somut öneri #2. step_number=2 ekle.
-6. MotivationStepScene (5–7 sn) — Farklı somut öneri #3. step_number=3 ekle.
-7. MotivationFocusScene (8–10 sn) — Motive edici sonuç ve sınav odağı. Hedef hatırlatma.
-8. MotivationOutroScene (5–8 sn) — Kapanış.
+2. MotivationProblemScene — SGS adayının yaşadığı duyguyu/problemi somut tanımla.
+3. MotivationEmpathyScene — Yalnız olmadığını hissettir. Destekleyici alıntı tarzı.
+{step_scenes}
+{focus_num}. MotivationFocusScene — Motive edici sonuç ve sınav odağı. Hedef hatırlatma.
+{outro_num}. MotivationOutroScene — Kapanış.
 
 MotivationStepScene KURALI (ÖNEMLİ): Ekrandaki rozet (1/2/3) ve "ADIM N" etiketi
 step_number alanından otomatik üretilir — narration/spoken_text içinde SIRA
@@ -192,10 +182,20 @@ JSON formatı (bu şemayı AYNEN kullan):
   ]
 }}
 
-step_number alanını MotivationStepScene sahnelerine ekle (1, 2, 3).
+step_number alanını MotivationStepScene sahnelerine ekle (1'den {step_count}'e kadar sırayla).
 step_title alanını MotivationStepScene sahnelerine ekle (max 6 kelime, adımın özeti).
 cta_text alanını MotivationOutroScene sahnesine ekle (yukarıdaki 8 kapanıştan biri, HARFİYEN).
 Tüm metinler Türkçe. spoken_text'te kısaltmalar açık yazılsın (KDV→ka de ve)."""
+
+
+def _build_step_scenes_block(step_count: int) -> str:
+    lines = []
+    for i in range(1, step_count + 1):
+        n = 3 + i   # sahne no: 1 hook, 2 problem, 3 empati, 4..= adımlar
+        lines.append(
+            f"{n}. MotivationStepScene — Somut, uygulanabilir öneri #{i}. step_number={i} ekle."
+        )
+    return "\n".join(lines)
 
 
 def generate_motivation_storyboard(
@@ -203,23 +203,72 @@ def generate_motivation_storyboard(
     duration: int = 120,
     platform: str = "reels",
     job_id: str = "",
+    correction_hint: str | None = None,
 ) -> dict:
-    words_lo, words_hi = word_budget(duration)
-    scene_count = max(8, min(20, math.ceil(duration / 6)))
+    # 2026-08-08 — iki birleşik bulgu, aynı kök sorunun parçası:
+    #
+    # 1) Sahne sayısı 8'de SABİTTİ. Süre düzeltme turlarında bütçe büyüdükçe
+    #    (ölçülen 32.2s → sönümlü hedef 80.7s) hece hedefi de büyüyordu ama
+    #    sahne sayısı sabit kalınca sahne başına hedef modelin doğal sınırının
+    #    çok üzerine çıktı — model 3 turda da hep başarısız oldu (undershoot).
+    #    reels'te aynı sınıf hata scene_count_for_budget (NATURAL_SCENE_SECONDS)
+    #    ile çözülmüştü; aynı mekanizma burada da uygulanıyor. Sabit 5 sahne
+    #    (hook/problem/empati/odak/outro) + bütçeyle büyüyen sayıda
+    #    MotivationStepScene — akış yapısı korunuyor, yalnızca adım sayısı
+    #    değişiyor (MotivationStepScene zaten çoğaltılabilir bir bileşen).
+    #
+    # 2) Sahne sayısı düzeltildikten SONRA da ikinci, bağımsız bir uyumsuzluk
+    #    ortaya çıktı: bu dosyanın kendi WORDS_PER_SECOND=2.8 (kelime bazlı)
+    #    bütçesi, reels'te bu oturumda ölçülüp kalibre edilen TR_SPS=4.42
+    #    (hece bazlı) ile çelişiyordu — ima ettiği hız ~7.56 hece/sn, gerçek
+    #    ölçülenin (4.42) neredeyse iki katı. Sonuç: model kendi word_budget
+    #    hedefini tam tutturuyordu (233/208-244 kelime) ama bu içerik reels'in
+    #    kullandığı GENEL hece kapısına göre %75 FAZLAYDI (628/358 hece) —
+    #    aynı iki-farklı-kaynak sınıfı hata (beş süre tablosu, iki registry
+    #    postmortemleriyle aynı desen). Kelime birimi zaten Türkçe için yanlış
+    #    ölçüydü ("ev"=1 hece, "değerlendirilebileceği"=9 hece). WORDS_PER_SECOND/
+    #    word_budget tamamen kaldırıldı, motivasyon da reels'in kullandığı AYNI
+    #    budget_params()/TR_SPS hece sistemini kullanıyor artık.
+    scene_count = scene_count_for_budget(duration)
+    step_count = max(2, scene_count - 5)
     avg_sec = duration / scene_count
+
+    total_syl, syl_per_scene, min_chars, max_chars = budget_params(duration, scene_count)
+    tolerance = max(3, round(syl_per_scene * 0.15))
+    target_chars = round(syl_per_scene * CHARS_PER_SYLLABLE)
+    budget_note = (
+        f"HECE BÜTÇESİ (ZORUNLU): Toplam {total_syl} hece "
+        f"({duration:.0f}s × {TR_SPS:.2f} hece/s, {scene_count} sahne).\n"
+        f"Her sahne metninde (narration/spoken_text) yaklaşık {syl_per_scene} hece kullan "
+        f"(±{tolerance} tolerans, yani {syl_per_scene - tolerance}–{syl_per_scene + tolerance} arası).\n"
+        f"Türkçede hece = metindeki ünlü harf sayısı (a,e,ı,i,o,ö,u,ü).\n"
+        f"KARAKTER UZUNLUĞU: Her sahne metni YAKLAŞIK {target_chars} karakter olmalı "
+        f"(boşluklar dahil, {min_chars}-{max_chars} arası kabul edilir ama HEDEF {target_chars})."
+    )
 
     user_msg = _USER_TEMPLATE.format(
         topic=topic,
         duration=duration,
-        words_lo=words_lo,
-        words_hi=words_hi,
+        budget_note=budget_note,
         scene_count=scene_count,
+        syl_per_scene=syl_per_scene,
+        step_count=step_count,
+        step_scenes=_build_step_scenes_block(step_count),
+        focus_num=step_count + 4,
+        outro_num=step_count + 5,
         avg_sec=avg_sec,
         hook_formulas=_HOOK_FORMULAS_BLOCK,
         sgs_terms=_SGS_TERMS_BLOCK,
         generic_phrases=_GENERIC_PHRASES_BLOCK,
         closing_bank=_CLOSING_BANK_BLOCK,
     )
+    if correction_hint:
+        # Süre düzeltme turundan gelen geri bildirim (video.py _check_syllable_budget) —
+        # ÖNCEDEN buraya hiç ulaşmıyordu: _generate_storyboard_for_regen motivasyon
+        # dalı correction_hint'i alıyordu ama generate_motivation_storyboard'a hiç
+        # geçirmiyordu, retry turları kör tekrar üretim yapıyordu (aynı sapma
+        # tekrarlanıyordu: tur1 %-51, tur2 %-58 — düzelmiyor, rastgele dalgalanıyordu).
+        user_msg += f"\n\nÖNEMLİ DÜZELTME (önceki üretimden): {correction_hint}"
 
     result: dict = {}
     scenes: list[dict] = []

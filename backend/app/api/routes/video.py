@@ -330,7 +330,7 @@ def _attach_visual_assets(scenes: list[dict], job_id: str, content_track: str) -
         recent_jobs = (
             sb.table("video_jobs")
             .select("id")
-            .eq("content_type", "motivasyon")
+            .eq("type", "motivasyon")   # kolon adı 'type' — 'content_type' bu şemada hiç yoktu
             .order("created_at", desc=True)
             .limit(10)
             .execute()
@@ -442,6 +442,7 @@ def _generate_storyboard_for_regen(
             duration=max(15, int(corrected_seconds)),
             platform="reels",
             job_id=job_id,
+            correction_hint=correction_hint,
         )
         scenes = []
         for i, scene in enumerate(result.get("scenes", []), 1):
