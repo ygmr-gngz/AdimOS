@@ -61,8 +61,8 @@
       "min_photos_note": "Her sahne fotoğrafik arka plan alır (theme_for_scene + select_asset) — flat-navy fallback yok.",
       "duration": { "default": 45, "min": 30, "max": 90 },
       "duration_note": "2026-08-08: varsayılan 60→45. 11-15 sahneye çıkan yapı (scene_count_for_budget) model çıktı varyansını kümülatif olarak büyütüyordu (ölçülen sapma +45%/-39% arası); 45s ~8 sahneye karşılık gelir, varyans etkisi belirgin azalır. reels_short kasıtlı olarak dokunulmadı (orada anlatılacak somut bilgi var, kart sahneleri deterministik render).",
-      "natural_scene_seconds": 8.5,
-      "natural_scene_seconds_note": "Ölçülmüş (2026-08-08) — reels_short'un 5.5sn'si buraya ödünç alınmıştı, hiç doğrulanmamıştı. Motivasyon sahnesi duyguyu + SGS bağlamını + somut adımı yalnızca sözle taşıyor (görsel anlatım yok), doğal olarak daha uzun: 45s/60s hedeflerinde ölçülen ortalama ~37.5 hece/sahne ÷ TR_SPS(4.42) ≈ 8.5sn."
+      "natural_scene_seconds": 4.0,
+      "natural_scene_seconds_note": "Ölçülmüş (2026-08-17, yalnızca gerçek voice_text/narration): ilk üç 45sn üretimde 6 sahne başına ortalama 18.94 hece (4.29sn); 4.3 ile yapılan ikinci üçlü doğrulamada 10 sahne başına 15.60, 18.70, 19.30 hece, ortalama 17.87 hece ÷ TR_SPS(4.42) = 4.04sn. Üretim yapısına daha yakın ikinci örnekleme göre 4.0sn seçildi. Önceki 8.5sn ölçümü narration + spoken_text'i birlikte saydığı için yaklaşık iki kat şişikti."
     },
     {
       "canonical": "gorsel_post",

@@ -24,7 +24,7 @@ from app.core.generated_constants import (  # noqa: F401
 # olarak "8.0" hardcode edilmişti (duplike sabit) — TEK bir global sabite taşındı.
 # 2026-08-08 postmortem: o TEK global sabit (5.5, yalnızca reels için ölçülmüştü)
 # motivasyona da ÖDÜNÇ verildi, hiç doğrulanmadan — ölçünce motivasyon sahnesinin
-# doğal uzunluğunun (~8.5sn) reels karttan (~5.5sn) yapısal olarak farklı olduğu
+# doğal uzunluğunun (~4.0sn) reels karttan (~5.5sn) yapısal olarak farklı olduğu
 # görüldü (kart görselle anlatır, motivasyon sahnesi duyguyu+bağlamı+adımı yalnızca
 # sözle taşır). Artık her content_type kendi ölçülen değerini kullanıyor.
 
@@ -51,7 +51,7 @@ def budget_params(budget_seconds: float, scene_count: int, content_type: str) ->
     türetiliyordu (total_syl = budget_seconds*TR_SPS, scene_count'tan bağımsız).
     Bu, scene_count HER ZAMAN scene_count_for_budget(budget_seconds, content_type)
     ile aynıyken doğru sonuç veriyordu — ama motivasyonda min adım sayısı (2)
-    scene_count'u bazen bu "doğal" değerin ÜZERİNE zorluyor (45s/8.5≈5 ama 5 sabit+
+    scene_count'u bazen bu "doğal" değerin ÜZERİNE zorluyor (kısa bütçelerde sabit
     min 2 adım=7). O durumda AYNI total_syl'i daha büyük bir scene_count'a bölmek
     sahne başı hedefi yapay olarak düşürüyordu (28 hesaplandı, model tutarlı
     biçimde 37-39 üretti — 3 turda da aynı yönde, %32/%39/%38 sapma; rastgele

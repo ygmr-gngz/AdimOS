@@ -32,6 +32,8 @@ export const SCENE_REGISTRY: Record<string, CompositionRegistryEntry> = {
       "LessonCardScene",
       "LessonExampleScene",
       "LessonSummaryScene",
+      "LessonInfographicScene",
+      "LessonMindMapScene",
       "AccountCardScene",
       "TableScene",
       "JournalEntryScene",

@@ -8,6 +8,8 @@ import { LessonConceptScene } from '../scenes/LessonConceptScene'
 import { LessonCardScene } from '../scenes/LessonCardScene'
 import { LessonExampleScene } from '../scenes/LessonExampleScene'
 import { LessonSummaryScene } from '../scenes/LessonSummaryScene'
+import { LessonInfographicScene } from '../scenes/LessonInfographicScene'
+import { LessonMindMapScene } from '../scenes/LessonMindMapScene'
 // Geriye dönük uyumluluk — eski pipeline bu tip üretiyordu
 import { SplitLessonScene } from '../scenes/SplitLessonScene'
 // Eski sahne tipleri — ortak varlıktan kullanılmaya devam ediyor
@@ -30,6 +32,8 @@ function LessonSceneRenderer({ scene, brand }: { scene: Scene; brand: Storyboard
     case 'LessonCardScene':    return <LessonCardScene {...p} />
     case 'LessonExampleScene': return <LessonExampleScene {...p} />
     case 'LessonSummaryScene': return <LessonSummaryScene {...p} />
+    case 'LessonInfographicScene': return <LessonInfographicScene {...p} />
+    case 'LessonMindMapScene': return <LessonMindMapScene {...p} />
 
     // ── Geriye dönük uyumluluk — eski pipeline SplitLessonScene üretiyordu ──
     case 'SplitLessonScene': return <SplitLessonScene {...p} />

@@ -88,7 +88,7 @@ export function EducationalReel120({ storyboard }: Props) {
   const timings = getSceneTimings(scenes)
 
   return (
-    <AbsoluteFill style={{ background: '#0B2A4A', overflow: 'hidden' }}>
+    <AbsoluteFill style={{ background: '#FFFFFF', overflow: 'hidden' }}>
       {timings.map(({ scene, start, durationFrames }) => {
         // Ses, bileşenden BAĞIMSIZ olarak burada (composition/Sequence seviyesinde)
         // render edilir. 2026-08-07 postmortem: <Audio> önceden yalnızca
@@ -106,7 +106,7 @@ export function EducationalReel120({ storyboard }: Props) {
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               <ReelScene scene={scene as any} brand={brand} />
               {!CARD_BASED_COMPONENTS.has(scene.component as string) && (
-                <BrandWatermark theme="dark" opacity={0.08} logoUrl={brand?.logo_url} />
+                <BrandWatermark theme="light" opacity={0.08} logoUrl={brand?.logo_url} />
               )}
             </AbsoluteFill>
           </Sequence>
@@ -135,7 +135,7 @@ export function EducationalReel120({ storyboard }: Props) {
       })}
 
       {/* Logo sağ üstte + sosyal footer — filigran per-sahne yukarıda (kart olmayan sahnelerde) */}
-      <BrandOverlay brand={brand} theme="dark" logoSize={120} showFooter showWatermark={false} />
+      <BrandOverlay brand={brand} theme="light" logoSize={120} showFooter showWatermark={false} />
     </AbsoluteFill>
   )
 }

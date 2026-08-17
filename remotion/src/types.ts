@@ -60,6 +60,8 @@ export type SceneComponent =
   | 'LessonCardScene'
   | 'LessonExampleScene'
   | 'LessonSummaryScene'
+  | 'LessonInfographicScene'
+  | 'LessonMindMapScene'
   // Pedagojik matematik çözümü (tahta)
   | 'ChalkboardSolutionScene'
   // 2 Dakikalık Eğitim Reels

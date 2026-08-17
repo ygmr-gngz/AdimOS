@@ -22,6 +22,7 @@ interface Props { scene: Scene; brand: BrandConfig }
 
 const ACCENT = PALETTE.ACCENT   // #2B7FE0
 const WHITE  = '#FFFFFF'
+const NAVY   = '#001645'
 
 // ── Ken Burns (zoom/pan) efekti ─────────────────────────────
 function useKenBurns(motion: string | undefined) {
@@ -84,6 +85,9 @@ export function EducationalReelScene({ scene, brand }: Props) {
 
   const seg = scene.segment_type
   const { accent, badge, badgeText, labelText } = segmentStyle(seg)
+  const isTextOnly = !visual?.visual_url
+  const foreground = isTextOnly ? NAVY : WHITE
+  const secondaryForeground = isTextOnly ? 'rgba(0,22,69,0.78)' : 'rgba(255,255,255,0.92)'
 
   // Animasyon: fade-in
   const fadeIn = interpolate(frame, [0, 18], [0, 1], { extrapolateRight: 'clamp' })
@@ -127,10 +131,10 @@ export function EducationalReelScene({ scene, brand }: Props) {
           }} />
         </div>
       ) : (
-        /* visual_source='text_only' — KASITLI lacivert zemin (hook/cta), fallback DEĞİL */
+        /* visual_source='text_only' — KASITLI beyaz zemin, fallback DEĞİL */
         <div style={{
           position: 'absolute', inset: 0,
-          background: 'linear-gradient(160deg, #0B2A4A 0%, #0D1F3C 45%, #0A1628 100%)',
+          background: '#FFFFFF',
         }} />
       )}
 
@@ -167,10 +171,10 @@ export function EducationalReelScene({ scene, brand }: Props) {
               textAlign: 'center',
             }}>
               <div style={{
-                fontSize: 52, fontWeight: 900, color: WHITE,
+                fontSize: 52, fontWeight: 900, color: foreground,
                 fontFamily: brand.font_heading,
                 lineHeight: 1.2, textAlign: 'center',
-                textShadow: '0 2px 20px rgba(0,0,0,0.5)',
+                textShadow: isTextOnly ? 'none' : '0 2px 20px rgba(0,0,0,0.5)',
               }}>
                 {scene.hook_text}
               </div>
@@ -192,7 +196,7 @@ export function EducationalReelScene({ scene, brand }: Props) {
             <>
               {scene.title && (
                 <div style={{
-                  fontSize: 38, fontWeight: 800, color: WHITE,
+                  fontSize: 38, fontWeight: 800, color: foreground,
                   fontFamily: brand.font_heading,
                   lineHeight: 1.3,
                   borderLeft: `5px solid ${accent}`,
@@ -217,7 +221,7 @@ export function EducationalReelScene({ scene, brand }: Props) {
                           background: accent, flexShrink: 0, marginTop: 10,
                         }} />
                         <span style={{
-                          fontSize: 34, color: 'rgba(255,255,255,0.92)',
+                          fontSize: 34, color: secondaryForeground,
                           lineHeight: 1.55, fontWeight: 500,
                         }}>
                           {bp}
@@ -231,12 +235,12 @@ export function EducationalReelScene({ scene, brand }: Props) {
               {/* Soru metni (content sahnelerinde) */}
               {scene.question_text && !scene.bullet_points?.length && (
                 <div style={{
-                  background: 'rgba(255,255,255,0.10)',
-                  border: `1.5px solid rgba(255,255,255,0.20)`,
+                  background: isTextOnly ? '#F4F6FA' : 'rgba(255,255,255,0.10)',
+                  border: `1.5px solid ${isTextOnly ? '#E1E7F0' : 'rgba(255,255,255,0.20)'}`,
                   borderRadius: 12, padding: '18px 20px',
                 }}>
                   <p style={{
-                    fontSize: 38, color: WHITE,
+                    fontSize: 38, color: foreground,
                     lineHeight: 1.55, margin: 0, fontFamily: brand.font_heading,
                   }}>
                     {scene.question_text}
@@ -253,7 +257,7 @@ export function EducationalReelScene({ scene, brand }: Props) {
                   display: 'flex', alignItems: 'flex-start', gap: 12,
                 }}>
                   <span style={{ fontSize: 24, flexShrink: 0, marginTop: 2 }}>⚠️</span>
-                  <span style={{ fontSize: 36, color: '#FCA5A5', lineHeight: 1.5, fontWeight: 600 }}>
+                  <span style={{ fontSize: 36, color: isTextOnly ? '#991B1B' : '#FCA5A5', lineHeight: 1.5, fontWeight: 600 }}>
                     {scene.common_mistake}
                   </span>
                 </div>
@@ -268,7 +272,7 @@ export function EducationalReelScene({ scene, brand }: Props) {
                   display: 'flex', alignItems: 'flex-start', gap: 12,
                 }}>
                   <span style={{ fontSize: 24, flexShrink: 0, marginTop: 2 }}>💡</span>
-                  <span style={{ fontSize: 36, color: '#FDE68A', lineHeight: 1.5, fontWeight: 600 }}>
+                  <span style={{ fontSize: 36, color: isTextOnly ? '#92400E' : '#FDE68A', lineHeight: 1.5, fontWeight: 600 }}>
                     {scene.exam_tip}
                   </span>
                 </div>
@@ -282,7 +286,7 @@ export function EducationalReelScene({ scene, brand }: Props) {
                   borderRadius: 16, padding: '20px 24px', textAlign: 'center',
                 }}>
                   <p style={{
-                    fontSize: 40, color: WHITE, fontWeight: 800,
+                    fontSize: 40, color: foreground, fontWeight: 800,
                     fontFamily: brand.font_heading, lineHeight: 1.4, margin: 0,
                   }}>
                     {scene.cta_text}
@@ -293,7 +297,7 @@ export function EducationalReelScene({ scene, brand }: Props) {
               {/* Genel açıklama / alt not */}
               {scene.explanation && (
                 <div style={{
-                  fontSize: 30, color: 'rgba(255,255,255,0.72)',
+                  fontSize: 30, color: isTextOnly ? 'rgba(0,22,69,0.68)' : 'rgba(255,255,255,0.72)',
                   lineHeight: 1.65, fontStyle: 'italic',
                 }}>
                   {scene.explanation}

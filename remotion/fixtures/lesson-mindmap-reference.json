@@ -1,0 +1,33 @@
+{
+  "storyboard": {
+    "video_type": "konu_anlatimi",
+    "title": "Ticaret Hukukuna İlişkin Sistemler",
+    "lesson_name": "Ticaret Hukuku",
+    "topic": "Ticari İşletme Sistemleri",
+    "format": "16:9",
+    "language": "tr",
+    "brand": {
+      "primary_color": "#0B2A4A",
+      "secondary_color": "#C9A96E",
+      "background_color": "#FFFFFF",
+      "font_heading": "Noto Sans",
+      "font_body": "Noto Sans",
+      "handle": "@adimmusavir"
+    },
+    "scenes": [{
+      "id": 1,
+      "component": "LessonMindMapScene",
+      "duration_seconds": 20,
+      "title": "Ticaret Hukukuna İlişkin Sistemler",
+      "definition": "Ticaret hukukunun kapsamını belirleyen dört yaklaşım",
+      "infographic_title": "Ticaret Hukuku Sistemleri",
+      "bullet_points": [
+        "Subjektif Sistem — taciri esas alır",
+        "Objektif Sistem — ticari işlemleri esas alır",
+        "Karma Sistem — tacir ve ticari işlemleri birlikte ele alır",
+        "Modern Sistem — ticari işletmeyi esas alır",
+        "6102 sayılı TTK modern sistemi benimser"
+      ]
+    }]
+  }
+}

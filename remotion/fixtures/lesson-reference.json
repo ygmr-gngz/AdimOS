@@ -1,0 +1,32 @@
+{
+  "storyboard": {
+    "video_type": "konu_anlatimi",
+    "title": "Ticaret Hukukuna İlişkin Temel Sistemler",
+    "lesson_name": "Ticaret Hukuku",
+    "topic": "Ticari İşletme Sistemleri",
+    "format": "16:9",
+    "language": "tr",
+    "brand": {
+      "primary_color": "#0B2A4A",
+      "secondary_color": "#C9A96E",
+      "background_color": "#FFFFFF",
+      "font_heading": "Noto Sans",
+      "font_body": "Noto Sans",
+      "handle": "@adimmusavir"
+    },
+    "scenes": [{
+      "id": 1,
+      "component": "LessonInfographicScene",
+      "duration_seconds": 20,
+      "infographic_title": "Ticaret Hukukuna İlişkin Temel Sistemler",
+      "infographic_subtitle": "Ticaret hukukunun kapsamını belirlemek için tarihsel süreçte dört farklı sistem geliştirilmiştir.",
+      "cards": [
+        {"title": "Subjektif Sistem", "category": "TACİR ODAKLI", "content": "Tacir sıfatına sahip kişilerin faaliyetlerini esas alır.", "rule": "Odak: Tacir (Kişi)"},
+        {"title": "Objektif Sistem", "category": "TİCARİ İŞLEM ODAKLI", "content": "Kişinin sıfatından bağımsız biçimde ticari işlemi esas alır.", "rule": "Odak: Ticari İşlem"},
+        {"title": "Karma Sistem", "category": "SENTEZ", "content": "Taciri ve ticari işlemleri birlikte değerlendirir.", "rule": "Odak: Karma Yaklaşım"},
+        {"title": "Modern Sistem", "category": "TİCARİ İŞLETME", "content": "6102 sayılı TTK ticari işletmeyi merkeze alır.", "rule": "Türkiye'nin tercihi"}
+      ],
+      "key_point": "Türkiye, 6102 sayılı Türk Ticaret Kanunu ile modern sistemi benimser."
+    }]
+  }
+}

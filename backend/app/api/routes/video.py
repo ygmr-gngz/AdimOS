@@ -281,7 +281,7 @@ def _syllable_budget_params(
     (toplam_hece_bütçesi, sahne_başına_hece, sahne_sayısı) hesaplar.
     scene_count verilmezse content_constants.scene_count_for_budget kullanılır —
     content_type'a göre TÜR BAZLI NATURAL_SCENE_SECONDS ile (bkz. o modülün
-    docstring'i; 2026-08-08 — reels_short=5.5, motivasyon=8.5, ayrı ayrı ölçüldü).
+    docstring'i; reels_short=5.5, motivasyon=4.0, ayrı ayrı ölçüldü).
     content_type ZORUNLU: scene_count verilse bile sessiz varsayılan risk
     almamak için istenir (API'nin ne için çağrıldığı her zaman açık kalsın).
     Hece/karakter matematiği app.core.content_constants.budget_params'a
@@ -544,6 +544,27 @@ def _regen_storyboard_for_duration(
                                                           aşıldı — çağıran job'u
                                                           TTS'e göndermeden durdurmalı
     """
+    # _generate_storyboard_for_regen'in reels_short/motivasyon için üretim anında
+    # kullandığı hedef sahne sayısıyla AYNI hesap — aksi halde bu doğrulama
+    # len(scenes) (GERÇEK üretilen, modelin talimatı hiç görmezden gelmiş
+    # olabileceği sayı) kullanır ve "sahne başına X hece" mesajı üretim anında
+    # modele söylenenden farklı çıkar. NATURAL_SCENE_SECONDS'ta yoksa (konu_anlatimi
+    # gibi ölçülmemiş türler) hedef hesaplanamaz — None kalır, aşağıda kontrol edilir.
+    _target_sc: int | None = None
+    _target_total_syl: int | None = None
+    if content_type in NATURAL_SCENE_SECONDS:
+        _target_total_syl, _, _target_sc = _syllable_budget_params(corrected_seconds, content_type)
+
+    if content_type == "motivasyon":
+        # 2026-08-09 — kullanıcı hipotezi: her turda hangi hint'in gittiği ve o
+        # turun hedef_hece/sahne sayısının ne olduğu görünmüyordu. sgs-content
+        # retry'si (motivation_generator.py içinde) ile bu hece-bütçesi retry'si
+        # AYNI storyboard üzerinde art arda çalışıyor — biri diğerinin düzeltmesini
+        # bozabiliyor mu, bunu görmek için ikisi de ayrı ayrı loglanıyor.
+        logger.info(
+            "[motivation-retry] tur=%d hint_var=%s hint_metni=%r hedef_hece=%s sahne=%s",
+            turn, bool(correction_hint), correction_hint, _target_total_syl, _target_sc,
+        )
     sb_new = _generate_storyboard_for_regen(content_type, payload, brand, corrected_seconds, correction_hint, job_id)
     if sb_new is None:
         return None, None
@@ -554,12 +575,6 @@ def _regen_storyboard_for_duration(
             content_type,
         )
         return sb_new, None
-
-    # _generate_storyboard_for_regen'in reels_short için üretim anında kullandığı
-    # hedef sahne sayısıyla AYNI hesap — aksi halde bu doğrulama len(scenes) (GERÇEK
-    # üretilen, modelin talimatı hiç görmezden gelmiş olabileceği sayı) kullanır ve
-    # "sahne başına X hece" mesajı üretim anında modele söylenenden farklı çıkar.
-    _, _, _target_sc = _syllable_budget_params(corrected_seconds, content_type)
 
     feedback = correction_hint
     for attempt in (1, 2):
@@ -577,6 +592,11 @@ def _regen_storyboard_for_duration(
             return sb_new, None
         if attempt == 1:
             feedback = detail or feedback
+            if content_type == "motivasyon":
+                logger.info(
+                    "[motivation-retry] tur=%d hint_var=%s hint_metni=%r hedef_hece=%s sahne=%s (ic-deneme=2/2)",
+                    turn, bool(feedback), feedback, _target_total_syl, _target_sc,
+                )
             sb_new = _generate_storyboard_for_regen(content_type, payload, brand, corrected_seconds, feedback, job_id)
             if sb_new is None:
                 return None, None
@@ -1322,17 +1342,20 @@ def _run_pipeline_inner(
                     turn=_dur_turn, job_id=job_id,
                 )
                 if _budget_exceeded is not None:
+                    _deviation_pct = float(_budget_exceeded["deviation_pct"])
+                    _direction = "aşıldı" if _deviation_pct > 0 else "yetersiz kaldı"
+                    _difference = "fazla" if _deviation_pct > 0 else "eksik"
                     logger.error(
-                        "[syllable-budget] %s job durduruldu — 2 denemede de bütçe aşıldı: %s",
-                        job_id[:8], _budget_exceeded,
+                        "[syllable-budget] %s job durduruldu — 2 denemede de bütçe %s: %s",
+                        job_id[:8], _direction, _budget_exceeded,
                     )
                     _set_status(job_id, "failed", {
                         "error_code": "duration_validation_failed",
                         "error_message": (
-                            f"Storyboard yeniden üretiminde hece bütçesi 2 denemede de aşıldı "
+                            f"Storyboard yeniden üretiminde hece bütçesi 2 denemede de {_direction} "
                             f"(hedef {_budget_exceeded['target_syllables']} hece, "
                             f"üretilen {_budget_exceeded['actual_syllables']} hece, "
-                            f"%{_budget_exceeded['deviation_pct']:.0f} fazla). "
+                            f"%{abs(_deviation_pct):.0f} {_difference}). "
                             "TTS'e gönderilmedi."
                         ),
                         "admin_detail": {"budget_exceeded": _budget_exceeded},

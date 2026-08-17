@@ -26,5 +26,5 @@ TYPE_DURATIONS: dict[str, dict] = {
 # yalnızca söz mü taşıyor) — bkz. content-types.json *_note alanları.
 NATURAL_SCENE_SECONDS: dict[str, float] = {
     'reels_short': 5.5,
-    'motivasyon': 8.5,
+    'motivasyon': 4.0,
 }

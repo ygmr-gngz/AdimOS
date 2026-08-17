@@ -42,25 +42,43 @@ _STEP_ORDINAL_RE = re.compile(
 _TIME_KALA_RE = re.compile(r"sınava\s+\d+\s+gün\s+kala", re.IGNORECASE)
 
 
+def _voice_text(scene: dict) -> str:
+    """Pipeline'ın TTS'e göndereceği tek metni döndürür.
+
+    Yeni motivasyon storyboard'larında kaynak alan ``narration``. ``spoken_text``
+    eski kayıtları okuyabilmek için yalnızca geriye dönük yedektir; iki alan asla
+    birleştirilmez. video.py'nin ``voice_text = narration or spoken_text``
+    sözleşmesiyle birebirdir.
+    """
+    return (scene.get("voice_text") or scene.get("narration") or scene.get("spoken_text") or "").strip()
+
+
 def _find_step_ordinal_leak(scenes: list[dict]) -> list[str]:
-    """MotivationStepScene narration/spoken_text'inde sıra ifadesi sızıntısı var mı?"""
+    """MotivationStepScene'in gerçek TTS metninde sıra ifadesi sızıntısı var mı?"""
     hits = []
     for s in scenes:
         if s.get("component") != "MotivationStepScene":
             continue
-        for field in ("narration", "spoken_text"):
-            text = s.get(field) or ""
-            if _STEP_ORDINAL_RE.search(text):
-                hits.append(f"{s.get('id', '?')}.{field}: '{text[:60]}'")
+        text = _voice_text(s)
+        if _STEP_ORDINAL_RE.search(text):
+            hits.append(f"{s.get('id', '?')}.voice_text: '{text[:60]}'")
     return hits
 
 
 def _all_text(scenes: list[dict]) -> str:
-    parts = []
-    for s in scenes:
-        parts.append(s.get("narration") or "")
-        parts.append(s.get("spoken_text") or "")
-    return " ".join(parts)
+    """SGS ve hece kontrolleri için gerçek TTS metinlerinin birleşimi."""
+    return " ".join(filter(None, (_voice_text(s) for s in scenes)))
+
+
+# video.py._syllable_count ile aynı mantık — oradan import edilmiyor çünkü video.py
+# zaten bu modülü import ediyor (döngüsel import olurdu). Türkçe ünlü kümesi
+# değişmeyeceği için kontrollü, gerekçeli bir tekrar (bkz. parseTurkishAmount
+# Python/TS tekrarı, aynı sınıf gerekçe).
+_TR_VOWELS = frozenset("aeıioöuüAEIİOÖUÜ")
+
+
+def _syllable_count(text: str) -> int:
+    return sum(1 for ch in text if ch in _TR_VOWELS)
 
 
 def _find_sgs_elements(full_text: str) -> set[str]:
@@ -130,7 +148,6 @@ Aşağıdaki sahne şablonunu AYNEN uygula. Her sahne için:
 - component: tam adı (değiştirme)
 - title: ekranda büyük gösterilen kısa başlık (max 8 kelime)
 - narration: seslendirilecek Türkçe metin (ekran gösterimi için)
-- spoken_text: TTS'e gidecek hece bütçesine uygun metin (narration ile aynı olabilir)
 - image_search_query: arka plan fotoğrafı için İngilizce arama terimi
 
 SAHNE ŞABLONU ({scene_count} sahne — akış hook → problem → empati → {step_count} adım → odak → outro):
@@ -146,13 +163,13 @@ sahne türüne göre "kısa/uzun sahne" diye ayrı bir süre varsayma, hepsi eş
 {outro_num}. MotivationOutroScene — Kapanış.
 
 MotivationStepScene KURALI (ÖNEMLİ): Ekrandaki rozet (1/2/3) ve "ADIM N" etiketi
-step_number alanından otomatik üretilir — narration/spoken_text içinde SIRA
+step_number alanından otomatik üretilir — narration içinde SIRA
 İFADESİ KULLANMA: "Adım bir/iki/üç", "Birinci/İkinci/Üçüncü adım", "1. adım",
 "İkinci olarak" gibi ifadeler YASAK. Metin doğrudan eylemle başlasın.
 Yanlış: "İkinci adım: Her gün belirli saatte çalış."
 Doğru: "Her gün belirli saatte çalış."
 
-SGS UNSURU (ZORUNLU): Tüm video boyunca (narration/spoken_text toplamında) EN AZ
+SGS UNSURU (ZORUNLU): Tüm video boyunca seslendirilecek narration metninde EN AZ
 İKİ farklı somut SGS unsuru geçmeli. Aşağıdaki listeden seç, uydurma:
 {sgs_terms}
 
@@ -176,7 +193,6 @@ JSON formatı (bu şemayı AYNEN kullan):
       "component": "MotivationHookScene",
       "title": "Başlık metni",
       "narration": "Seslendirilecek metin. Tam cümle, noktalama ile.",
-      "spoken_text": "TTS versiyonu — rakamlar Türkçe yazılı.",
       "image_search_query": "student studying motivation desk"
     }}
   ]
@@ -185,7 +201,8 @@ JSON formatı (bu şemayı AYNEN kullan):
 step_number alanını MotivationStepScene sahnelerine ekle (1'den {step_count}'e kadar sırayla).
 step_title alanını MotivationStepScene sahnelerine ekle (max 6 kelime, adımın özeti).
 cta_text alanını MotivationOutroScene sahnesine ekle (yukarıdaki 8 kapanıştan biri, HARFİYEN).
-Tüm metinler Türkçe. spoken_text'te kısaltmalar açık yazılsın (KDV→ka de ve)."""
+Tüm metinler Türkçe. TTS telaffuz normalizasyonu pipeline'da merkezi olarak uygulanır;
+ayrı spoken_text alanı üretme."""
 
 
 def _build_step_scenes_block(step_count: int) -> str:
@@ -257,7 +274,7 @@ def generate_motivation_storyboard(
     budget_note = (
         f"HECE BÜTÇESİ (ZORUNLU): Toplam {total_syl} hece "
         f"({duration:.0f}s × {TR_SPS:.2f} hece/s, {scene_count} sahne).\n"
-        f"Her sahne metninde (narration/spoken_text) yaklaşık {syl_per_scene} hece kullan "
+        f"Her sahnenin narration metninde yaklaşık {syl_per_scene} hece kullan "
         f"(±{tolerance} tolerans, yani {syl_per_scene - tolerance}–{syl_per_scene + tolerance} arası).\n"
         f"Türkçede hece = metindeki ünlü harf sayısı (a,e,ı,i,o,ö,u,ü).\n"
         f"KARAKTER UZUNLUĞU: Her sahne metni YAKLAŞIK {target_chars} karakter olmalı "
@@ -294,7 +311,15 @@ def generate_motivation_storyboard(
         job_id[:8] if job_id else "-", duration, scene_count, step_count,
         total_syl, syl_per_scene, bool(correction_hint), len(user_msg),
     )
-    logger.debug("[motivation-prompt] tam metin:\n%s", user_msg)
+    # 2026-08-08: DEBUG seviyesi canlıda muhtemelen kapalı — tam metin hiç loglanmıyordu.
+    # INFO'ya çekildi ama şişmesin diye 3 parçaya ayrıldı: (1) HECE BÜTÇESİ bölümü ve
+    # (2) correction_hint HER ZAMAN TAM logланır (kesilmez — kritik olan tam olarak bunlar,
+    # sırayla/çelişerek mi gidiyorlar görmek için), (3) promptun geri kalanından yalnızca
+    # ilk 1500 karakterlik önizleme.
+    logger.info("[motivation-prompt] hece_butcesi_bolumu:\n%s", budget_note)
+    if correction_hint:
+        logger.info("[motivation-prompt] correction_hint_tam:\n%s", correction_hint)
+    logger.info("[motivation-prompt] onizleme_ilk_1500:\n%s", user_msg[:1500])
 
     result: dict = {}
     scenes: list[dict] = []
@@ -333,6 +358,19 @@ def generate_motivation_storyboard(
         outro = _find_outro_scene(scenes)
         cta_text = (outro or {}).get("cta_text") or ""
         cta_ok = cta_text.strip() in CLOSING_BANK
+
+        # 2026-08-09 — kullanıcı hipotezi: sgs-content düzeltme turu (aşağıda,
+        # SGS unsuru/cta için modele geri besleme) metni kısaltıyor olabilir,
+        # ve bu kısalmış metin SONRA (bu fonksiyonun dışında, video.py
+        # _check_syllable_budget'ta) hece bütçesine göre ölçülüyor — iki
+        # zincir birbirinden habersiz. Bunu doğrudan ölçmek için her deneme
+        # sonunda hece sayısı loglanıyor — deneme 1→2 arası düşüş varsa
+        # (SGS/cta düzeltmesi TAM OLARAK bunu yapıyorsa) burada görünür.
+        _attempt_syl = _syllable_count(full_text)
+        logger.info(
+            "[motivation-attempt] job=%s deneme=%d/2 hece=%d hedef_hece=%d sgs_sayisi=%d cta_ok=%s",
+            job_id[:8] if job_id else "-", attempt, _attempt_syl, total_syl, len(sgs_elements), cta_ok,
+        )
 
         problems: list[str] = []
         if len(sgs_elements) < 2:

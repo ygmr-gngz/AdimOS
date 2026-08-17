@@ -35,6 +35,7 @@ CONTENT_PIPELINES: dict[str, dict] = {
             # geriye dönük uyumluluk — lesson_storyboard.py sahneleri
             "LessonTitleScene", "LessonConceptScene", "LessonSummaryScene",
             "LessonCardScene", "LessonExampleScene",
+            "LessonInfographicScene", "LessonMindMapScene",
             "TAccountScene", "CalculationStepsScene",
             # SGS konu anlatımı (sgs.py) — maks. 4 sahne, tek bileşen tekrarı validate_routing ile yakalanır
             "SplitLessonScene",
@@ -71,7 +72,7 @@ CONTENT_PIPELINES: dict[str, dict] = {
         "aspect": "9:16",
         "fps": 30,
         "duration_range": (30, 90),  # shared/content-types.json motivasyon.duration ile aynı (2026-08-08: 130→90)
-        "scene_count_range": (12, 20),
+        "scene_count_range": (8, 23),
         "avg_scene_seconds": (4, 7),
         "allowed_scenes": [
             "MotivationHookScene", "MotivationProblemScene", "MotivationEmpathyScene",

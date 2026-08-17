@@ -1,0 +1,41 @@
+{
+  "storyboard": {
+    "video_type": "quiz",
+    "title": "2026-1 / SORU:41",
+    "lesson_name": "Şirket Muhasebesi",
+    "topic": "I. Tertip Yasal Yedek Akçe",
+    "format": "16:9",
+    "language": "tr",
+    "brand": {
+      "primary_color": "#0B2A4A",
+      "secondary_color": "#C9A96E",
+      "background_color": "#FDFDFB",
+      "font_heading": "Noto Sans",
+      "font_body": "Noto Sans",
+      "handle": "@adimmusavir"
+    },
+    "scenes": [{
+      "id": 1,
+      "component": "ChalkboardSolutionScene",
+      "duration_seconds": 60,
+      "question_number": 41,
+      "context_text": "İşletmenin 2025 yılı sonunda ödenmiş sermayesi 800.000 ₺ olup dönem net kârı 240.000 ₺'dir. Geçmiş yıllar zararı bulunmayan işletmenin daha önce ayrılmış I. Tertip Yasal Yedek Akçe toplamı 150.000 ₺'dir.",
+      "question_text": "Buna göre işletmenin 2025 yılında ayırması gereken I. Tertip Yasal Yedek Akçe tutarı kaç ₺'dir?",
+      "options": [
+        {"label": "A", "text": "10.000"},
+        {"label": "B", "text": "12.000"},
+        {"label": "C", "text": "24.000"},
+        {"label": "D", "text": "48.000"},
+        {"label": "E", "text": "160.000"}
+      ],
+      "correct_label": "A",
+      "answer": "A — 10.000 ₺",
+      "chalkboard_steps": [
+        {"board_text": "Tavan = 800.000 × %20 = 160.000", "step_type": "solve"},
+        {"board_text": "Yıllık pay = 240.000 × %5 = 12.000", "step_type": "solve"},
+        {"board_text": "Kalan kapasite = 160.000 − 150.000 = 10.000", "step_type": "solve"},
+        {"board_text": "min(12.000, 10.000) = 10.000 ₺", "step_type": "verification"}
+      ]
+    }]
+  }
+}

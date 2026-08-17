@@ -19,6 +19,7 @@ _client = OpenAI(api_key=settings.OPENAI_API_KEY)
 _VALID_COMPONENTS = frozenset({
     "LessonTitleScene", "LessonConceptScene", "LessonCardScene",
     "LessonExampleScene", "LessonSummaryScene",
+    "LessonInfographicScene", "LessonMindMapScene",
 })
 
 # Bilinen eşdeğer adlar → kanonik bileşen (registry veya LLM kalıntısı)
@@ -158,11 +159,31 @@ VİDEO BİLGİSİ:
      kapanış yapabilirsin (100-140 kelime)
    - duration_seconds: 0  (TTS sonrası hesaplanır — bu alanı 0 bırak)
 
+6. LessonInfographicScene (1-2 adet — kavramları görsel olarak karşılaştır):
+   - infographic_title: ana başlık
+   - infographic_subtitle: 1-2 cümlelik bağlam
+   - cards: 3-4 kavram; her kartta title, category, content ve rule zorunlu
+   - key_point: sağ/alt vurgu kutusundaki sınav sonucu
+   - voice_text: kavramları sırayla karşılaştır (120-180 kelime)
+   - duration_seconds: 0
+   - Kullanım: hukuk sistemleri, hesap türleri, yöntem karşılaştırmaları.
+
+7. LessonMindMapScene (1 adet — konu ağacını göster):
+   - title: haritanın başlığı
+   - infographic_title: merkez düğüm
+   - definition: kısa giriş
+   - bullet_points: 4-6 dal; her dal tek, somut kavram cümlesi
+   - voice_text: dallar arasındaki ilişkiyi açıkla (100-150 kelime)
+   - duration_seconds: 0
+   - Kullanım: alt konu haritası ve dersin genel sistemi. Serbest görsel/prompt üretme.
+
 ════════ SAHNE SAYISI VE EKRAN KULLANIMI KILAVUZU ════════
 {target_minutes} dakika için ZORUNLU sahne dizisi (10-18 sahne):
 - 1 LessonTitleScene (~25s)
 - 4-6 LessonConceptScene (her biri ~90-120s — kavram başına ayrı sahne, alt konuları böl)
 - 2-3 LessonCardScene (her biri ~75s — tablo/liste içerikleri için)
+- 1-2 LessonInfographicScene (kavram karşılaştırması)
+- 1 LessonMindMapScene (konu haritası)
 - 4-6 LessonExampleScene (her biri ~110-140s — her örnek için ayrı sahne)
 - 1 LessonSummaryScene (~60s)
 
@@ -229,6 +250,28 @@ BU KURALLAR İHLAL EDİLİRSE İÇERİK RENDERLENMEYECEK.
         {{"code": "600", "name": "    Yurt İçi Satışlar", "credit": 15000, "indent": true}}
       ],
       "explanation": "...",
+      "voice_text": "...",
+      "duration_seconds": 0
+    }},
+    {{
+      "component": "LessonInfographicScene",
+      "infographic_title": "Ticaret Hukukuna İlişkin Temel Sistemler",
+      "infographic_subtitle": "Sistemler kapsam ölçütüne göre ayrılır.",
+      "cards": [
+        {{"title": "Subjektif Sistem", "category": "TACİR ODAKLI", "content": "Tacir sıfatını esas alır.", "rule": "Odak: kişi"}},
+        {{"title": "Objektif Sistem", "category": "İŞLEM ODAKLI", "content": "Ticari işlemi esas alır.", "rule": "Odak: eylem"}},
+        {{"title": "Modern Sistem", "category": "İŞLETME ODAKLI", "content": "Ticari işletmeyi esas alır.", "rule": "6102 sayılı TTK"}}
+      ],
+      "key_point": "Türkiye modern sistemi benimser.",
+      "voice_text": "...",
+      "duration_seconds": 0
+    }},
+    {{
+      "component": "LessonMindMapScene",
+      "title": "Konu Haritası",
+      "infographic_title": "Ticaret Hukukuna İlişkin Sistemler",
+      "definition": "Dört temel yaklaşım bulunur.",
+      "bullet_points": ["Subjektif sistem: taciri esas alır", "Objektif sistem: ticari işlemi esas alır", "Karma sistem: tacir ve işlemi birlikte esas alır", "Modern sistem: ticari işletmeyi esas alır"],
       "voice_text": "...",
       "duration_seconds": 0
     }},

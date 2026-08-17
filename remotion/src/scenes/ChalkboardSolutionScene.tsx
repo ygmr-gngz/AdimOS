@@ -44,30 +44,26 @@ function QuestionPanel({ scene, brand, fadeIn }: {
   const options = scene.options ?? []
   return (
     <div style={{
-      width: '38%', height: '100%',
-      background: L.BG,
+      width: '56%', height: '100%',
+      background: '#FDFDFB',
       display: 'flex', flexDirection: 'column',
-      padding: '40px 32px',
-      borderRight: `3px solid ${L.NAVY}`,
+      padding: '74px 64px 42px',
       position: 'relative', zIndex: 2,
       opacity: fadeIn,
     }}>
-      {/* Üst lacivert şerit */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, background: L.NAVY }} />
-
       {/* Soru etiketi */}
       <div style={{
         display: 'inline-flex', alignItems: 'center', gap: 8,
-        background: L.NAVY, borderRadius: 20,
-        padding: '5px 16px', marginBottom: 14, alignSelf: 'flex-start',
+        background: 'transparent', borderRadius: 0,
+        padding: 0, marginBottom: 22, alignSelf: 'flex-start',
       }}>
         {scene.question_number && (
           <span style={{ fontSize: 12, fontWeight: 900, color: L.GOLD, fontFamily: 'Lato', letterSpacing: 1 }}>
-            {scene.question_number}.
+            {scene.question_number}
           </span>
         )}
         <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', fontFamily: 'Lato', letterSpacing: 1.5 }}>
-          SORU
+          SORU METNİ
         </span>
       </div>
 
@@ -243,11 +239,13 @@ function ChalkboardPanel({ steps, frame, totalFrames, brand }: {
 
   return (
     <div style={{
-      flex: 1, height: '100%',
-      background: '#F9FAFB',
+      width: '44%', height: 'calc(100% - 80px)',
+      background: '#FDFDFB',
       display: 'flex', flexDirection: 'column',
-      padding: '40px 44px 32px',
-      position: 'relative', zIndex: 2,
+      padding: '48px 46px 36px',
+      margin: '40px 34px 40px 0',
+      border: '9px solid #111111', borderRadius: 30,
+      position: 'relative', zIndex: 2, boxSizing: 'border-box',
     }}>
       {/* Tahta başlığı */}
       <div style={{
@@ -255,8 +253,8 @@ function ChalkboardPanel({ steps, frame, totalFrames, brand }: {
       }}>
         <div style={{ width: 5, height: 28, borderRadius: 3, background: L.NAVY }} />
         <span style={{
-          fontSize: 14, fontWeight: 800, color: L.NAVY,
-          fontFamily: 'Lato', letterSpacing: 3, textTransform: 'uppercase',
+          fontSize: 44, fontWeight: 900, color: '#111111',
+          fontFamily: 'Lato', letterSpacing: 1, textTransform: 'uppercase',
         }}>
           Çözüm
         </span>
@@ -378,7 +376,7 @@ export function ChalkboardSolutionScene({ scene, brand }: Props) {
   return (
     <div style={{
       width: '100%', height: '100%',
-      background: L.BG,
+      background: '#A3DBFA',
       display: 'flex', flexDirection: 'column',
       fontFamily: MATH_FONT,
       overflow: 'hidden', position: 'relative',
@@ -386,17 +384,20 @@ export function ChalkboardSolutionScene({ scene, brand }: Props) {
       {/* Marka filigranı */}
       {/* BrandOverlay composition seviyesinde eklenir */}
 
-      {/* Üst lacivert şerit */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, background: L.NAVY, zIndex: 10 }} />
-      {/* Alt altın şerit */}
       <div style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0, height: 3, zIndex: 10,
-        background: `linear-gradient(90deg, transparent, ${L.GOLD} 25%, ${L.GOLD} 75%, transparent)`,
-        opacity: 0.7,
-      }} />
+        position: 'absolute', top: 6, left: 0, right: 0, zIndex: 20,
+        textAlign: 'center', fontFamily: 'Lato', fontWeight: 900,
+        fontSize: 42, color: '#111111',
+      }}>
+        {scene.question_number ? `SORU: ${scene.question_number}` : 'SORU ÇÖZÜMÜ'}
+      </div>
 
       {/* Ana satır: sol + sağ panel */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div style={{
+        display: 'flex', flex: 1, overflow: 'hidden',
+        margin: '58px 60px 42px', background: '#FDFDFB',
+        border: '10px solid #111111', borderRadius: 32,
+      }}>
         <QuestionPanel scene={scene} brand={brand} fadeIn={fadeIn} />
         <ChalkboardPanel steps={steps} frame={frame} totalFrames={totalFrames} brand={brand} />
       </div>

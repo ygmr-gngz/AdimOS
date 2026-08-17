@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-11T08:10:50.677Z",
+  "generated_at": "2026-08-17T12:58:55.091Z",
   "remotion_version": "4.0.488",
   "compositions": [
     {
@@ -11,6 +11,8 @@
         "LessonCardScene",
         "LessonExampleScene",
         "LessonSummaryScene",
+        "LessonInfographicScene",
+        "LessonMindMapScene",
         "AccountCardScene",
         "TableScene",
         "JournalEntryScene",
