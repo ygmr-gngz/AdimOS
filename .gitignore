@@ -12,3 +12,5 @@ outputs/
 backend/_rejected_previews/
 backend/_pending_registration/
 *.tsbuildinfo
+.pnpm-store/
+tmp/

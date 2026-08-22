@@ -665,11 +665,11 @@ const WIZARD_TYPES: { type: VideoType; label: string; desc: string }[] = [
 
 const INFOGRAPHIC_TEMPLATES: { value: string; label: string; desc: string }[] = [
   { value: 'card_grid',          label: 'Carousel — Hesap Kartları', desc: 'Mevcut çoklu muhasebe kartı yapısı' },
-  { value: 'illustrated',        label: 'İllüstrasyonlu İnfografik', desc: 'Örnekteki gibi ikonlu, güçlü kapaklı 5 kart' },
+  { value: 'illustrated',        label: 'İllüstrasyonlu İnfografik', desc: 'El çizimi stilde kapak, anlatım, örnek ve ipucu — 6 kart' },
   { value: 'mind_map',           label: 'Konu Haritası',             desc: 'Ana kavram ve bağlantılı alt başlıklar' },
   { value: 'process',            label: 'Süreç Akışı',               desc: 'Girdi, işlem ve sonucu adım adım anlat' },
   { value: 'accounting_solution',label: 'Muhasebe Çözüm Kartı',      desc: 'Verilenler, hesaplama, kayıt ve sonuç' },
-  { value: 'comparison',         label: 'Karşılaştırma',              desc: 'İki kavramı 5 kartta karşılaştır' },
+  { value: 'comparison',         label: 'Karşılaştırma',              desc: 'İki kavramı 6 kartlık öğretici akışta karşılaştır' },
   { value: 'formula_example',    label: 'Formül ve Örnek',            desc: 'Formül, değişkenler ve çözümlü örnek' },
   { value: 'exam_tip',           label: 'Sınav İpucu',                desc: 'Sık hata, doğru kural ve akılda kalıcı ipucu' },
 ]

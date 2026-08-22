@@ -1097,11 +1097,50 @@ def _run_pipeline_inner(
         # ── 0. İnfografik / Görsel post (TTS yok, Remotion olmadan doğrudan hazır) ──
         if content_type == "gorsel_post":
             _set_status(job_id, "scripting")
+            topic = payload.topic or payload.title or "Genel Muhasebe"
+            template = payload.infographic_template or "card_grid"
+
+            # Premium seçenekler koyu Remotion şablonu değil, doğrudan altı
+            # adet 4:5 raster poster üretir. Böylece panel önizlemesi ile
+            # Instagram'a giden dosya birebir aynıdır.
+            from app.modules.content.illustrated_carousel import (
+                CAROUSEL_MODES,
+                generate_carousel_pngs,
+            )
+            if template in CAROUSEL_MODES:
+                plan, still_urls = generate_carousel_pngs(job_id, topic, template)
+                storyboard = {
+                    "video_type": "gorsel_post",
+                    "title": topic,
+                    "format": "4:5",
+                    "language": "tr",
+                    "render_mode": "raster_carousel",
+                    "scenes": [
+                        {"id": index, "component": "RasterCarouselCard", **card}
+                        for index, card in enumerate(plan["cards"], 1)
+                    ],
+                }
+                existing = sb.table("video_jobs").select("publish_package").eq("id", job_id).execute()
+                prior_package = (existing.data or [{}])[0].get("publish_package") or {}
+                sb.table("video_jobs").update({
+                    "storyboard": storyboard,
+                    "publish_package": {
+                        **prior_package,
+                        "card_stills": still_urls,
+                        "card_stills_background": "ivory_ink",
+                        "carousel_mode": template,
+                    },
+                    "updated_at": "now()",
+                }).eq("id", job_id).execute()
+                if len(still_urls) != 6:
+                    raise RuntimeError("Premium carousel PNG seti eksik; altı kart tamamlanmadı.")
+                _set_status(job_id, "ready_for_review")
+                logger.info("[video] %s premium carousel hazır — 6 PNG", job_id[:8])
+                return
+
             storyboard = payload.pre_storyboard or {}
             if not storyboard:
                 from app.modules.content.infographic_generator import generate_infographic_storyboard
-                topic = payload.topic or payload.title or "Genel Muhasebe"
-                template = payload.infographic_template or "card_grid"
                 # card_grid artık onaylı AccountCardScene anatomisini üretir.
                 # Görsel post, storyboard JSON ile "hazır" sayılmaz; aşağıda
                 # gerçek PNG still'leri oluşmadan ready_for_review verilmez.

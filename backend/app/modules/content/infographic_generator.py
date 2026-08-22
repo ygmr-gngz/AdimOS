@@ -189,16 +189,16 @@ def generate_infographic_storyboard(
     Remotion InfographicVideo storyboard JSON döndürür.
     template: card_grid | comparison | process
     """
+    if template in _CAROUSEL_MODE_INSTRUCTIONS:
+        raise RuntimeError(
+            "Premium carousel modları storyboard/Remotion hattından çağrılamaz; "
+            "illustrated_carousel raster hattını kullanın."
+        )
+
     context = _rag_context(topic)
     component = _TEMPLATE_TO_COMPONENT.get(template, "InfographicCardGridScene")
 
-    if template in _CAROUSEL_MODE_INSTRUCTIONS:
-        prompt = _CAROUSEL_PROMPT.format(
-            topic=topic,
-            context=context,
-            mode_instruction=_CAROUSEL_MODE_INSTRUCTIONS[template],
-        )
-    elif template == "comparison":
+    if template == "comparison":
         prompt = _COMPARISON_PROMPT.format(topic=topic, context=context)
     elif template == "process":
         prompt = _PROCESS_PROMPT.format(topic=topic, context=context, step_count=step_count)
@@ -247,32 +247,6 @@ def generate_infographic_storyboard(
         }
         validate_account_card_storyboard(storyboard, expected_count=card_count)
         return storyboard
-
-    if template in _CAROUSEL_MODE_INSTRUCTIONS:
-        cover = scene_data["cover"]
-        concepts = scene_data["concepts"]
-        comparison = scene_data["comparison"]
-        process = scene_data["process"]
-        finale = scene_data["finale"]
-        return {
-            "video_type": "gorsel_post",
-            "title": topic,
-            "format": format,
-            "language": "tr",
-            "brand": _BRAND,
-            "scenes": [
-                {"id": 1, "component": "InfographicCardGridScene", "duration_seconds": 8,
-                 "infographic_title": cover["title"], "infographic_subtitle": cover["subtitle"], "cards": cover["cards"]},
-                {"id": 2, "component": "InfographicCardGridScene", "duration_seconds": 8,
-                 "infographic_title": concepts["title"], "cards": concepts["cards"]},
-                {"id": 3, "component": "InfographicComparisonScene", "duration_seconds": 8,
-                 "infographic_title": comparison["title"], "comparison_left": comparison["left"], "comparison_right": comparison["right"]},
-                {"id": 4, "component": "InfographicProcessScene", "duration_seconds": 8,
-                 "infographic_title": process["title"], "process_steps": process["steps"]},
-                {"id": 5, "component": "InfographicCardGridScene", "duration_seconds": 8,
-                 "infographic_title": finale["title"], "cards": finale["cards"], "footer_note": "Kaydet ve tekrar et"},
-            ],
-        }
 
     return {
         "video_type": "lesson",
