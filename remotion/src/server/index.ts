@@ -42,6 +42,13 @@ import { TRANSITION_FRAMES, resolveSceneDurationSeconds, getSceneTimings } from 
 // Node 20'de native WebSocket yok; ws paketi transport olarak verilir.
 // Node 22'de bu satır gereksiz ama zararı yok.
 const VIDEO_BUCKET = process.env.SUPABASE_VIDEO_BUCKET || 'video-outputs'
+// Eğitim videoları çoğunlukla statik slayt + metin animasyonu. H.264 varsayılan
+// CRF 18, 10-12 dakikalık 1080p çıktıları Supabase'in proje upload limitinin
+// üstüne taşıyordu. CRF 28 metin okunabilirliğini korurken boyutu ciddi azaltır.
+const rawH264Crf = Number(process.env.H264_CRF ?? 28)
+const H264_CRF = Number.isFinite(rawH264Crf)
+  ? Math.max(18, Math.min(35, Math.round(rawH264Crf)))
+  : 28
 
 function _makeSupabase() {
   return createClient(
@@ -536,6 +543,7 @@ async function _doRender(
     composition:     compositionId,
     inputProps,
     codec:           'h264',
+    crf:             H264_CRF,
     imageFormat:     'jpeg',
     pixelFormat:     'yuv420p',
     // M5: colorSpace verilmezse Remotion'ın DEFAULT_COLOR_SPACE'i 'default'
