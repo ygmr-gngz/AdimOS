@@ -2483,7 +2483,15 @@ def render_callback(body: RenderCallback, background_tasks: BackgroundTasks):
         job_full = job_row[0] if job_row else {}
         pj = job_full.get("payload_json") or {}
         req_sec = pj.get("requested_duration_seconds")
-        tol_sec = float(pj.get("duration_tolerance_seconds") or 15.0)
+        supplied_tol = int(pj.get("duration_tolerance_seconds") or 15)
+        if req_sec:
+            from app.domain.content_type import normalize_content_type as _callback_content_type
+            callback_type = _callback_content_type(job_full.get("type", ""))
+            tol_sec = float(_effective_duration_tolerance(
+                callback_type, int(req_sec), supplied_tol,
+            ))
+        else:
+            tol_sec = float(supplied_tol)
     except Exception:
         job_full = {}
         pj = {}
@@ -2620,6 +2628,8 @@ def render_callback(body: RenderCallback, background_tasks: BackgroundTasks):
         "video_url": body.video_url,
         "actual_duration_seconds": actual_dur,
         "render_id": body.render_id,
+        "error_code": None,
+        "error_message": None,
     })
     logger.info(
         f"[video] {body.job_id[:8]} postcheck_passed → ready_for_review "
