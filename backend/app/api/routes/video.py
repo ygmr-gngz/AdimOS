@@ -1079,9 +1079,12 @@ def _run_pipeline_inner(
                 f"[video] {job_id[:8]} pre_storyboard ile devam (resume) — senaryo üretimi atlandı"
             )
         elif content_type == "soru_cozum":
-            if _questions_are_blank(payload.questions):
+            auto_questions = _questions_are_blank(payload.questions)
+            if auto_questions:
                 from app.modules.sgs.storyboard import generate_topic_quiz_questions
-                auto_count = max(3, min(6, round((payload.target_duration_minutes or 8) / 2)))
+                requested = payload.requested_duration_seconds or (payload.target_duration_minutes or 8) * 60
+                # Intro/outro ~22s, her tam tahta çözümü ölçümlerde ~65s.
+                auto_count = max(3, min(10, round((requested - 22) / 65)))
                 generated = generate_topic_quiz_questions(
                     topic=payload.topic or payload.title,
                     subject=payload.lesson_name or "SGS",
@@ -1097,6 +1100,21 @@ def _run_pipeline_inner(
                     for q in generated
                 ]
                 logger.info("[video] %s konu tabanlı %d soru otomatik üretildi", job_id[:8], len(generated))
+
+            # Soru çözüm süresi serbest metin değil soru sayısıyla belirlenir.
+            # Manuel 4 soruya 12 dakika zorlamak veya 6 soruluk videoyu 12 dakika
+            # diye doğrulamak pipeline'ı kaçınılmaz olarak düşürüyordu.
+            nominal_quiz_seconds = 22 + len(payload.questions or []) * 65
+            payload.requested_duration_seconds = nominal_quiz_seconds
+            payload.target_duration_minutes = max(1, round(nominal_quiz_seconds / 60))
+            sb.table("video_jobs").update({
+                "payload_json": payload.model_dump(mode="json"),
+                "target_duration_minutes": payload.target_duration_minutes,
+            }).eq("id", job_id).execute()
+            logger.info(
+                "[video] %s soru çözüm nominal süre=%ds soru=%d otomatik=%s",
+                job_id[:8], nominal_quiz_seconds, len(payload.questions or []), auto_questions,
+            )
             if payload.format == "9:16":
                 # Dikey kısa quiz — SplitQuizVerticalScene kalır
                 storyboard = _build_quiz_storyboard(
