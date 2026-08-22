@@ -89,6 +89,55 @@ JSON:
 
 Tam olarak {step_count} adım. Tüm metinler Türkçe."""
 
+_CAROUSEL_PROMPT = """Aşağıdaki kaynak metinden '{topic}' konusunda Instagram için 5 slaytlık eğitici carousel üret.
+
+KAYNAK:
+{context}
+
+TASARIM MODU:
+{mode_instruction}
+
+JSON:
+{{
+  "cover": {{
+    "title": "Merak uyandıran kapak başlığı (max 55 kar.)",
+    "subtitle": "Konuyu tek cümlede konumlandır (max 80 kar.)",
+    "cards": [{{"title":"Ana fikir","content":"Kısa açıklama","icon":"uygun tek emoji"}}]
+  }},
+  "concepts": {{
+    "title": "Temel Kavramlar",
+    "cards": [
+      {{"title":"Kavram","content":"15-30 kelime","rule":"Kısa kural","icon":"uygun tek emoji"}}
+    ]
+  }},
+  "comparison": {{
+    "title": "Kritik Ayrım",
+    "left": {{"title":"Sol","items":["madde 1","madde 2","madde 3"]}},
+    "right": {{"title":"Sağ","items":["madde 1","madde 2","madde 3"]}}
+  }},
+  "process": {{
+    "title": "Nasıl Uygulanır?",
+    "steps": [
+      {{"number":1,"title":"Adım","desc":"Kısa açıklama"}},
+      {{"number":2,"title":"Adım","desc":"Kısa açıklama"}},
+      {{"number":3,"title":"Sonuç","desc":"Kısa açıklama"}}
+    ]
+  }},
+  "finale": {{
+    "title": "Formül, Örnek ve Sınav İpucu",
+    "cards": [
+      {{"title":"Formül / Kural","content":"Açık ifade","example":"Sayısal veya somut örnek","tip":"Sınav ipucu","icon":"💡"}}
+    ]
+  }}
+}}
+
+Kurallar:
+- Tam olarak 5 slaytın bütün alanlarını doldur.
+- Metinleri mobil ekranda okunacak kadar kısa tut; paragraf yığını oluşturma.
+- Kaynakta olmayan mevzuat oranı, hesap kodu veya sayısal veri uydurma.
+- Kapak, kullanıcının kaydırmayı durduracağı kadar güçlü ama yanıltıcı olmayan bir kanca taşısın.
+- Tüm metinler Türkçe."""
+
 _BRAND = {
     "primary_color": "#0D1B3E",
     "secondary_color": "#2B7FE0",
@@ -101,6 +150,16 @@ _TEMPLATE_TO_COMPONENT = {
     "card_grid":  "InfographicCardGridScene",
     "comparison": "InfographicComparisonScene",
     "process":    "InfographicProcessScene",
+}
+
+_CAROUSEL_MODE_INSTRUCTIONS = {
+    "illustrated": "El çizimi hissi veren ikonlarla girdi-işlem-çıktı ilişkisini öne çıkar.",
+    "mind_map": "Ana kavram ve alt kavramlar arasındaki bağları açıkça göster.",
+    "process": "Adımları ve neden-sonuç ilişkisini öne çıkar.",
+    "accounting_solution": "Verilenler, hesaplama, yevmiye mantığı ve sonucu sırayla öğret.",
+    "comparison": "Karıştırılan iki kavramın farklarını ve ortak noktalarını öne çıkar.",
+    "formula_example": "Formülü, değişkenleri ve çözümlü sayısal örneği öne çıkar.",
+    "exam_tip": "Sık hata, doğru kural ve sınavda hatırlanacak kısa ipucunu öne çıkar.",
 }
 
 
@@ -133,7 +192,13 @@ def generate_infographic_storyboard(
     context = _rag_context(topic)
     component = _TEMPLATE_TO_COMPONENT.get(template, "InfographicCardGridScene")
 
-    if template == "comparison":
+    if template in _CAROUSEL_MODE_INSTRUCTIONS:
+        prompt = _CAROUSEL_PROMPT.format(
+            topic=topic,
+            context=context,
+            mode_instruction=_CAROUSEL_MODE_INSTRUCTIONS[template],
+        )
+    elif template == "comparison":
         prompt = _COMPARISON_PROMPT.format(topic=topic, context=context)
     elif template == "process":
         prompt = _PROCESS_PROMPT.format(topic=topic, context=context, step_count=step_count)
@@ -182,6 +247,32 @@ def generate_infographic_storyboard(
         }
         validate_account_card_storyboard(storyboard, expected_count=card_count)
         return storyboard
+
+    if template in _CAROUSEL_MODE_INSTRUCTIONS:
+        cover = scene_data["cover"]
+        concepts = scene_data["concepts"]
+        comparison = scene_data["comparison"]
+        process = scene_data["process"]
+        finale = scene_data["finale"]
+        return {
+            "video_type": "gorsel_post",
+            "title": topic,
+            "format": format,
+            "language": "tr",
+            "brand": _BRAND,
+            "scenes": [
+                {"id": 1, "component": "InfographicCardGridScene", "duration_seconds": 8,
+                 "infographic_title": cover["title"], "infographic_subtitle": cover["subtitle"], "cards": cover["cards"]},
+                {"id": 2, "component": "InfographicCardGridScene", "duration_seconds": 8,
+                 "infographic_title": concepts["title"], "cards": concepts["cards"]},
+                {"id": 3, "component": "InfographicComparisonScene", "duration_seconds": 8,
+                 "infographic_title": comparison["title"], "comparison_left": comparison["left"], "comparison_right": comparison["right"]},
+                {"id": 4, "component": "InfographicProcessScene", "duration_seconds": 8,
+                 "infographic_title": process["title"], "process_steps": process["steps"]},
+                {"id": 5, "component": "InfographicCardGridScene", "duration_seconds": 8,
+                 "infographic_title": finale["title"], "cards": finale["cards"], "footer_note": "Kaydet ve tekrar et"},
+            ],
+        }
 
     return {
         "video_type": "lesson",

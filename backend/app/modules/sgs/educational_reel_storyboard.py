@@ -311,6 +311,7 @@ _ACCOUNT_CARD_EXAMPLE = {
 CARD_COMPONENTS = {
     "AccountCardScene", "JournalEntryScene", "TableScene",
     "RuleBoxScene", "CommonMistakeScene",
+    "InfographicCardGridScene", "InfographicComparisonScene", "InfographicProcessScene",
 }
 
 

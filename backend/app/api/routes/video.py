@@ -1117,13 +1117,11 @@ def _run_pipeline_inner(
             if is_account_card_post:
                 validate_account_card_storyboard(storyboard, expected_count=3)
             sb.table("video_jobs").update({"storyboard": storyboard, "updated_at": "now()"}).eq("id", job_id).execute()
-            still_urls: list[str] = []
-            if is_account_card_post:
-                still_urls = _generate_card_stills(job_id, storyboard, background="canvas") or []
-                if len(still_urls) != len(storyboard["scenes"]):
-                    raise RuntimeError(
-                        "Görsel post PNG seti eksik; tüm hesap kartları üretilmeden yayınlanamaz."
-                    )
+            still_urls = _generate_card_stills(job_id, storyboard, background="canvas") or []
+            if len(still_urls) != len(storyboard["scenes"]):
+                raise RuntimeError(
+                    "Görsel post PNG seti eksik; tüm carousel kartları üretilmeden yayınlanamaz."
+                )
             _set_status(job_id, "ready_for_review")
             logger.info(
                 f"[video] {job_id[:8]} görsel post hazır — "

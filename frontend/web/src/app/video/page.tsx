@@ -664,9 +664,14 @@ const WIZARD_TYPES: { type: VideoType; label: string; desc: string }[] = [
 ]
 
 const INFOGRAPHIC_TEMPLATES: { value: string; label: string; desc: string }[] = [
-  { value: 'card_grid',  label: 'Kart Izgarası',  desc: 'Kategorilere ayrılmış bilgi kartları' },
-  { value: 'comparison', label: 'Karşılaştırma',  desc: 'İki kavramı yan yana karşılaştır' },
-  { value: 'process',    label: 'Süreç Adımları', desc: 'Adım adım süreç veya akış' },
+  { value: 'card_grid',          label: 'Carousel — Hesap Kartları', desc: 'Mevcut çoklu muhasebe kartı yapısı' },
+  { value: 'illustrated',        label: 'İllüstrasyonlu İnfografik', desc: 'Örnekteki gibi ikonlu, güçlü kapaklı 5 kart' },
+  { value: 'mind_map',           label: 'Konu Haritası',             desc: 'Ana kavram ve bağlantılı alt başlıklar' },
+  { value: 'process',            label: 'Süreç Akışı',               desc: 'Girdi, işlem ve sonucu adım adım anlat' },
+  { value: 'accounting_solution',label: 'Muhasebe Çözüm Kartı',      desc: 'Verilenler, hesaplama, kayıt ve sonuç' },
+  { value: 'comparison',         label: 'Karşılaştırma',              desc: 'İki kavramı 5 kartta karşılaştır' },
+  { value: 'formula_example',    label: 'Formül ve Örnek',            desc: 'Formül, değişkenler ve çözümlü örnek' },
+  { value: 'exam_tip',           label: 'Sınav İpucu',                desc: 'Sık hata, doğru kural ve akılda kalıcı ipucu' },
 ]
 
 const TYPE_DEFAULTS: Partial<Record<VideoType, { format: VideoFormat; minutes: number }>> = {
@@ -910,7 +915,11 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
             <p style={{ fontSize: 13, fontWeight: 600, color: '#475569', margin: '0 0 10px' }}>Şablon Seçin</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {INFOGRAPHIC_TEMPLATES.map(({ value, label, desc }) => {
-                const TemplateIcon = value === 'card_grid' ? LayoutGrid : value === 'comparison' ? ArrowLeftRight : ListOrdered
+                const TemplateIcon = value === 'card_grid' || value === 'mind_map'
+                  ? LayoutGrid
+                  : value === 'comparison'
+                    ? ArrowLeftRight
+                    : ListOrdered
                 return (
                   <button key={value} onClick={() => setInfographicTemplate(value)} style={{
                     textAlign: 'left', padding: '12px 16px', borderRadius: 10, cursor: 'pointer',
