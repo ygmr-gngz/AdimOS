@@ -4,25 +4,9 @@ Sonraki aşamada panelden düzenlenebilir hale getirilecek.
 Şimdilik bu dosyadan yönetilir.
 """
 
-WELCOME_MESSAGE = """Merhaba 🌿 Adım Müşavir-SGS/Eğitim Koçu'na hoş geldiniz.
+WELCOME_MESSAGE = """Merhaba 👋 Size nasıl yardımcı olabiliriz?
 
-Mesajınız bize ulaştı. Ekibimiz en kısa sürede sizinle ilgilenecek ve dönüş sağlayacaktır.
-
-Bu sırada aşağıdaki seçeneklerden size uygun olanı seçebilirsiniz:
-
-1️⃣ Randevu Almak İstiyorum
-2️⃣ Eğitimler Hakkında Bilgi Almak İstiyorum
-3️⃣ Çıkmış Sorulara Ulaşmak İstiyorum
-4️⃣ Web Sitesini İncelemek İstiyorum
-5️⃣ YouTube Kanalını Ziyaret Etmek İstiyorum
-
-Ayrıca beklerken web sitemizi ve eğitim içeriklerimizi inceleyebilirsiniz:
-
-🌐 https://www.adimmusavir.com/
-
-🎥 https://www.youtube.com/@adimmusavir
-
-Size yardımcı olmaktan memnuniyet duyarız. 😊"""
+İhtiyacınızı kısaca yazmanız yeterli."""
 
 FALLBACK_MESSAGE = """Mesajınızı aldık 🌿 Size daha doğru yardımcı olabilmemiz için lütfen aşağıdaki seçeneklerden birini yazın:
 
