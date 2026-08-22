@@ -653,7 +653,7 @@ function PreviewModal({ job, onClose, onApprove, onReject }: {
 
 type WizardStep = 'content' | 'format' | 'review'
 
-const QUIZ_OPTION_LABELS = ['A', 'B', 'C', 'D']
+const QUIZ_OPTION_LABELS = ['A', 'B', 'C', 'D', 'E']
 
 const WIZARD_TYPES: { type: VideoType; label: string; desc: string }[] = [
   { type: 'konu_anlatimi', label: 'Konu Anlatımı', desc: 'Bir konuyu baştan sona anlatan eğitim videosu' },

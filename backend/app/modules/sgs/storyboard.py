@@ -43,12 +43,12 @@ Tüm çıktılar Türkçe. Sadece geçerli JSON döndür."""
 def generate_topic_quiz_questions(topic: str, subject: str, count: int = 3) -> list[dict]:
     """Panelde manuel soru girilmediyse konuya bağlı, doğrulanabilir sorular üret."""
     prompt = f"""{subject} dersindeki "{topic}" konusu için {count} adet çoktan seçmeli SGS
-sorusu üret. Her soru dört dolu şık içersin. Tek bir doğru cevap olsun. Sayısal
+sorusu üret. Her soru beş dolu şık içersin. Tek bir doğru cevap olsun. Sayısal
 muhasebe sorularında açıklamada borç ve alacak eşitliğini açıkça kontrol et.
 
 JSON formatı:
 {{"questions":[{{"text":"...","options":[{{"label":"A","text":"..."}},
-{{"label":"B","text":"..."}},{{"label":"C","text":"..."}},{{"label":"D","text":"..."}}],
+{{"label":"B","text":"..."}},{{"label":"C","text":"..."}},{{"label":"D","text":"..."}},{{"label":"E","text":"..."}}],
 "correct_label":"A","explanation":"..."}}]}}
 Yalnızca geçerli JSON döndür."""
     response = _client.chat.completions.create(
@@ -67,7 +67,7 @@ Yalnızca geçerli JSON döndür."""
         labels = [str(option.get("label") or "").strip().upper() for option in options]
         texts = [str(option.get("text") or "").strip() for option in options]
         correct = str(question.get("correct_label") or "").strip().upper()
-        if not str(question.get("text") or "").strip() or labels != ["A", "B", "C", "D"]:
+        if not str(question.get("text") or "").strip() or labels != ["A", "B", "C", "D", "E"]:
             raise RuntimeError(f"Otomatik soru {index} metin/şık sözleşmesini karşılamıyor")
         if any(not text for text in texts) or correct not in labels:
             raise RuntimeError(f"Otomatik soru {index} boş şık veya geçersiz doğru cevap içeriyor")

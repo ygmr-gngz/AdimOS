@@ -15,7 +15,7 @@ from app.modules.content.tr_speech_normalize import tr_speech_normalize
 def _blank_question() -> QuizQuestion:
     return QuizQuestion(
         text="",
-        options=[QuizOption(label=label, text="") for label in "ABCD"],
+        options=[QuizOption(label=label, text="") for label in "ABCDE"],
         correct_label="A",
     )
 

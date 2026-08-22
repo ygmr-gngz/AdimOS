@@ -66,12 +66,12 @@ def _validate_manual_questions(questions: Optional[List[QuizQuestion]]) -> None:
         return
     for index, question in enumerate(questions, 1):
         labels = [option.label.strip().upper() for option in question.options]
-        if not question.text.strip() or labels != ["A", "B", "C", "D"]:
-            raise ValueError(f"Soru {index}: metin ve A-D şıkları eksiksiz olmalı")
+        if not question.text.strip() or labels != ["A", "B", "C", "D", "E"]:
+            raise ValueError(f"Soru {index}: metin ve A-E şıkları eksiksiz olmalı")
         if any(not option.text.strip() for option in question.options):
             raise ValueError(f"Soru {index}: boş şık bırakılamaz")
         if question.correct_label.strip().upper() not in labels:
-            raise ValueError(f"Soru {index}: doğru cevap A-D arasında olmalı")
+            raise ValueError(f"Soru {index}: doğru cevap A-E arasında olmalı")
 
 
 def _effective_duration_tolerance(content_type: str, requested: int, supplied: int) -> int:
