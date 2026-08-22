@@ -76,18 +76,28 @@ _widget_dist = Path(__file__).resolve().parent / "static" / "widget"
 if _widget_dist.exists():
     app.mount("/widget", StaticFiles(directory=str(_widget_dist)), name="widget")
 
+_widget_allowed_origins = {
+    "https://adimmusavir.com",
+    "https://www.adimmusavir.com",
+}
+
 
 @app.middleware("http")
 async def widget_cors(request: Request, call_next):
-    if request.url.path.startswith("/api/v1/chat/") and request.method == "OPTIONS":
+    is_widget_api = request.url.path.startswith("/api/v1/chat/")
+    origin = request.headers.get("origin")
+    if is_widget_api and origin and origin not in _widget_allowed_origins:
+        return JSONResponse(status_code=403, content={"detail": "Widget origin izinli değil"})
+
+    if is_widget_api and request.method == "OPTIONS":
         return JSONResponse(status_code=204, content=None, headers={
-            "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
+            "Access-Control-Allow-Origin": origin or "https://www.adimmusavir.com",
             "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type,X-Adimos-Key",
         })
     response = await call_next(request)
-    if request.url.path.startswith("/api/v1/chat/"):
-        response.headers["Access-Control-Allow-Origin"] = request.headers.get("origin", "*")
+    if is_widget_api and origin in _widget_allowed_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Vary"] = "Origin"
     return response
 
