@@ -37,11 +37,7 @@ interface AccountCardSceneProps {
   journalEntry?: JournalLine[]
   entryCaption?: string
   tip?: string
-  /** registry.ts: hem LessonVideo (16:9) hem EducationalReel (9:16) altında
-   *  kayıtlı — tek düzen ikisine de zorlanamaz. Şimdilik ikisi de aynı
-   *  tek-sütun dikey düzeni kullanıyor, yalnızca ölçüler (T.layout16x9 vs
-   *  T.layout9x16) değişiyor. 16:9 için genişlik kullanan gerçek bir
-   *  2 sütunlu düzen ayrı bir tasarım kararı — burada değil. */
+  /** 9:16 tek sütun, 16:9 iki sütun kullanır. */
   format?: '9:16' | '16:9'
   canvasColor?: string   // still fon override (2026-08-08) — kart zemini etkilenmez
 }
@@ -162,6 +158,39 @@ export function AccountCardScene({
     const headerRowH = Math.max(L.codeBadgeFont + 16, titleLines * title * 1.15, L.natureBadge) + HEADER_ROW_V_PAD
 
     let h = headerRowH
+
+    if (format === '16:9') {
+      const columnWidth = (innerWidth - L.sectionGap) / 2
+      const columnTextWidth = columnWidth - SECTION_INDENT
+      let left = 0
+      let leftSections = 0
+      if (purpose) {
+        left += label * 1.3 + 8
+        left += estimateLines(purpose, body, columnTextWidth) * body * 1.5
+        leftSections++
+      }
+      left += label * 1.3 + 8
+      left += estimateLines(natureRule, body, columnTextWidth) * body * 1.5
+      leftSections++
+      left += L.sectionGap * Math.max(0, leftSections - 1)
+
+      let right = 0
+      let rightSections = 0
+      if (journalEntry.length > 0) {
+        right += label * 1.3 + 8
+        right += journalEntry.length * (entry * 1.6)
+        if (entryCaption) right += L.captionFont * 1.4
+        rightSections++
+      }
+      if (tip) {
+        right += T.space.sm * 2 + label * 1.3 + 8
+        right += estimateLines(tip, tipSize, columnTextWidth) * tipSize * 1.5
+        rightSections++
+      }
+      right += L.sectionGap * Math.max(0, rightSections - 1)
+      return h + Math.max(left, right) + CONTENT_BOTTOM_PAD
+    }
+
     let sections = 0
 
     // 2. Amaç
@@ -265,11 +294,15 @@ export function AccountCardScene({
         {/* 2–5: içerik bölümleri */}
         <div style={{
           padding: `0 ${L.cardPad}px ${T.space.lg}px`,
-          display: 'flex', flexDirection: 'column', gap: L.sectionGap,
+          display: format === '16:9' ? 'grid' : 'flex',
+          gridTemplateColumns: format === '16:9' ? '1fr 1fr' : undefined,
+          gridTemplateAreas: format === '16:9' ? '"purpose journal" "rule tip"' : undefined,
+          alignItems: 'start',
+          flexDirection: 'column', gap: L.sectionGap,
         }}>
           {/* 2. Amaç */}
           {purpose && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, gridArea: 'purpose' }}>
               <SectionHeader icon={<IconTarget />} label="Amaç" color={nColor} fontSize={labelFont} />
               <span style={{
                 fontSize: bodyFont, color: T.color.text, lineHeight: 1.5,
@@ -281,7 +314,7 @@ export function AccountCardScene({
           )}
 
           {/* 3. Borç / Alacak — kural her zaman nature'dan türetilir */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, gridArea: 'rule' }}>
             <SectionHeader icon={<IconScale />} label="Borç / Alacak" color={nColor} fontSize={labelFont} />
             <span style={{
               fontSize: bodyFont, color: nColor, fontWeight: 700, lineHeight: 1.5,
@@ -293,7 +326,7 @@ export function AccountCardScene({
 
           {/* 4. Örnek Yevmiye Kaydı */}
           {journalEntry.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, gridArea: 'journal' }}>
               <SectionHeader icon={<IconLedger />} label="Örnek Yevmiye Kaydı" color={nColor} fontSize={labelFont} />
               <div style={{
                 display: 'flex', flexDirection: 'column', gap: 10,
@@ -338,7 +371,7 @@ export function AccountCardScene({
               background: `${nColor}14`,   // ~%8 opaklık (hex alpha 14 ≈ 8%)
               borderRadius: T.radius.chip,
               padding: `${T.space.sm}px ${T.space.md}px`,
-              display: 'flex', flexDirection: 'column', gap: 8,
+              display: 'flex', flexDirection: 'column', gap: 8, gridArea: 'tip',
             }}>
               <SectionHeader icon={<IconBulb />} label="Püf Noktası" color={nColor} fontSize={labelFont} />
               <span style={{

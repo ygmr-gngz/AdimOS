@@ -132,6 +132,13 @@ class CreateVideoPayload(BaseModel):
 class RejectBody(BaseModel):
     reason: Optional[str] = None
 
+
+class ApproveBody(BaseModel):
+    youtube_shorts: bool = True
+    instagram_reels: bool = True
+    instagram_carousel: bool = True
+    instagram_single_image: bool = False
+
 class RenderCallback(BaseModel):
     job_id: str
     status: str                            # done | failed
@@ -406,7 +413,13 @@ def _attach_visual_assets(scenes: list[dict], job_id: str, content_track: str) -
                 s["image_asset_id"] for s in (recent_scenes.data or []) if s.get("image_asset_id")
             ]
     except Exception as exc:
-        logger.warning(f"[visual] {job_id[:8]} recently_used sorgu hatası: {exc}")
+        from app.errors.registry import PipelineErrorException
+        logger.error("[visual] job=%s recently_used sorgu hatası: %s", job_id, exc)
+        raise PipelineErrorException(
+            "visual_selection_failed",
+            admin_detail={"reason": "recently_used_query_failed", "error": str(exc)},
+            stage="visual",
+        ) from exc
 
     used_in_video: list[str] = []
     face_count = 0
@@ -510,7 +523,7 @@ def _generate_storyboard_for_regen(
             if not s.get("component"):
                 s["component"] = "MotivationScene"
             if not s.get("voice_text"):
-                s["voice_text"] = s.get("narration") or s.get("spoken_text") or ""
+                s["voice_text"] = s.get("spoken_text") or s.get("narration") or ""
             scenes.append(s)
         scenes = _attach_visual_assets(scenes, job_id, payload.content_track)
         return {
@@ -769,6 +782,59 @@ def _generate_card_stills(job_id: str, storyboard: dict, background: str = "canv
     except Exception as e:
         logger.error(f"[card-stills] {job_id[:8]} hata: {e}")
         return None
+
+
+def _generate_summary_post(job_id: str, storyboard: dict) -> str | None:
+    """Reels storyboard'undan tek 1080x1350 özet görsel üretip pakete yazar."""
+    remotion_url = settings.REMOTION_URL
+    if not remotion_url or "localhost" in remotion_url or "127.0.0.1" in remotion_url:
+        logger.error("[summary-post] %s Remotion URL yapılandırılmamış", job_id[:8])
+        return None
+    import httpx
+    try:
+        response = httpx.post(
+            f"{remotion_url}/summary-post",
+            json={"job_id": job_id, "storyboard": storyboard},
+            timeout=180,
+        )
+        if response.status_code != 200:
+            logger.error("[summary-post] %s HTTP %s: %s", job_id[:8], response.status_code, response.text[:300])
+            return None
+        url = response.json().get("summary_post")
+        if not url:
+            logger.error("[summary-post] %s yanıt URL içermiyor", job_id[:8])
+            return None
+        sb = get_supabase_client()
+        existing = sb.table("video_jobs").select("publish_package").eq("id", job_id).execute()
+        prior_package = (existing.data or [{}])[0].get("publish_package") or {}
+        sb.table("video_jobs").update({
+            "publish_package": {**prior_package, "summary_post": url},
+        }).eq("id", job_id).execute()
+        logger.info("[summary-post] %s publish_package.summary_post yazıldı", job_id[:8])
+        return str(url)
+    except Exception as exc:
+        logger.error("[summary-post] %s hata: %s", job_id[:8], exc)
+        return None
+
+
+def _generate_reel_social_assets(job_id: str, storyboard: dict) -> None:
+    """Race-free sıra: önce carousel, sonra tek görsel; hatayı pakette görünür kılar."""
+    stills = _generate_card_stills(job_id, storyboard)
+    summary = _generate_summary_post(job_id, storyboard)
+    if stills and summary:
+        return
+    sb = get_supabase_client()
+    existing = sb.table("video_jobs").select("publish_package").eq("id", job_id).execute()
+    prior_package = (existing.data or [{}])[0].get("publish_package") or {}
+    failures = []
+    if not stills:
+        failures.append("card_stills")
+    if not summary:
+        failures.append("summary_post")
+    sb.table("video_jobs").update({
+        "publish_package": {**prior_package, "social_assets_error": failures},
+    }).eq("id", job_id).execute()
+    logger.error("[social-assets] %s eksik=%s", job_id[:8], failures)
 
 
 # ── Quiz storyboard üretimi ───────────────────────────────────
@@ -1207,7 +1273,7 @@ def _run_pipeline_inner(
                     s["component"] = "MotivationScene"
                 # voice_text normalizasyonu
                 if not s.get("voice_text"):
-                    s["voice_text"] = s.get("narration") or s.get("spoken_text") or ""
+                    s["voice_text"] = s.get("spoken_text") or s.get("narration") or ""
                 scenes.append(s)
             scenes = _attach_visual_assets(scenes, job_id, payload.content_track)
             storyboard = {
@@ -2131,6 +2197,18 @@ def regenerate_card_stills(job_id: str, body: CardStillsRequestBody = CardStills
     return {"ok": True, "background": body.background, "card_stills": urls}
 
 
+@router.post("/jobs/{job_id}/summary-post")
+def regenerate_summary_post(job_id: str):
+    job = _get_job(job_id)
+    storyboard = job.get("storyboard") or {}
+    if len(storyboard.get("scenes") or []) < 4:
+        raise HTTPException(422, "Tek görsel için en az 4 sahne gerekli.")
+    url = _generate_summary_post(job_id, storyboard)
+    if not url:
+        raise HTTPException(502, "Tek görsel üretilemedi; render servisi loglarını kontrol edin.")
+    return {"ok": True, "summary_post": url}
+
+
 def _bridge_to_content_automation(job: dict) -> str:
     """Video job onaylanınca generated_contents'a idempotent kuyruk kaydı ekle."""
     job_id = job.get("id", "")
@@ -2167,7 +2245,7 @@ def _bridge_to_content_automation(job: dict) -> str:
 
 
 @router.post("/jobs/{job_id}/approve")
-def approve_job(job_id: str):
+def approve_job(job_id: str, body: ApproveBody = ApproveBody()):
     job = _get_job(job_id)
     try:
         content_id = _bridge_to_content_automation(job)
@@ -2177,14 +2255,22 @@ def approve_job(job_id: str):
             status_code=502,
             detail=f"Video onaylanamadı: İçerik Otomasyonu kuyruğuna yazılamadı ({exc})",
         ) from exc
-    # video_jobs için canlı DB'de doğrulanmış durum değeri "approved".
-    # Kuyruğun kendisi yukarıda oluşturulan generated_contents(status=approved)
-    # satırıdır; DB sözleşmesinde kanıtı olmayan yeni bir status uydurulmaz.
     _set_status(job_id, "approved")
+    try:
+        from app.modules.publishing.service import enqueue_job
+        queue_rows = enqueue_job(job, body.model_dump())
+    except Exception as exc:
+        logger.exception("[video] publishing_queue yazımı başarısız job=%s", job_id[:8])
+        raise HTTPException(
+            status_code=502,
+            detail=f"Video onaylandı ancak yayın kuyruğuna alınamadı ({exc})",
+        ) from exc
+    _set_status(job_id, "queued_for_publishing")
     return {
-        "message": "Video onaylandı ve İçerik Otomasyonu kuyruğuna alındı",
-        "status": "approved",
+        "message": "Video onaylandı ve yayın kuyruğuna alındı",
+        "status": "queued_for_publishing",
         "content_id": content_id,
+        "queue_count": len(queue_rows),
     }
 
 
@@ -2396,7 +2482,7 @@ def generate_motivation(payload: GenerateMotivationPayload):
             if not s.get("component"):
                 s["component"] = "MotivationScene"
             if not s.get("voice_text"):
-                s["voice_text"] = s.get("narration") or s.get("spoken_text") or ""
+                s["voice_text"] = s.get("spoken_text") or s.get("narration") or ""
             scenes.append(s)
         storyboard = {
             "video_type": "motivation",
@@ -2641,7 +2727,7 @@ def render_callback(body: RenderCallback, background_tasks: BackgroundTasks):
     from app.pipelines.registry import canonical_type
     storyboard_for_stills = job_full.get("storyboard") or {}
     if canonical_type(job_full.get("type", "")) == "educational_reel" and storyboard_for_stills.get("scenes"):
-        background_tasks.add_task(_generate_card_stills, body.job_id, storyboard_for_stills)
+        background_tasks.add_task(_generate_reel_social_assets, body.job_id, storyboard_for_stills)
 
     return {"ok": True}
 

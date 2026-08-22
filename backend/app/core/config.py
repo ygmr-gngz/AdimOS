@@ -11,11 +11,13 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
     WEBHOOK_SECRET: str = ""
+    ADIMOS_WIDGET_PUBLIC_KEY: str = ""
 
     # YouTube
     YOUTUBE_CLIENT_ID: str = ""
     YOUTUBE_CLIENT_SECRET: str = ""
     YOUTUBE_REFRESH_TOKEN: str = ""
+    YOUTUBE_CHANNEL_ID: str = ""
     YOUTUBE_REDIRECT_URI: str = "https://adimos-production.up.railway.app/api/v1/oauth/youtube/callback"
 
     # Remotion render servisi
@@ -28,6 +30,9 @@ class Settings(BaseSettings):
     META_VERIFY_TOKEN: str = ""
     FACEBOOK_PAGE_ID: str = ""
     INSTAGRAM_BUSINESS_ACCOUNT_ID: str = ""
+    INSTAGRAM_ACCESS_TOKEN: str = ""
+    INSTAGRAM_BUSINESS_ID: str = ""
+    INSTAGRAM_APP_SECRET: str = ""
 
     # TTS
     TTS_VOICE_ID: str = "nova"           # OpenAI ses kimliği (nova | alloy | echo | fable | onyx | shimmer)

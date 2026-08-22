@@ -32,7 +32,7 @@ _ABBR: list[tuple[str, str]] = [
     (r"\bYMM\b",   "ye em em"),
     (r"\bSGK\b",   "es ge ka"),
     (r"\bSSK\b",   "es es ka"),
-    (r"\bSGS\b",   "es ge es"),
+    (r"\bSGS\b",   "se ge se"),
     (r"\bBAĞ-KUR\b", "bağ kur"),
     (r"\bTMS\b",   "te em es"),
     (r"\bTFRS\b",  "te fe re es"),

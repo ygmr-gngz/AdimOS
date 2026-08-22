@@ -48,8 +48,16 @@ export const CARD_STILL_BACKGROUND_LABELS: Record<CardStillBackground, string> =
 
 export interface PublishPackage {
   card_stills?: string[]
+  summary_post?: string
   card_stills_background?: CardStillBackground
   [key: string]: unknown
+}
+
+export interface PublishSelections {
+  youtube_shorts: boolean
+  instagram_reels: boolean
+  instagram_carousel: boolean
+  instagram_single_image: boolean
 }
 
 export interface VideoJob {
@@ -168,8 +176,8 @@ const videoService = {
     return data
   },
 
-  async approveJob(id: string): Promise<void> {
-    await apiClient.post(`/video/jobs/${id}/approve`)
+  async approveJob(id: string, selections: PublishSelections): Promise<void> {
+    await apiClient.post(`/video/jobs/${id}/approve`, selections)
   },
 
   async rejectJob(id: string, reason?: string): Promise<void> {
@@ -190,6 +198,11 @@ const videoService = {
     ok: boolean; background: CardStillBackground; card_stills: string[]
   }> {
     const { data } = await apiClient.post(`/video/jobs/${jobId}/card-stills`, { background })
+    return data
+  },
+
+  async regenerateSummaryPost(jobId: string): Promise<{ ok: boolean; summary_post: string }> {
+    const { data } = await apiClient.post(`/video/jobs/${jobId}/summary-post`)
     return data
   },
 

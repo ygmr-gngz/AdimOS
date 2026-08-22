@@ -98,6 +98,18 @@ export const SCENE_REGISTRY: Record<string, CompositionRegistryEntry> = {
     required: ["component", "duration_seconds"],
   },
 
+  // Reels storyboard'undan türetilen statik 4:5 Instagram özet postu.
+  SummaryPostVideo: {
+    compositionId: "SummaryPostVideo",
+    aspect:        "4:5",
+    components: [
+      "EducationalReelScene", "ReelHookScene", "ReelConceptScene",
+      "ReelExampleScene", "ReelMistakeScene", "ReelExamTipScene", "ReelCtaScene",
+      "AccountCardScene", "TableScene", "JournalEntryScene", "RuleBoxScene", "CommonMistakeScene",
+    ],
+    required: ["component", "duration_seconds"],
+  },
+
   // ── motivasyon → MotivationVideo (9:16) ────────────────────────
   MotivationVideo: {
     compositionId: "MotivationVideo",

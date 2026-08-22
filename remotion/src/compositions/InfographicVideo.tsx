@@ -52,7 +52,7 @@ export function InfographicVideo({ storyboard }: Props) {
           <Sequence key={scene.id} from={start} durationInFrames={durationFrames}>
             <AbsoluteFill>
               {isAccountCard
-                ? <AccountCardScene {...scene as any} format="9:16" />
+                ? <AccountCardScene {...scene as any} format={storyboard.format ?? '9:16'} />
                 : <Component scene={scene} brand={brand} />}
             </AbsoluteFill>
           </Sequence>

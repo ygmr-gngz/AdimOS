@@ -607,9 +607,12 @@ async function _doRender(
       })
     }
 
-    const costs = (prog as any).costs
-    if (costs?.accruedSoFar?.currency === 'USD') {
-      costUsd = costs.accruedSoFar.value
+    // @remotion/serverless-client 4.0.488: currency ve accruedSoFar aynı
+    // CostsInfo nesnesindedir; accruedSoFar bir number'dır. Önceki kod bunu
+    // {currency,value} sanarak her başarılı render'da maliyeti null bırakıyordu.
+    const costs = prog.costs
+    if (costs.currency === 'USD' && Number.isFinite(costs.accruedSoFar)) {
+      costUsd = costs.accruedSoFar
     }
 
     if (prog.done) {
@@ -1068,6 +1071,45 @@ app.post('/stills', async (req, res) => {
     (failures.length ? ` başarısız=${JSON.stringify(failures)}` : ''),
   )
   res.json({ ok: true, stills: results, failures })
+})
+
+// ── POST /summary-post ───────────────────────────────────────────
+// Reels storyboard'undaki ilk 4-6 sahneyi tek 1080×1350 özet karesine
+// dönüştürür. İçerik backend'de tekrar modellenmez; storyboard tek kaynaktır.
+app.post('/summary-post', async (req, res) => {
+  const { job_id, storyboard } = req.body as RenderRequest
+  if (!job_id || !storyboard || !Array.isArray(storyboard.scenes)) {
+    return res.status(400).json({ error: 'job_id ve storyboard.scenes gerekli' })
+  }
+  if (storyboard.scenes.length < 4) {
+    return res.status(422).json({ error: 'invalid_scene_count', message: 'summary_post için en az 4 sahne gerekli' })
+  }
+  if (!LAMBDA_FUNCTION || !SERVE_URL) {
+    return res.status(503).json({ error: 'Lambda yapılandırılmamış' })
+  }
+  try {
+    await preflight(SERVE_URL, 'SummaryPostVideo')
+    const result = await renderStillOnLambda({
+      region: LAMBDA_REGION,
+      functionName: LAMBDA_FUNCTION,
+      serveUrl: SERVE_URL,
+      composition: 'SummaryPostVideo',
+      inputProps: { storyboard: { ...storyboard, scenes: storyboard.scenes.slice(0, 6) } },
+      imageFormat: 'png',
+      privacy: 'private',
+      frame: 0,
+    })
+    const price = result.estimatedPrice
+    if (price.currency === 'USD' && Number.isFinite(price.accruedSoFar)) _addCost(price.accruedSoFar)
+    const buf = await _s3Download(result.bucketName, result.outKey)
+    const url = await _supabaseUploadStill(buf, job_id, 'summary')
+    console.log(`[summary-post] job=${job_id} 1080x1350 → ${url}`)
+    return res.json({ ok: true, summary_post: url, width: 1080, height: 1350 })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error(`[summary-post] job=${job_id} HATA: ${message}`)
+    return res.status(502).json({ error: 'summary_post_failed', message })
+  }
 })
 
 // ── SERVE_URL'den Lambda S3 bucket adını çıkar ───────────────────

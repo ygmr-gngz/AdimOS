@@ -170,7 +170,15 @@ def select_asset(
             stage="visual",
         )
 
-    return _deterministic_pick(candidates, job_id, theme)
+    selected = _deterministic_pick(candidates, job_id, theme)
+    logger.info(
+        "[visual] job=%s tema=%s aday_sayisi=%d secilen=%s",
+        job_id,
+        theme,
+        len(candidates),
+        selected.get("asset_id"),
+    )
+    return selected
 
 
 def theme_for_scene(scene: dict, content_track: str = "ogrenci") -> Optional[str]:

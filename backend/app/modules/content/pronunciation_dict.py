@@ -27,7 +27,7 @@ _RULES: list[tuple[str, str]] = [
     (r'\bIFRS\b',  'I F R S'),
     (r'\bSMMM\b',  'S M M M'),
     (r'\bYMM\b',   'Y M M'),
-    (r'\bSGS\b',   'S G S'),
+    (r'\bSGS\b',   'se ge se'),
     (r'\bSMBK\b',  'S M B K'),
     (r'\bBSMV\b',  'B S M V'),
     (r'\bMTVK\b',  'M T V K'),

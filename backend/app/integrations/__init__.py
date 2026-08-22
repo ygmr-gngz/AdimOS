@@ -1,0 +1,1 @@
+"""Harici platform entegrasyonları."""

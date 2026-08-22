@@ -46,12 +46,12 @@ _TIME_KALA_RE = re.compile(r"sınava\s+\d+\s+gün\s+kala", re.IGNORECASE)
 def _voice_text(scene: dict) -> str:
     """Pipeline'ın TTS'e göndereceği tek metni döndürür.
 
-    Yeni motivasyon storyboard'larında kaynak alan ``narration``. ``spoken_text``
-    eski kayıtları okuyabilmek için yalnızca geriye dönük yedektir; iki alan asla
-    birleştirilmez. video.py'nin ``voice_text = narration or spoken_text``
+    ``spoken_text`` Türkçe normalizasyon zincirinin ürettiği TTS metnidir ve
+    varsa önceliklidir. ``narration`` yalnızca geriye dönük yedektir; iki alan
+    asla birleştirilmez. video.py'nin ``voice_text = spoken_text or narration``
     sözleşmesiyle birebirdir.
     """
-    return (scene.get("voice_text") or scene.get("narration") or scene.get("spoken_text") or "").strip()
+    return (scene.get("voice_text") or scene.get("spoken_text") or scene.get("narration") or "").strip()
 
 
 def _find_step_ordinal_leak(scenes: list[dict]) -> list[str]:

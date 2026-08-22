@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 from contextlib import asynccontextmanager
 import httpx
 
@@ -69,6 +71,25 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api/v1")
+
+_widget_dist = Path(__file__).resolve().parent / "static" / "widget"
+if _widget_dist.exists():
+    app.mount("/widget", StaticFiles(directory=str(_widget_dist)), name="widget")
+
+
+@app.middleware("http")
+async def widget_cors(request: Request, call_next):
+    if request.url.path.startswith("/api/v1/chat/") and request.method == "OPTIONS":
+        return JSONResponse(status_code=204, content=None, headers={
+            "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
+            "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type,X-Adimos-Key",
+        })
+    response = await call_next(request)
+    if request.url.path.startswith("/api/v1/chat/"):
+        response.headers["Access-Control-Allow-Origin"] = request.headers.get("origin", "*")
+        response.headers["Vary"] = "Origin"
+    return response
 
 
 # Supabase HTTP/2 protokol ve zaman aşımı hatalarını yakala — container crash'i önle

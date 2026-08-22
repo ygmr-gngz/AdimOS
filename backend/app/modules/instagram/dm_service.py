@@ -1,6 +1,7 @@
 """Instagram DM gönderme, alma ve akış yönetimi."""
 import logging
 import requests
+from datetime import datetime, timezone
 from app.core.config import settings
 from app.db.supabase import get_supabase_client
 from app.db.repositories.leads_repo import create_lead
@@ -21,6 +22,10 @@ def send_instagram_message(recipient_id: str, text: str) -> bool:
 
     account_id = settings.INSTAGRAM_BUSINESS_ACCOUNT_ID
     token = settings.META_ACCESS_TOKEN
+
+    if not _within_24h_window(recipient_id):
+        logger.warning("[instagram] 24 saat penceresi kapalı recipient=%s — manuel yanıt gerekli", recipient_id)
+        return False
 
     try:
         resp = requests.post(
@@ -44,6 +49,38 @@ def send_instagram_message(recipient_id: str, text: str) -> bool:
 
 
 # ── Veritabanı İşlemleri ──────────────────────────────────────
+
+def _unified_session(instagram_user_id: str) -> dict:
+    sb = get_supabase_client()
+    found = sb.table("chat_sessions").select("*").eq("source", "instagram").eq("external_id", instagram_user_id).limit(1).execute().data or []
+    if found:
+        return found[0]
+    created = sb.table("chat_sessions").insert({"source": "instagram", "external_id": instagram_user_id}).execute().data or []
+    return created[0]
+
+
+def _save_unified_message(instagram_user_id: str, role: str, content: str) -> None:
+    try:
+        sb = get_supabase_client()
+        session = _unified_session(instagram_user_id)
+        sb.table("chat_messages").insert({"session_id": session["id"], "role": role, "content": content}).execute()
+        sb.table("chat_sessions").update({"last_message_at": datetime.now(timezone.utc).isoformat()}).eq("id", session["id"]).execute()
+    except Exception as exc:
+        logger.error("[instagram] unified chat kaydı başarısız: %s", exc)
+
+
+def _within_24h_window(instagram_user_id: str) -> bool:
+    try:
+        sb = get_supabase_client()
+        session = _unified_session(instagram_user_id)
+        messages = sb.table("chat_messages").select("created_at").eq("session_id", session["id"]).eq("role", "user").order("created_at", desc=True).limit(1).execute().data or []
+        if not messages:
+            return False
+        from app.integrations.instagram.messenger import within_reply_window
+        return within_reply_window(datetime.fromisoformat(messages[0]["created_at"].replace("Z", "+00:00")))
+    except Exception as exc:
+        logger.error("[instagram] 24 saat pencere kontrolü başarısız: %s", exc)
+        return False
 
 def is_duplicate_message(message_id: str) -> bool:
     """Aynı message_id daha önce işlendi mi?"""
@@ -158,6 +195,7 @@ def process_incoming_dm(
 
     # Mesajı kaydet (inbound)
     save_message(message_id, sender_id, recipient_id, message_text, "inbound", raw_payload)
+    _save_unified_message(sender_id, "user", message_text)
 
     # Konuşma durumunu al
     conv = get_or_create_conversation(sender_id)
@@ -200,6 +238,7 @@ def process_incoming_dm(
                 direction="outbound",
                 raw_payload={},
             )
+            _save_unified_message(sender_id, "assistant", reply_text)
 
     # CRM lead oluştur
     if crm_status and crm_interest:

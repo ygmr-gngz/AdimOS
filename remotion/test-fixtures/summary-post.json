@@ -1,0 +1,17 @@
+{
+  "storyboard": {
+    "video_type": "reels_short",
+    "title": "EN ÇOK SORULAN HESAPLAR",
+    "format": "9:16",
+    "language": "tr",
+    "brand": {"primary_color":"#001645","secondary_color":"#BF8D4B","background_color":"#F4F6FA","font_heading":"Noto Sans","font_body":"Noto Sans","handle":"@adimmusavir"},
+    "scenes": [
+      {"id":1,"component":"AccountCardScene","duration_seconds":6,"accountCode":"100","accountName":"KASA","nature":"A","purpose":"İşletmenin elindeki nakitleri izler."},
+      {"id":2,"component":"AccountCardScene","duration_seconds":6,"accountCode":"153","accountName":"TİCARİ MALLAR","nature":"A","purpose":"Satılmak amacıyla alınan malları izler."},
+      {"id":3,"component":"AccountCardScene","duration_seconds":6,"accountCode":"320","accountName":"SATICILAR","nature":"P","purpose":"Vadeli mal ve hizmet borçlarını izler."},
+      {"id":4,"component":"AccountCardScene","duration_seconds":6,"accountCode":"600","accountName":"YURT İÇİ SATIŞLAR","nature":"G","purpose":"Yurt içindeki satış gelirlerini izler."},
+      {"id":5,"component":"AccountCardScene","duration_seconds":6,"accountCode":"770","accountName":"GENEL YÖNETİM GİDERLERİ","nature":"Gi","purpose":"Yönetim faaliyetlerine ilişkin giderleri izler."},
+      {"id":6,"component":"AccountCardScene","duration_seconds":6,"accountCode":"191","accountName":"İNDİRİLECEK KDV","nature":"A","purpose":"Alışlarda indirilecek KDV tutarını izler."}
+    ]
+  }
+}

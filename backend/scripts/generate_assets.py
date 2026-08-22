@@ -644,10 +644,23 @@ def retry_pending() -> None:
         entry = {k: v for k, v in meta.items() if not k.startswith("_")}
         try:
             if not entry.get("public_url"):
-                entry["public_url"] = _with_backoff(
-                    lambda: upload_bytes(image_bytes, VISUAL_LIBRARY_BUCKET, entry["storage_path"], "image/webp"),
-                    label=asset_id,
-                )
+                try:
+                    entry["public_url"] = _with_backoff(
+                        lambda: upload_bytes(image_bytes, VISUAL_LIBRARY_BUCKET, entry["storage_path"], "image/webp"),
+                        label=asset_id,
+                    )
+                except Exception as upload_exc:
+                    # Önceki denemede upload tamamlanıp yanıt kaybolmuş olabilir.
+                    # Storage duplicate bu durumda başarısızlık değil, idempotent
+                    # devam sinyalidir; diğer hatalar aynen korunur.
+                    if "KeyAlreadyExists" not in str(upload_exc) and "Duplicate" not in str(upload_exc):
+                        raise
+                    from app.db.supabase import get_supabase_client
+                    entry["public_url"] = (
+                        get_supabase_client().storage.from_(VISUAL_LIBRARY_BUCKET)
+                        .get_public_url(entry["storage_path"])
+                    )
+                    logger.info("    %s storage'da zaten var; DB kaydına devam", asset_id)
             _with_backoff(lambda: register_asset(entry), label=asset_id)
             jf.unlink()
             webp_path.unlink()

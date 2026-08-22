@@ -13,7 +13,7 @@ import {
 import videoService, {
   VideoJob, VideoScene, VideoStatus, VideoType, VideoFormat,
   CreateVideoPayload, VIDEO_STATUS_LABELS, VIDEO_STATUS_COLORS, VIDEO_TYPE_LABELS, getTypeLabel,
-  CardStillBackground, CARD_STILL_BACKGROUND_LABELS,
+  CardStillBackground, CARD_STILL_BACKGROUND_LABELS, PublishSelections,
 } from '@/services/video.service'
 
 // ── Durum badge ───────────────────────────────────────────────
@@ -205,11 +205,12 @@ async function downloadImage(url: string, filename: string): Promise<void> {
 
 const BACKGROUND_OPTIONS: CardStillBackground[] = ['canvas', 'navy', 'white']
 
-function CardStillsSection({ jobId, jobTitle, initialUrls, initialBackground }: {
+function CardStillsSection({ jobId, jobTitle, initialUrls, initialBackground, initialSummaryPost }: {
   jobId: string
   jobTitle: string
   initialUrls: string[]
   initialBackground?: CardStillBackground
+  initialSummaryPost?: string
 }) {
   // Varsayılan KATLANMIŞ — bölüm açıkken video görünmez oluyordu (kullanıcı
   // geri bildirimi: "kartları kapatıp nasıl videoyu izleyeceğim"). Modal
@@ -220,6 +221,22 @@ function CardStillsSection({ jobId, jobTitle, initialUrls, initialBackground }: 
   const [urls, setUrls] = useState(initialUrls)
   const [background, setBackground] = useState<CardStillBackground>(initialBackground ?? 'canvas')
   const [regenerating, setRegenerating] = useState(false)
+  const [activeTab, setActiveTab] = useState<'carousel' | 'summary'>('carousel')
+  const [summaryPost, setSummaryPost] = useState(initialSummaryPost)
+  const [regeneratingSummary, setRegeneratingSummary] = useState(false)
+
+  const handleRegenerateSummary = async () => {
+    setRegeneratingSummary(true)
+    try {
+      const result = await videoService.regenerateSummaryPost(jobId)
+      setSummaryPost(result.summary_post)
+      toast.success('Tek görsel yeniden üretildi')
+    } catch {
+      toast.error('Tek görsel üretilemedi — render servisini kontrol edin')
+    } finally {
+      setRegeneratingSummary(false)
+    }
+  }
 
   const handleDownloadAll = async () => {
     setDownloadingAll(true)
@@ -264,7 +281,7 @@ function CardStillsSection({ jobId, jobTitle, initialUrls, initialBackground }: 
             transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s',
           }} />
           <span style={{ fontSize: 14, fontWeight: 700, color: '#0B2A4A' }}>
-            Kart Görselleri ({urls.length})
+            Kart Görselleri ({urls.length + (summaryPost ? 1 : 0)})
           </span>
           <span style={{ fontSize: 12, color: '#94a3b8' }}>
             Paylaşılabilir görseller — Instagram carousel veya tekil post için
@@ -287,6 +304,16 @@ function CardStillsSection({ jobId, jobTitle, initialUrls, initialBackground }: 
 
       {expanded && (
         <div style={{ padding: '0 28px 16px' }}>
+          <div role="tablist" style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+            {([['carousel', `Carousel (${urls.length})`], ['summary', 'Tek Görsel']] as const).map(([value, label]) => (
+              <button key={value} role="tab" aria-selected={activeTab === value} onClick={() => setActiveTab(value)} style={{
+                border: 'none', borderBottom: `3px solid ${activeTab === value ? '#0B2A4A' : 'transparent'}`,
+                background: 'transparent', padding: '8px 12px', cursor: 'pointer',
+                color: activeTab === value ? '#0B2A4A' : '#64748b', fontWeight: 700,
+              }}>{label}</button>
+            ))}
+          </div>
+          {activeTab === 'carousel' ? <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <span style={{ fontSize: 12, color: '#94a3b8' }}>Fon:</span>
             {BACKGROUND_OPTIONS.map(opt => (
@@ -336,6 +363,23 @@ function CardStillsSection({ jobId, jobTitle, initialUrls, initialBackground }: 
               </div>
             ))}
           </div>
+          </> : (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+              {summaryPost ? <>
+                <div style={{ width: 'min(100%, 430px)', aspectRatio: '4 / 5', borderRadius: 12, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={summaryPost} alt="Tek özet görsel" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+                <button onClick={() => downloadImage(summaryPost, `${jobTitle || 'ozet'}-tek-gorsel.png`)} style={{ border: 'none', background: '#0B2A4A', color: '#fff', borderRadius: 9, padding: '8px 16px', cursor: 'pointer', display: 'flex', gap: 6 }}>
+                  <Download size={14} /> İndir
+                </button>
+              </> : (
+                <button onClick={handleRegenerateSummary} disabled={regeneratingSummary} style={{ border: '1px solid #cbd5e1', background: '#fff', borderRadius: 9, padding: '9px 16px', cursor: 'pointer' }}>
+                  {regeneratingSummary ? 'Üretiliyor…' : 'Tek Görseli Üret'}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -347,12 +391,18 @@ function CardStillsSection({ jobId, jobTitle, initialUrls, initialBackground }: 
 function PreviewModal({ job, onClose, onApprove, onReject }: {
   job: VideoJob
   onClose: () => void
-  onApprove: () => void
+  onApprove: (selections: PublishSelections) => void
   onReject: () => void
 }) {
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectInput, setShowRejectInput] = useState(false)
   const [regeneratingScene, setRegeneratingScene] = useState<string | null>(null)
+  const [publishSelections, setPublishSelections] = useState<PublishSelections>({
+    youtube_shorts: !!job.video_url,
+    instagram_reels: !!job.video_url,
+    instagram_carousel: !!job.publish_package?.card_stills?.length,
+    instagram_single_image: false,
+  })
 
   const handleRegenScene = async (scene: VideoScene) => {
     setRegeneratingScene(scene.id)
@@ -530,6 +580,7 @@ function PreviewModal({ job, onClose, onApprove, onReject }: {
             jobTitle={job.title}
             initialUrls={job.publish_package.card_stills}
             initialBackground={job.publish_package.card_stills_background}
+            initialSummaryPost={job.publish_package.summary_post}
           />
         )}
 
@@ -563,7 +614,24 @@ function PreviewModal({ job, onClose, onApprove, onReject }: {
               </>
             ) : (
               <>
-                <Button onClick={onApprove} style={{ background: '#10b981', color: '#fff', border: 'none' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, flex: 1 }}>
+                  {([
+                    ['youtube_shorts', 'YouTube Shorts', !!job.video_url],
+                    ['instagram_reels', 'Instagram Reels', !!job.video_url],
+                    ['instagram_carousel', 'Instagram Carousel', !!job.publish_package?.card_stills?.length],
+                    ['instagram_single_image', 'Instagram Tek Görsel', !!job.publish_package?.summary_post],
+                  ] as const).map(([key, label, available]) => (
+                    <label key={key} style={{ fontSize: 12, color: available ? '#334155' : '#94a3b8' }}>
+                      <input
+                        type="checkbox"
+                        checked={publishSelections[key]}
+                        disabled={!available}
+                        onChange={e => setPublishSelections(current => ({ ...current, [key]: e.target.checked }))}
+                      /> {label}
+                    </label>
+                  ))}
+                </div>
+                <Button onClick={() => onApprove(publishSelections)} style={{ background: '#10b981', color: '#fff', border: 'none' }}>
                   <CheckCircle size={16} /> Onayla
                 </Button>
                 <Button variant="secondary" onClick={() => setShowRejectInput(true)}>
@@ -1311,10 +1379,10 @@ export default function VideoPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleApprove = async (job: VideoJob) => {
+  const handleApprove = async (job: VideoJob, selections: PublishSelections) => {
     try {
-      await videoService.approveJob(job.id)
-      toast.success('Video onaylandı — İçerik Otomasyonuna yönlendiriliyor')
+      await videoService.approveJob(job.id, selections)
+      toast.success('İçerik onaylandı — yayın kuyruğuna alındı')
       setPreviewJob(null)
       loadJobs()
       setTimeout(() => router.push('/automation'), 1500)
@@ -1584,7 +1652,7 @@ export default function VideoPage() {
         <PreviewModal
           job={previewJob}
           onClose={() => setPreviewJob(null)}
-          onApprove={() => handleApprove(previewJob)}
+          onApprove={selections => handleApprove(previewJob, selections)}
           onReject={() => handleReject(previewJob)}
         />
       )}

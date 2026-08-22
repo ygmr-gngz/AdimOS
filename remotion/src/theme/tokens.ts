@@ -92,9 +92,9 @@ export const T = {
     // Güvenli alanlar
     safeTop:    220,
     safeBottom: 320,
-    safeX:      60,
+    safeX:      72,
     // Kart
-    cardW:      960,
+    cardW:      936,
     cardPad:    56,
     cardRadius: 28,
     // Sabit boyutlar — LLM'den gelen değişken uzunlukta metin DEĞİL
@@ -133,16 +133,13 @@ export const T = {
     codeBadgeFont: 40,
     natureBadge:   40,
     captionFont:   22,
-    // 16:9 için min değerleri hiç ölçülmedi/belirtilmedi — min=target koyarak
-    // dinamik ölçeklemeyi bu format için etkisiz bırakıyoruz (şimdilik sabit
-    // davranış korunuyor). Gerçek 16:9 kart kullanımı gündeme gelince ayrıca
-    // ölçülüp ayarlanmalı, buradan tahminle doldurulmadı.
+    subtitleFont: 48,
     font: {
-      title: { target: 34, min: 34 },
-      body:  { target: 27, min: 27 },
+      title: { target: 76, min: 54 },
+      body:  { target: 38, min: 30 },
       label: { target: 24, min: 24 },
       entry: { target: 25, min: 25 },
-      tip:   { target: 27, min: 27 },
+      tip:   { target: 38, min: 30 },
     },
     // Düzen
     sectionGap:  16,

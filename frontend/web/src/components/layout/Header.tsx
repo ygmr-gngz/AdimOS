@@ -16,6 +16,8 @@ const pageTitles: Record<string, string> = {
   '/website': 'Web Sitesi',
   '/reports': 'Raporlar',
   '/video': 'Video Prodüksiyon',
+  '/publishing': 'Yayın Kuyruğu',
+  '/mesajlar': 'Mesajlar',
   '/settings': 'Ayarlar',
   '/chat': 'Sohbet',
   '/voice': 'Sesli Asistan',

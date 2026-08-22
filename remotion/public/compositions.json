@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-22T10:03:18.958Z",
+  "generated_at": "2026-08-22T16:56:32.670Z",
   "remotion_version": "4.0.488",
   "compositions": [
     {
@@ -61,6 +61,28 @@
     {
       "id": "EducationalReel",
       "aspect": "9:16",
+      "components": [
+        "EducationalReelScene",
+        "ReelHookScene",
+        "ReelConceptScene",
+        "ReelExampleScene",
+        "ReelMistakeScene",
+        "ReelExamTipScene",
+        "ReelCtaScene",
+        "AccountCardScene",
+        "TableScene",
+        "JournalEntryScene",
+        "RuleBoxScene",
+        "CommonMistakeScene"
+      ],
+      "required": [
+        "component",
+        "duration_seconds"
+      ]
+    },
+    {
+      "id": "SummaryPostVideo",
+      "aspect": "4:5",
       "components": [
         "EducationalReelScene",
         "ReelHookScene",

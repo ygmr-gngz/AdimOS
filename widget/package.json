@@ -1,0 +1,1 @@
+{"name":"@adimos/widget","private":true,"type":"module","scripts":{"build":"node build.mjs"},"devDependencies":{"esbuild":"^0.25.0","typescript":"^5.9.0"}}

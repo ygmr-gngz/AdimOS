@@ -54,6 +54,15 @@ def _task_video_watchdog():
         logger.error(f"[scheduler] video_watchdog hatası: {e}")
 
 
+def _task_publishing_queue():
+    try:
+        from app.modules.publishing.service import schedule_pending, process_due
+        schedule_pending()
+        process_due()
+    except Exception as e:
+        logger.error("[scheduler] publishing_queue hatası: %s", e, exc_info=True)
+
+
 def start_scheduler():
     _scheduler.add_job(task_daily_brief, CronTrigger(hour=8, minute=0), id="daily_brief", replace_existing=True)
     _scheduler.add_job(task_followup_check, CronTrigger(hour=9, minute=0), id="followup_check", replace_existing=True)
@@ -70,6 +79,13 @@ def start_scheduler():
         "interval",
         minutes=15,
         id="video_watchdog",
+        replace_existing=True,
+    )
+    _scheduler.add_job(
+        _task_publishing_queue,
+        "interval",
+        minutes=15,
+        id="publishing_queue",
         replace_existing=True,
     )
     if not _scheduler.running:

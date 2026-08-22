@@ -140,6 +140,10 @@ REGISTRY: dict[str, dict[str, Any]] = {
         "retryable": False,
         "user_message": "Kullanılan görselin lisans bilgisi eksik.",
     },
+    "visual_selection_failed": {
+        "retryable": True,
+        "user_message": "Görsel seçimi için gerekli kayıtlar okunamadı.",
+    },
     "feature_not_ready": {
         "retryable": False,
         "user_message": "Motivasyon videoları görsel kütüphanesi hazırlandıktan sonra açılacak.",

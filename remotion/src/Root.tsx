@@ -5,6 +5,7 @@ import { InfographicVideo, getInfographicTotalFrames } from './compositions/Info
 import { LessonVideo, getLessonTotalFrames } from './compositions/LessonVideo'
 import { EducationalReel120, getReelTotalFrames } from './compositions/EducationalReel120'
 import { QuizBoardVideo, getQuizBoardTotalFrames } from './compositions/QuizBoardVideo'
+import { SummaryPostVideo } from './compositions/SummaryPostVideo'
 import { StoryboardJSON } from './types'
 import { DEFAULT_BRAND, DIMENSIONS, FPS } from './brand'
 
@@ -350,6 +351,22 @@ export function Root() {
 
   return (
     <>
+      <Composition
+        id="SummaryPostVideo"
+        component={SummaryPostVideo}
+        durationInFrames={1}
+        fps={FPS}
+        width={1080}
+        height={1350}
+        defaultProps={{
+          storyboard: {
+            ...DEMO_INFOGRAPHIC,
+            scenes: Array.from({ length: 4 }, (_, index) => ({
+              ...DEMO_INFOGRAPHIC.scenes[0], id: index + 1,
+            })),
+          },
+        }}
+      />
       <Composition
         id="SplitQuizVerticalDemo"
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

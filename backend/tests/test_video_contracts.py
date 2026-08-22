@@ -8,6 +8,8 @@ from app.api.routes.video import (
     _validate_manual_questions,
 )
 from app.pipelines.registry import validate_routing
+from app.modules.content.motivation_generator import _voice_text
+from app.modules.content.tr_speech_normalize import tr_speech_normalize
 
 
 def _blank_question() -> QuizQuestion:
@@ -41,3 +43,12 @@ def test_long_video_tolerance_scales_with_requested_duration() -> None:
     assert _effective_duration_tolerance("konu_anlatimi", 720, 8) == 180
     assert _effective_duration_tolerance("soru_cozum", 600, 8) == 150
     assert _effective_duration_tolerance("reels_short", 60, 8) == 8
+
+
+def test_spoken_text_has_priority_for_tts() -> None:
+    scene = {"spoken_text": "normalize edilmiş", "narration": "ham metin"}
+    assert _voice_text(scene) == "normalize edilmiş"
+
+
+def test_sgs_pronunciation_is_turkish_letter_names() -> None:
+    assert tr_speech_normalize("SGS sınavı") == "se ge se sınavı"

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from app.api.routes import health, documents, chat, voice, agents, dashboard, crm, academy, automation, content, debug, webhooks, sgs, notifications, social, brand, oauth, video
+from app.api.routes import health, documents, chat, voice, agents, dashboard, crm, academy, automation, content, debug, webhooks, sgs, notifications, social, brand, oauth, video, publishing, widget_chat, messages
 from app.api.routes import users
 from app.api.routes.meta_webhook import router as meta_router, protected_router as meta_protected_router
 from app.core.auth import get_current_user
@@ -12,6 +12,7 @@ router.include_router(webhooks.router,      prefix="/webhooks", tags=["webhooks"
 router.include_router(meta_router,          prefix="/meta",     tags=["meta"])
 router.include_router(oauth.router,         prefix="/oauth",    tags=["oauth"])
 router.include_router(video.public_router,  prefix="/video",    tags=["video"])
+router.include_router(widget_chat.router,   prefix="/chat",     tags=["widget-chat"])
 
 # Protected — auth zorunlu
 _protected = APIRouter(dependencies=[Depends(get_current_user)])
@@ -31,6 +32,8 @@ _protected.include_router(notifications.router, prefix="/notifications",  tags=[
 _protected.include_router(social.router,            prefix="/social",    tags=["social"])
 _protected.include_router(brand.router,            prefix="/brand",     tags=["brand"])
 _protected.include_router(video.router,            prefix="/video",     tags=["video"])
+_protected.include_router(publishing.router,       prefix="/publishing", tags=["publishing"])
+_protected.include_router(messages.router,         prefix="/messages",   tags=["messages"])
 _protected.include_router(meta_protected_router,   prefix="/meta",      tags=["meta"])
 
 router.include_router(_protected)
