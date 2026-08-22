@@ -209,7 +209,10 @@ def process_incoming_dm(
     if current_step == "init":
         # İlk mesaj → karşılama menüsü gönder
         reply_text = WELCOME_MESSAGE
-        update_conversation(sender_id, {"current_step": "menu", "last_message_at": "now()"})
+        update_conversation(sender_id, {
+            "current_step": "menu",
+            "last_message_at": datetime.now(timezone.utc).isoformat(),
+        })
     else:
         # Menüde veya devamında → flow eşleştir
         flow = match_flow(message_text)
@@ -220,7 +223,7 @@ def process_incoming_dm(
             update_conversation(sender_id, {
                 "current_step": f"flow_{crm_interest or 'link'}",
                 "interest": crm_interest,
-                "last_message_at": "now()",
+                "last_message_at": datetime.now(timezone.utc).isoformat(),
             })
         else:
             reply_text = FALLBACK_MESSAGE
