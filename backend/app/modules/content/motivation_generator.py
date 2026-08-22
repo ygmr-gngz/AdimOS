@@ -14,6 +14,7 @@ videosu olabilirdi, SGS'ye özgü hiçbir şey yoktu (B.0). Bu dosya artık:
 """
 import logging
 import re
+import hashlib
 from app.core.llm_client import chat_json as llm_json
 from app.core.content_constants import scene_count_for_budget, budget_params, TR_SPS, CHARS_PER_SYLLABLE
 from app.core.content_bank_motivation import (
@@ -130,14 +131,23 @@ _GENERIC_PHRASES_BLOCK = "\n".join(
 _HOOK_FORMULAS_BLOCK = "\n".join(
     f"  {h['type']}: \"{h['example']}\"" for h in HOOK_FORMULAS
 )
-_CLOSING_BANK_BLOCK = "\n".join(
-    f"  {i + 1}. \"{c}\"" for i, c in enumerate(CLOSING_BANK)
-)
-_SGS_TERMS_BLOCK = (
-    "  ders adları: " + ", ".join(SGS_COURSE_NAMES) + "\n"
-    "  sınav gerçeği: " + ", ".join(SGS_EXAM_FACTS) + "\n"
-    "  zaman: " + ", ".join(SGS_TIME_PHRASES) + ", sınava X gün kala"
-)
+def _required_sgs_terms(topic: str) -> tuple[str, str]:
+    """Konu metninden iki somut terimi deterministik seç; seçim yükünü LLM'e bırakma."""
+    lower = topic.lower()
+    candidates = [*SGS_COURSE_NAMES, *SGS_EXAM_FACTS, *SGS_TIME_PHRASES]
+    found = [term for term in candidates if term in lower]
+    for fallback in ("staja giriş", "deneme neti"):
+        if fallback not in found:
+            found.append(fallback)
+        if len(found) >= 2:
+            break
+    return found[0], found[1]
+
+
+def _deterministic_cta(topic: str) -> tuple[str, int]:
+    digest = hashlib.sha256(topic.encode("utf-8")).digest()
+    index = int.from_bytes(digest[:4], "big") % len(CLOSING_BANK)
+    return CLOSING_BANK[index], index + 1
 
 _USER_TEMPLATE = """Konu: {topic}
 Hedef süre: {duration} saniye
@@ -169,17 +179,11 @@ step_number alanından otomatik üretilir — narration içinde SIRA
 Yanlış: "İkinci adım: Her gün belirli saatte çalış."
 Doğru: "Her gün belirli saatte çalış."
 
-SGS UNSURU (ZORUNLU): Tüm video boyunca seslendirilecek narration metninde EN AZ
-İKİ farklı somut SGS unsuru geçmeli. Aşağıdaki listeden seç, uydurma:
-{sgs_terms}
+SGS UNSURU (ZORUNLU): Seçim yapma. Bu videoda şu iki somut ifadeyi narration
+metninde doğal biçimde ve en az birer kez AYNEN kullan: "{sgs_term_1}" ve "{sgs_term_2}".
 
 YASAK JENERİK İFADELER (somut karşılığını kullan):
 {generic_phrases}
-
-KAPANIŞ (cta_text, ZORUNLU — MotivationOutroScene'e ekle): Aşağıdaki 8 kapanıştan
-BİRİNİ HARFİYEN (değiştirmeden, kısaltmadan) seç ve cta_text alanına AYNEN yaz.
-Kendi kapanışını UYDURMA:
-{closing_bank}
 
 JSON formatı (bu şemayı AYNEN kullan):
 {{
@@ -200,7 +204,7 @@ JSON formatı (bu şemayı AYNEN kullan):
 
 step_number alanını MotivationStepScene sahnelerine ekle (1'den {step_count}'e kadar sırayla).
 step_title alanını MotivationStepScene sahnelerine ekle (max 6 kelime, adımın özeti).
-cta_text alanını MotivationOutroScene sahnesine ekle (yukarıdaki 8 kapanıştan biri, HARFİYEN).
+MotivationOutroScene için cta_text üretme; kapanış kod tarafında onaylı bankadan eklenir.
 Tüm metinler Türkçe. TTS telaffuz normalizasyonu pipeline'da merkezi olarak uygulanır;
 ayrı spoken_text alanı üretme."""
 
@@ -269,6 +273,8 @@ def generate_motivation_storyboard(
     avg_sec = duration / scene_count
 
     total_syl, syl_per_scene, min_chars, max_chars = budget_params(duration, scene_count, "motivasyon")
+    sgs_term_1, sgs_term_2 = _required_sgs_terms(topic)
+    forced_cta, forced_cta_index = _deterministic_cta(topic)
     tolerance = max(3, round(syl_per_scene * 0.15))
     target_chars = round(syl_per_scene * CHARS_PER_SYLLABLE)
     budget_note = (
@@ -293,9 +299,9 @@ def generate_motivation_storyboard(
         outro_num=step_count + 5,
         avg_sec=avg_sec,
         hook_formulas=_HOOK_FORMULAS_BLOCK,
-        sgs_terms=_SGS_TERMS_BLOCK,
+        sgs_term_1=sgs_term_1,
+        sgs_term_2=sgs_term_2,
         generic_phrases=_GENERIC_PHRASES_BLOCK,
-        closing_bank=_CLOSING_BANK_BLOCK,
     )
     if correction_hint:
         # Süre düzeltme turundan gelen geri bildirim (video.py _check_syllable_budget) —
@@ -356,8 +362,12 @@ def generate_motivation_storyboard(
         generic_hits = _find_generic_phrases(full_text, sgs_elements)
         ordinal_leaks = _find_step_ordinal_leak(scenes)
         outro = _find_outro_scene(scenes)
+        if outro is not None:
+            # Pazarlama CTA'sı LLM kısıtı değildir. Her denemede aynı, onaylı
+            # banka girdisi kod tarafından yazılır; ek LLM retry/maliyet yaratmaz.
+            outro["cta_text"] = forced_cta
         cta_text = (outro or {}).get("cta_text") or ""
-        cta_ok = cta_text.strip() in CLOSING_BANK
+        cta_ok = outro is not None and cta_text == forced_cta
 
         # 2026-08-09 — kullanıcı hipotezi: sgs-content düzeltme turu (aşağıda,
         # SGS unsuru/cta için modele geri besleme) metni kısaltıyor olabilir,
@@ -373,20 +383,21 @@ def generate_motivation_storyboard(
         )
 
         problems: list[str] = []
-        if len(sgs_elements) < 2:
+        missing_required_terms = [
+            term for term in (sgs_term_1, sgs_term_2)
+            if term not in full_text.lower()
+        ]
+        if missing_required_terms:
             problems.append(
-                f"SGS unsuru yetersiz ({len(sgs_elements)}/2) — bulunanlar: {sorted(sgs_elements)}. "
-                f"Listeden en az 2 farklı somut unsur kullan."
+                f"Zorunlu SGS ifadeleri eksik: {missing_required_terms}. "
+                "Bu ifadeleri narration içinde AYNEN kullan."
             )
         if generic_hits:
             problems.append(f"Yasak jenerik ifade(ler): {generic_hits}. Somut karşılığını kullan.")
         if ordinal_leaks:
             problems.append(f"MotivationStepScene'de sıra ifadesi sızıntısı: {ordinal_leaks}.")
         if not cta_ok:
-            problems.append(
-                f"cta_text bankadan değil (üretilen: {cta_text!r}). "
-                f"MotivationOutroScene.cta_text'i yukarıdaki 8 kapanıştan biriyle HARFİYEN değiştir."
-            )
+            problems.append("MotivationOutroScene eksik; sahne şablonuna uygun outro üret.")
 
         if not problems:
             break
@@ -396,24 +407,15 @@ def generate_motivation_storyboard(
         else:
             logger.warning("[sgs-content] deneme=2/2 sonrası hâlâ sorunlu: %s", problems)
 
-    # cta_text 2 denemede de bankadan gelmediyse deterministik düzeltme —
-    # sessiz bırakılmıyor (loglanıyor), ama pazarlama uyumu (TÜRMOB) riski
-    # taşıyan bir alanı uydurulmuş haliyle bırakmak "sessiz fallback"tan
-    # daha kötü olurdu.
     outro = _find_outro_scene(scenes)
-    if outro is not None and not cta_ok:
-        forced = CLOSING_BANK[hash(topic) % len(CLOSING_BANK)]
-        logger.warning(
-            "[sgs-content] cta_text bankadan gelmedi, zorla düzeltildi: %r → %r",
-            outro.get("cta_text"), forced,
-        )
-        outro["cta_text"] = forced
+    if outro is not None:
+        outro["cta_text"] = forced_cta
         cta_ok = True
 
     cta_bank_index = None
     if outro is not None:
         try:
-            cta_bank_index = CLOSING_BANK.index(outro.get("cta_text", "")) + 1
+            cta_bank_index = forced_cta_index
         except ValueError:
             cta_bank_index = None
 

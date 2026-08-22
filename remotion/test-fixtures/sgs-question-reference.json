@@ -1,0 +1,47 @@
+{
+  "storyboard": {
+    "video_type": "soru_cozum",
+    "title": "Yasal Yedek Akçe — Soru Çözümü",
+    "lesson_name": "Şirket Muhasebesi",
+    "topic": "Yasal Yedek Akçe",
+    "format": "16:9",
+    "language": "tr",
+    "brand": {
+      "primary_color": "#001645",
+      "secondary_color": "#BF8D4B",
+      "background_color": "#F4F6FA",
+      "font_heading": "Noto Sans",
+      "font_body": "Noto Sans",
+      "handle": "@adimmusavir"
+    },
+    "scenes": [
+      {
+        "id": 1,
+        "component": "ChalkboardSolutionScene",
+        "duration_seconds": 55,
+        "question_number": 41,
+        "total_questions": 1,
+        "question_text": "İşletmenin ödenmiş sermayesi 800.000 TL, dönem net kârı 240.000 TL ve ayrılmış yasal yedek akçesi 150.000 TL'dir. Ayrılması gereken I. tertip yasal yedek akçe kaç TL'dir?",
+        "options": [
+          {"label": "A", "text": "10.000 TL"},
+          {"label": "B", "text": "12.000 TL"},
+          {"label": "C", "text": "24.000 TL"},
+          {"label": "D", "text": "48.000 TL"},
+          {"label": "E", "text": "160.000 TL"}
+        ],
+        "correct_label": "B",
+        "given": ["Net kâr = 240.000 TL", "Oran = %5"],
+        "asked": "I. tertip yedek akçe = ?",
+        "method_text": "Net kârın yüzde beşini hesapla.",
+        "chalkboard_steps": [
+          {"board_text": "240.000 × %5", "step_type": "solve"},
+          {"board_text": "= 12.000 TL", "step_type": "verification", "color": "green"},
+          {"board_text": "✓ Doğru: B", "step_type": "answer", "color": "green"}
+        ],
+        "common_mistake": "Sermaye üzerinden yüzde beş hesaplamak.",
+        "exam_tip": "Birinci tertip yedek akçe net kâr üzerinden ayrılır.",
+        "answer": "Doğru cevap: B — 12.000 TL"
+      }
+    ]
+  }
+}

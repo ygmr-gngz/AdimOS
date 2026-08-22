@@ -1,5 +1,6 @@
 import requests
 import uuid
+from urllib.parse import urlparse
 from app.core.config import settings
 from app.db.storage import upload_file
 from app.db.supabase import get_supabase_client
@@ -9,6 +10,8 @@ _BUCKET = "content"
 
 
 def _get_public_url(file_path: str) -> str:
+    if urlparse(file_path).scheme in ("http", "https"):
+        return file_path
     with open(file_path, "rb") as f:
         file_bytes = f.read()
 

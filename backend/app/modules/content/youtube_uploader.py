@@ -1,4 +1,9 @@
 import logging
+import os
+import tempfile
+from urllib.parse import urlparse
+
+import requests
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
@@ -42,6 +47,8 @@ def upload_to_youtube(
     tags: list[str],
     privacy: str = "private",
 ) -> dict:
+    if not video_path:
+        raise ValueError("YouTube yayını için video_url/video_path boş")
     youtube = _get_client()
 
     body = {
@@ -55,9 +62,25 @@ def upload_to_youtube(
         "status": {"privacyStatus": privacy},
     }
 
-    media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
-    request = youtube.videos().insert(part=",".join(body.keys()), body=body, media_body=media)
-    response = request.execute()
+    local_path = video_path
+    temp_path: str | None = None
+    if urlparse(video_path).scheme in ("http", "https"):
+        response = requests.get(video_path, timeout=(15, 180), stream=True)
+        response.raise_for_status()
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    tmp.write(chunk)
+            temp_path = tmp.name
+        local_path = temp_path
+
+    try:
+        media = MediaFileUpload(local_path, chunksize=-1, resumable=True, mimetype="video/mp4")
+        request = youtube.videos().insert(part=",".join(body.keys()), body=body, media_body=media)
+        response = request.execute()
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
     video_id = response["id"]
 
     return {

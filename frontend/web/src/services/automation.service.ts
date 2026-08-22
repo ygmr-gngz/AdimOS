@@ -21,6 +21,15 @@ const PLATFORM_TO_BACKEND: Record<string, string> = {
   tiktok: 'short',
 }
 
+const inferPlatform = (item: Record<string, unknown>): ContentPiece['platform'] => {
+  if (item.platform) return item.platform as ContentPiece['platform']
+  const type = String(item.type ?? '')
+  if (['reels_short', 'motivasyon', 'gorsel_post', 'short', 'reel', 'post'].includes(type)) {
+    return 'instagram'
+  }
+  return 'youtube'
+}
+
 export const automationService = {
   async generateContent(request: GenerateContentRequest): Promise<ContentPiece> {
     const backendType =
@@ -63,7 +72,7 @@ export const automationService = {
       script: item.script ? String(item.script) : undefined,
       audio_base64: item.audio_base64 ? String(item.audio_base64) : undefined,
       hashtags: Array.isArray(item.hashtags) ? item.hashtags : [],
-      platform: (item.platform as ContentPiece['platform']) ?? 'youtube',
+      platform: inferPlatform(item),
       content_type: (item.type as ContentPiece['content_type']) ?? 'video',
       status: (item.status as ContentPiece['status']) ?? 'draft',
       video_url: item.video_url ? String(item.video_url) : undefined,
@@ -92,7 +101,7 @@ export const automationService = {
       title: String(item.title ?? item.topic ?? 'İsimsiz'),
       description: item.caption ? String(item.caption) : undefined,
       hashtags: Array.isArray(item.hashtags) ? item.hashtags : [],
-      platform: (item.platform as ContentPiece['platform']) ?? 'youtube',
+      platform: inferPlatform(item),
       content_type: (item.type as ContentPiece['content_type']) ?? 'video',
       status: (item.status as ContentPiece['status']) ?? (req.action === 'approve' ? 'approved' : 'rejected'),
       video_url: item.video_url ? String(item.video_url) : undefined,

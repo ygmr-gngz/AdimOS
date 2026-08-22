@@ -98,6 +98,7 @@ function InfographicPreview({ storyboard }: { storyboard: Record<string, unknown
   const left = scene.comparison_left as { title: string; items: string[] } | undefined
   const right = scene.comparison_right as { title: string; items: string[] } | undefined
   const steps = scene.process_steps as { title: string; description: string }[] | undefined
+  const accountScenes = scenes?.filter(s => s.component === 'AccountCardScene') ?? []
 
   return (
     <div style={{ color: '#e2e8f0', overflow: 'auto', maxHeight: '100%', padding: 4, width: '100%' }}>
@@ -118,6 +119,26 @@ function InfographicPreview({ storyboard }: { storyboard: Record<string, unknown
                 {card.category}
               </p>
               <p style={{ margin: 0, fontSize: 11, color: '#94a3b8', lineHeight: 1.5 }}>{card.content}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {accountScenes.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {accountScenes.map((card, i) => (
+            <div key={i} style={{
+              background: '#fff', borderRadius: 10, padding: '10px 12px', color: '#0f172a',
+              border: '1px solid #dbe3ee',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                <span style={{ background: '#0B2A4A', color: '#fff', borderRadius: 6, padding: '3px 7px', fontWeight: 800, fontSize: 11 }}>
+                  {String(card.accountCode ?? '')}
+                </span>
+                <strong style={{ fontSize: 12 }}>{String(card.accountName ?? '')}</strong>
+                <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 800, color: '#9a6b2f' }}>{String(card.nature ?? '')}</span>
+              </div>
+              <p style={{ margin: 0, fontSize: 10, lineHeight: 1.4, color: '#475569' }}>{String(card.purpose ?? '')}</p>
             </div>
           ))}
         </div>
@@ -719,7 +740,7 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
         // üretimi gerektiğinde burada bir seçici eklenmeli.
         content_track: 'ogrenci',
         infographic_template: type === 'gorsel_post' ? infographicTemplate : undefined,
-        questions: type === 'soru_cozum' ? questions : undefined,
+        questions: type === 'soru_cozum' && showQuestions ? questions : undefined,
       })
       if (type === 'gorsel_post') {
         toast.success('Görsel post oluşturuldu — incelemeye hazır!')
@@ -728,8 +749,11 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
       }
       onCreated(job)
       onClose()
-    } catch {
-      toast.error('Görev oluşturulamadı')
+    } catch (error: unknown) {
+      const detail = (error as { response?: { data?: { detail?: string | { message?: string } } } })
+        ?.response?.data?.detail
+      const message = typeof detail === 'string' ? detail : detail?.message
+      toast.error(message || 'Görev oluşturulamadı')
     } finally {
       setLoading(false)
     }

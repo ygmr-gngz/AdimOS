@@ -52,6 +52,34 @@ class QuizQuestion(BaseModel):
     correct_label: str
     explanation: Optional[str] = None
 
+
+def _questions_are_blank(questions: Optional[List[QuizQuestion]]) -> bool:
+    return not questions or all(
+        not question.text.strip()
+        and all(not option.text.strip() for option in question.options)
+        for question in questions
+    )
+
+
+def _validate_manual_questions(questions: Optional[List[QuizQuestion]]) -> None:
+    if not questions or _questions_are_blank(questions):
+        return
+    for index, question in enumerate(questions, 1):
+        labels = [option.label.strip().upper() for option in question.options]
+        if not question.text.strip() or labels != ["A", "B", "C", "D"]:
+            raise ValueError(f"Soru {index}: metin ve A-D şıkları eksiksiz olmalı")
+        if any(not option.text.strip() for option in question.options):
+            raise ValueError(f"Soru {index}: boş şık bırakılamaz")
+        if question.correct_label.strip().upper() not in labels:
+            raise ValueError(f"Soru {index}: doğru cevap A-D arasında olmalı")
+
+
+def _effective_duration_tolerance(content_type: str, requested: int, supplied: int) -> int:
+    """Uzun LLM/TTS içeriklerinde mutlak 8 saniyelik toleransı ölçeklendirir."""
+    ratios = {"konu_anlatimi": 0.25, "soru_cozum": 0.25}
+    ratio = ratios.get(content_type)
+    return max(supplied, round(requested * ratio)) if ratio else supplied
+
 class CreateVideoPayload(BaseModel):
     type: str                              # quiz | lesson | shorts | motivation | infographic | reel
     title: str
@@ -502,7 +530,7 @@ def _generate_storyboard_for_regen(
             topic=payload.topic or payload.title,
             subject=payload.lesson_name or "SGS",
             target_minutes=corrected_min,
-            description=payload.description or "",
+            description="\n\n".join(filter(None, [payload.description or "", correction_hint])),
         )
         scenes = raw.get("scenes", [])
         for i, s in enumerate(scenes, 1):
@@ -1008,11 +1036,33 @@ def _run_pipeline_inner(
                 from app.modules.content.infographic_generator import generate_infographic_storyboard
                 topic = payload.topic or payload.title or "Genel Muhasebe"
                 template = payload.infographic_template or "card_grid"
-                storyboard = generate_infographic_storyboard(topic, template=template)
+                # card_grid artık onaylı AccountCardScene anatomisini üretir.
+                # Görsel post, storyboard JSON ile "hazır" sayılmaz; aşağıda
+                # gerçek PNG still'leri oluşmadan ready_for_review verilmez.
+                storyboard = generate_infographic_storyboard(
+                    topic, template=template, card_count=3,
+                )
                 logger.info(f"[video] {job_id[:8]} infografik storyboard üretildi topic='{topic}'")
+            from app.modules.content.infographic_generator import validate_account_card_storyboard
+            is_account_card_post = bool(storyboard.get("scenes")) and all(
+                scene.get("component") == "AccountCardScene"
+                for scene in storyboard.get("scenes", [])
+            )
+            if is_account_card_post:
+                validate_account_card_storyboard(storyboard, expected_count=3)
             sb.table("video_jobs").update({"storyboard": storyboard, "updated_at": "now()"}).eq("id", job_id).execute()
+            still_urls: list[str] = []
+            if is_account_card_post:
+                still_urls = _generate_card_stills(job_id, storyboard, background="canvas") or []
+                if len(still_urls) != len(storyboard["scenes"]):
+                    raise RuntimeError(
+                        "Görsel post PNG seti eksik; tüm hesap kartları üretilmeden yayınlanamaz."
+                    )
             _set_status(job_id, "ready_for_review")
-            logger.info(f"[video] {job_id[:8]} infografik bağımsız yol — Remotion atlandı, storyboard hazır")
+            logger.info(
+                f"[video] {job_id[:8]} görsel post hazır — "
+                f"{len(still_urls)} hesap kartı PNG üretildi"
+            )
             return
 
         # ── 1. Senaryo ──────────────────────────────────────────
@@ -1028,7 +1078,25 @@ def _run_pipeline_inner(
             logger.info(
                 f"[video] {job_id[:8]} pre_storyboard ile devam (resume) — senaryo üretimi atlandı"
             )
-        elif content_type == "soru_cozum" and payload.questions:
+        elif content_type == "soru_cozum":
+            if _questions_are_blank(payload.questions):
+                from app.modules.sgs.storyboard import generate_topic_quiz_questions
+                auto_count = max(3, min(6, round((payload.target_duration_minutes or 8) / 2)))
+                generated = generate_topic_quiz_questions(
+                    topic=payload.topic or payload.title,
+                    subject=payload.lesson_name or "SGS",
+                    count=auto_count,
+                )
+                payload.questions = [
+                    QuizQuestion(
+                        text=q["text"],
+                        options=[QuizOption(**option) for option in q["options"]],
+                        correct_label=q["correct_label"],
+                        explanation=q.get("explanation"),
+                    )
+                    for q in generated
+                ]
+                logger.info("[video] %s konu tabanlı %d soru otomatik üretildi", job_id[:8], len(generated))
             if payload.format == "9:16":
                 # Dikey kısa quiz — SplitQuizVerticalScene kalır
                 storyboard = _build_quiz_storyboard(
@@ -1077,13 +1145,6 @@ def _run_pipeline_inner(
                         f"[video] {job_id[:8]} kalite: {chalk_count}/{len(payload.questions)} "
                         "ChalkboardSolutionScene üretildi — storyboard eksik olabilir"
                     )
-        elif content_type == "soru_cozum" and not payload.questions:
-            # Soru çözüm — soru listesi olmadan gelen istek (panel topic-only gönderimi)
-            raise RuntimeError(
-                "Soru çözüm videosu için en az 1 soru gerekli. "
-                "Panel'de soruları ekleyin veya İçerik Otomasyonu'ndan soru seçin."
-            )
-
         elif content_type == "motivasyon":
             from app.modules.content.motivation_generator import generate_motivation_storyboard
             if payload.topic:
@@ -1325,10 +1386,13 @@ def _run_pipeline_inner(
         # (video_jobs.duration_tolerance_seconds kolonu, çağıranın gönderdiği değer).
         # Yüzde tabanlı ayrı bir formül YOK — panel ve kod aynı sayıyı görmeli.
         # Hem bu döngüde hem Remotion'a gönderilen storyboard'da (aşağıda) kullanılır.
-        _dur_tolerance_sec: float | None = (
-            float(payload.duration_tolerance_seconds)
-            if payload.requested_duration_seconds else None
-        )
+        _dur_tolerance_sec: float | None = None
+        if payload.requested_duration_seconds:
+            _dur_tolerance_sec = float(_effective_duration_tolerance(
+                content_type,
+                payload.requested_duration_seconds,
+                payload.duration_tolerance_seconds,
+            ))
 
         for _dur_turn in range(_seed_turn, 3):  # tur 0 = orijinal, tur 1-2 = yeniden üretim
             if _dur_turn > 0:
@@ -1923,23 +1987,21 @@ def create_video_job(payload: CreateVideoPayload, background_tasks: BackgroundTa
             }
         )
 
-    # Soru çözüm: soru listesi olmadan job oluşturmayı engelle
+    # Soru çözüm: tamamen boş liste topic tabanlı otomatik üretim demektir;
+    # kısmen doldurulmuş manuel soru ise sessizce LLM'e taşınmaz.
     from app.domain.content_type import normalize_content_type as _nct
     try:
         _ct = _nct(payload.type)
     except Exception:
         _ct = payload.type
-    if _ct == "soru_cozum" and not payload.questions:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "error_code": "missing_questions",
-                "message": (
-                    "Soru çözüm videosu için en az 1 soru gerekli. "
-                    "Panel'de soruları ekleyin veya İçerik Otomasyonu'ndan soru seçin."
-                ),
-            },
-        )
+    if _ct == "soru_cozum":
+        try:
+            _validate_manual_questions(payload.questions)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"error_code": "invalid_questions", "message": str(exc)},
+            ) from exc
 
     # Motivasyon: görsel kütüphanesi dolmadan (her tema >= MIN_VARIANTS_READY
     # lisanslı varyant) iş kuyruğa alınmaz — aksi halde her job select_asset'te
@@ -2051,14 +2113,14 @@ def regenerate_card_stills(job_id: str, body: CardStillsRequestBody = CardStills
     return {"ok": True, "background": body.background, "card_stills": urls}
 
 
-def _bridge_to_content_automation(job: dict) -> None:
-    """Video job onaylanınca generated_contents'a köprü kaydı ekle — İçerik Otomasyonu'nda görünsün."""
+def _bridge_to_content_automation(job: dict) -> str:
+    """Video job onaylanınca generated_contents'a idempotent kuyruk kaydı ekle."""
     job_id = job.get("id", "")
     sentinel = f"video_job:{job_id}"
     sb = get_supabase_client()
-    existing = sb.table("generated_contents").select("id", count="exact").eq("topic", sentinel).execute()
-    if (existing.count or 0) > 0:
-        return
+    existing = sb.table("generated_contents").select("id").eq("topic", sentinel).limit(1).execute()
+    if existing.data:
+        return str(existing.data[0]["id"])
     content_type = job.get("type") or "video"
     title = job.get("title") or content_type.replace("_", " ").capitalize()
     row: dict = {
@@ -2070,19 +2132,42 @@ def _bridge_to_content_automation(job: dict) -> None:
     }
     if job.get("video_url"):
         row["video_url"] = job["video_url"]
-    try:
-        sb.table("generated_contents").insert(row).execute()
-        logger.info(f"[video] approve bridge: job={job_id[:8]} → generated_contents")
-    except Exception as e:
-        logger.warning(f"[video] approve bridge hatası job={job_id[:8]}: {e}")
+    card_stills = (job.get("publish_package") or {}).get("card_stills") or []
+    if card_stills:
+        # generated_contents şemasında galeri alanı yok; otomasyon kartında
+        # önizleme/yayın için ilk PNG ana image_url olur. Tüm dizi video_jobs'ta korunur.
+        row["image_url"] = card_stills[0]
+    inserted = sb.table("generated_contents").insert(row).execute()
+    if not inserted.data or not inserted.data[0].get("id"):
+        raise RuntimeError("generated_contents insert yanıtında id bulunamadı")
+    content_id = str(inserted.data[0]["id"])
+    logger.info(
+        "[video] approve bridge: job=%s -> generated_contents=%s",
+        job_id[:8], content_id[:8],
+    )
+    return content_id
 
 
 @router.post("/jobs/{job_id}/approve")
 def approve_job(job_id: str):
     job = _get_job(job_id)
+    try:
+        content_id = _bridge_to_content_automation(job)
+    except Exception as exc:
+        logger.exception("[video] approve bridge başarısız job=%s", job_id[:8])
+        raise HTTPException(
+            status_code=502,
+            detail=f"Video onaylanamadı: İçerik Otomasyonu kuyruğuna yazılamadı ({exc})",
+        ) from exc
+    # video_jobs için canlı DB'de doğrulanmış durum değeri "approved".
+    # Kuyruğun kendisi yukarıda oluşturulan generated_contents(status=approved)
+    # satırıdır; DB sözleşmesinde kanıtı olmayan yeni bir status uydurulmaz.
     _set_status(job_id, "approved")
-    _bridge_to_content_automation(job)
-    return {"message": "Video onaylandı"}
+    return {
+        "message": "Video onaylandı ve İçerik Otomasyonu kuyruğuna alındı",
+        "status": "approved",
+        "content_id": content_id,
+    }
 
 
 @router.post("/jobs/{job_id}/reject")

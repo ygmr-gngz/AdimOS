@@ -119,6 +119,7 @@ export const SCENE_REGISTRY: Record<string, CompositionRegistryEntry> = {
     compositionId: "InfographicVideo",
     aspect:        "9:16",
     components: [
+      "AccountCardScene",
       "InfographicCardGridScene",
       "InfographicComparisonScene",
       "InfographicProcessScene",

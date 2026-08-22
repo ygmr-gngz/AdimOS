@@ -1,5 +1,8 @@
 export type ContentPlatform = 'youtube' | 'instagram' | 'tiktok' | 'youtube_shorts'
-export type ContentType = 'video' | 'reel' | 'short' | 'post' | 'story' | 'question_solution' | 'topic_explanation'
+export type ContentType =
+  | 'video' | 'reel' | 'short' | 'post' | 'story'
+  | 'question_solution' | 'topic_explanation'
+  | 'soru_cozum' | 'konu_anlatimi' | 'reels_short' | 'motivasyon' | 'gorsel_post'
 export type ContentStatus =
   | 'draft'
   | 'generating'

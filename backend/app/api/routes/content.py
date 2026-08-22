@@ -295,18 +295,29 @@ async def validate_content(content_id: str):
 
 # ── Publish
 
+def _require_publish_success(result: dict) -> None:
+    if result.get("error") or not (result.get("video_id") or result.get("media_id")):
+        raise HTTPException(status_code=502, detail={
+            "message": "Platform yayını başarısız oldu",
+            "platform_response": result,
+        })
+
 @router.post("/{content_id}/publish")
 def publish_content_unified(content_id: str):
     item = get_content(content_id)
     if not item:
         raise HTTPException(status_code=404, detail="İçerik bulunamadı")
     content_type = item.get("type", "video")
-    if content_type in ("video", "short", "question_solution", "topic_explanation"):
+    if content_type in (
+        "video", "question_solution", "topic_explanation",
+        "soru_cozum", "konu_anlatimi",
+    ):
         result = publish_to_youtube(item)
         platform = "youtube"
     else:
         result = publish_to_instagram(item)
         platform = "instagram"
+    _require_publish_success(result)
     update_content(content_id, {"status": "published"})
     return {"content_id": content_id, "platform": platform, "status": "published", **result}
 
@@ -317,6 +328,7 @@ def publish_youtube(content_id: str):
     if not item:
         raise HTTPException(status_code=404, detail="İçerik bulunamadı")
     result = publish_to_youtube(item)
+    _require_publish_success(result)
     update_content(content_id, {"status": "published"})
     return result
 
@@ -327,6 +339,7 @@ def publish_instagram(content_id: str):
     if not item:
         raise HTTPException(status_code=404, detail="İçerik bulunamadı")
     result = publish_to_instagram(item)
+    _require_publish_success(result)
     update_content(content_id, {"status": "published"})
     return result
 

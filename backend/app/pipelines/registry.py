@@ -19,7 +19,9 @@ CONTENT_PIPELINES: dict[str, dict] = {
             "OutroScene", "SplitQuizVerticalScene", "OptionAnalysisScene",
             "SplitQuizScene", "TAccountScene", "CalculationStepsScene",
         ],
-        "required_scenes": ["QuestionScene", "ChalkboardSolutionScene"],
+        # Chalkboard pipeline soruyu aynı sahnede gösterip çözer; ayrı
+        # QuestionScene zorunluluğu yeni generator sözleşmesiyle çelişiyordu.
+        "required_scenes": ["ChalkboardSolutionScene"],
     },
     "lesson": {
         "generator": "lesson_storyboard",
@@ -108,7 +110,9 @@ CONTENT_PIPELINES: dict[str, dict] = {
             # geriye dönük uyumluluk
             "InfographicCardGridScene", "InfographicComparisonScene", "InfographicProcessScene",
         ],
-        "required_scenes": ["InfographicCardGridScene"],
+        # Template'e özel zorunluluk infographic_generator içinde doğrulanır.
+        # comparison/process ve AccountCardScene birbirinin yerine geçebilir.
+        "required_scenes": [],
     },
 }
 

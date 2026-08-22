@@ -13,6 +13,7 @@ import { InfographicComparisonScene } from '../scenes/InfographicComparisonScene
 import { InfographicProcessScene } from '../scenes/InfographicProcessScene'
 import { IntroScene } from '../scenes/IntroScene'
 import { OutroScene } from '../scenes/OutroScene'
+import { AccountCardScene } from '../scenes/AccountCardScene'
 
 interface Props { storyboard: StoryboardJSON }
 
@@ -43,16 +44,23 @@ export function InfographicVideo({ storyboard }: Props) {
     <AbsoluteFill style={{ background: '#08121E' }}>
       {timings.map(({ scene, start, durationFrames }) => {
         const Component = SCENE_MAP[scene.component]
-        if (!Component) return null
+        const isAccountCard = scene.component === 'AccountCardScene'
+        if (!Component && !isAccountCard) {
+          throw new Error(`invalid_scene_for_content_type: ${scene.component}`)
+        }
         return (
           <Sequence key={scene.id} from={start} durationInFrames={durationFrames}>
             <AbsoluteFill>
-              <Component scene={scene} brand={brand} />
+              {isAccountCard
+                ? <AccountCardScene {...scene as any} format="9:16" />
+                : <Component scene={scene} brand={brand} />}
             </AbsoluteFill>
           </Sequence>
         )
       })}
-      <BrandOverlay brand={brand} theme="dark" watermarkOpacity={0.10} />
+      {/* Hesap kartının kendi yüzeyi ve marka katmanı var; orta filigran metni
+          örter. Logo/footer korunur, yalnızca filigran kapatılır. */}
+      <BrandOverlay brand={brand} theme="dark" watermarkOpacity={0.10} showWatermark={false} />
     </AbsoluteFill>
   )
 }

@@ -243,7 +243,7 @@ def create_post(topic: str) -> dict:
 # ─────────────────────────────────────────────────────────────
 def publish_to_youtube(content: dict) -> dict:
     return upload_to_youtube(
-        video_path=content.get("video_path", ""),
+        video_path=content.get("video_url") or content.get("video_path", ""),
         title=content.get("title", ""),
         description=content.get("description", ""),
         tags=content.get("tags", []),
@@ -253,5 +253,7 @@ def publish_to_youtube(content: dict) -> dict:
 
 def publish_to_instagram(content: dict) -> dict:
     if content.get("type") == "post":
-        return post_image_to_instagram(content.get("image_path", ""), content.get("caption", ""))
-    return post_reel_to_instagram(content.get("video_path", ""), content.get("caption", ""))
+        media = content.get("image_url") or content.get("image_path", "")
+        return post_image_to_instagram(media, content.get("caption", ""))
+    media = content.get("video_url") or content.get("video_path", "")
+    return post_reel_to_instagram(media, content.get("caption", ""))

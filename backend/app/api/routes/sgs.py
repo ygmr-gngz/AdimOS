@@ -460,6 +460,7 @@ def generate_topic_video(req: TopicVideoRequest, bg: BackgroundTasks):
         target_duration_minutes=max(5, len(quiz_questions) * 2),
         questions=quiz_questions,
         description=f"{req.lesson} dersinden {req.topic} konusunun çıkmış sorularının çözümü.",
+        content_track="ogrenci",
     )
 
     job_id = str(uuid.uuid4())
@@ -486,7 +487,7 @@ def generate_topic_video(req: TopicVideoRequest, bg: BackgroundTasks):
         "question_count": len(quiz_questions),
         "topic": req.topic,
         "lesson": req.lesson,
-        "composition": "SplitQuizScene (QuizVideo)",
+        "composition": "QuizVideo / ChalkboardSolutionScene",
     }
 
 
@@ -1086,11 +1087,34 @@ def generate_konu_anlatimi(
 
     source_text = "\n\n---\n\n".join(source_parts[:15])
 
-    target_minutes = 12 if duration_variant == "long" else 1
+    target_minutes = 12 if duration_variant == "long" else 8
 
     title = f"{topic} — Konu Anlatımı"
     if duration_variant == "short":
         title += " (Kısa)"
+
+    # SGS Akademi de Video Prodüksiyon ile AYNI generator/routing/TTS/render
+    # yolunu kullanır. Eski _bg_konu_anlatimi yalnızca SplitLessonScene'i
+    # tekrarladığı için validate_routing single_component_repeated kapısında
+    # deterministik olarak duruyordu ve ayrıca ses üretmiyordu.
+    from app.api.routes.video import _run_pipeline, CreateVideoPayload
+
+    payload = CreateVideoPayload(
+        type="konu_anlatimi",
+        title=title,
+        lesson_name=actual_lesson,
+        topic=topic,
+        description=(
+            f"Aşağıdaki {len(topic_qs)} SGS sorusundan çıkarılan kaynak içeriği kullan. "
+            "Kavram infografiği ve zihin haritası sahneleri mutlaka bulunsun.\n\n"
+            + source_text[:7000]
+        ),
+        format="16:9",
+        target_duration_minutes=target_minutes,
+        requested_duration_seconds=target_minutes * 60,
+        duration_tolerance_seconds=120,
+        content_track="ogrenci",
+    )
 
     job_row = {
         "type": "konu_anlatimi",
@@ -1100,11 +1124,8 @@ def generate_konu_anlatimi(
         "description": f"Konu anlatımı — {len(topic_qs)} sorudan üretildi",
         "target_duration_minutes": target_minutes,
         "status": "pending",
-        "payload_json": {
-            "production_type": "konu_anlatimi",
-            "question_count": len(topic_qs),
-            "duration_variant": duration_variant,
-        },
+        "payload_json": payload.model_dump(mode="json"),
+        "content_track": "ogrenci",
     }
 
     result = supabase.table("video_jobs").insert(job_row).execute()
@@ -1112,8 +1133,11 @@ def generate_konu_anlatimi(
         raise HTTPException(status_code=500, detail="Video işi oluşturulamadı")
 
     job_id = result.data[0]["id"]
-    bg.add_task(_bg_konu_anlatimi, job_id, topic, actual_lesson, source_text, duration_variant)
-    logger.info(f"[sgs] konu_anlatimi job={job_id} topic={topic!r} question_count={len(topic_qs)} bg task tetiklendi")
+    bg.add_task(_run_pipeline, job_id, payload)
+    logger.info(
+        f"[sgs] konu_anlatimi -> ortak video pipeline job={job_id} "
+        f"topic={topic!r} question_count={len(topic_qs)}"
+    )
 
     return {
         "job_id": job_id,
@@ -1123,5 +1147,5 @@ def generate_konu_anlatimi(
         "question_count": len(topic_qs),
         "duration_variant": duration_variant,
         "status": "pending",
-        "composition": "SplitLessonScene (QuizVideo)",
+        "composition": "LessonVideo",
     }

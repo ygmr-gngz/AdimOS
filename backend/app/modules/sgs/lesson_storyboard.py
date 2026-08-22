@@ -95,7 +95,10 @@ def generate_lesson_storyboard(
 
     Returns: {"scenes": [...]}
     """
-    desc_note = f"\nEk bağlam: {description}" if description else ""
+    desc_note = f"\nEk bağlam ve üretim düzeltmesi: {description}" if description else ""
+    min_scene_count = 8 if target_minutes <= 12 else 10
+    ideal_scene_count = "10-14" if target_minutes <= 12 else "12-18"
+    min_voice_seconds = round(float(target_minutes) * 60 * 0.80)
 
     prompt = f""""{topic}" konusu için {target_minutes} dakikalık kapsamlı konu anlatımı videosu storyboard üret.
 
@@ -178,7 +181,7 @@ VİDEO BİLGİSİ:
    - Kullanım: alt konu haritası ve dersin genel sistemi. Serbest görsel/prompt üretme.
 
 ════════ SAHNE SAYISI VE EKRAN KULLANIMI KILAVUZU ════════
-{target_minutes} dakika için ZORUNLU sahne dizisi (10-18 sahne):
+{target_minutes} dakika için ZORUNLU sahne dizisi ({min_scene_count}-18 sahne):
 - 1 LessonTitleScene (~25s)
 - 4-6 LessonConceptScene (her biri ~90-120s — kavram başına ayrı sahne, alt konuları böl)
 - 2-3 LessonCardScene (her biri ~75s — tablo/liste içerikleri için)
@@ -196,8 +199,8 @@ EKRAN KULLANIMI KURALLARI (%75-85 hedef):
 - LessonCardScene cards: her kart için content VE rule alanı doldurulmalı
 
 MİNİMUM KURAL — KELİMESİ KELİMESİNE UYULACAK:
-- Toplam sahne sayısı: EN AZ 10, ideal 12-15
-- Toplam voice_text süresi: EN AZ 1080 saniye (18 dakika)
+- Toplam sahne sayısı: EN AZ {min_scene_count}, ideal {ideal_scene_count}
+- Toplam voice_text için tahmini seslendirme süresi: EN AZ {min_voice_seconds} saniye
 - Her kavram için ayrı LessonConceptScene — tek sahnede tıkıştırma
 - Her örnek için ayrı LessonExampleScene — tek sahnede tıkıştırma
 - Alt konuları böl: "Hesap işleyişi" ve "Örnek kayıtlar" iki ayrı sahne olsun
@@ -208,7 +211,8 @@ MİNİMUM KURAL — KELİMESİ KELİMESİNE UYULACAK:
     örnek: 220-300 kelime
     özet: 130-170 kelime
 
-BU KURALLAR İHLAL EDİLİRSE İÇERİK RENDERLENMEYECEK.
+Hedef süreyle çelişen sabit 18 dakika alt sınırı kullanma. Ek bağlamda süre
+düzeltmesi varsa voice_text uzunluklarını o geri bildirime göre değiştir.
 
 ════════ JSON FORMAT ════════
 {{

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-17T12:58:55.091Z",
+  "generated_at": "2026-08-22T09:13:20.184Z",
   "remotion_version": "4.0.488",
   "compositions": [
     {
@@ -101,6 +101,7 @@
       "id": "InfographicVideo",
       "aspect": "9:16",
       "components": [
+        "AccountCardScene",
         "InfographicCardGridScene",
         "InfographicComparisonScene",
         "InfographicProcessScene"
