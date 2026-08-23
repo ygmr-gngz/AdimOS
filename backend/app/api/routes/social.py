@@ -3,12 +3,10 @@ import logging
 import requests
 from fastapi import APIRouter
 from app.core.config import settings
+from app.integrations.instagram.graph import graph_base
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-_GRAPH = "https://graph.facebook.com/v21.0"
-
 
 def _mask(value: str) -> str:
     if not value or len(value) < 10:
@@ -42,7 +40,7 @@ def instagram_status():
 
     try:
         resp = requests.get(
-            f"{_GRAPH}/{account_id}",
+            f"{graph_base(token)}/{account_id}",
             params={
                 "fields": "name,username,followers_count",
                 "access_token": token,

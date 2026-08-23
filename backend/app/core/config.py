@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     META_APP_SECRET: str = ""
     META_ACCESS_TOKEN: str = ""
     META_VERIFY_TOKEN: str = ""
+    META_GRAPH_API_VERSION: str = "v25.0"
     FACEBOOK_PAGE_ID: str = ""
     INSTAGRAM_BUSINESS_ACCOUNT_ID: str = ""
     INSTAGRAM_ACCESS_TOKEN: str = ""

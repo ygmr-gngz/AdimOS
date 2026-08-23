@@ -6,11 +6,9 @@ from app.core.config import settings
 from app.db.supabase import get_supabase_client
 from app.db.repositories.leads_repo import create_lead
 from app.config.instagram_dm_flows import WELCOME_MESSAGE, FALLBACK_MESSAGE, FLOWS
+from app.integrations.instagram.graph import graph_base
 
 logger = logging.getLogger(__name__)
-
-_GRAPH = "https://graph.facebook.com/v21.0"
-
 
 # ── Mesaj Gönder ──────────────────────────────────────────────
 
@@ -29,7 +27,7 @@ def send_instagram_message(recipient_id: str, text: str) -> bool:
 
     try:
         resp = requests.post(
-            f"{_GRAPH}/{account_id}/messages",
+            f"{graph_base(token)}/{account_id}/messages",
             json={
                 "recipient": {"id": recipient_id},
                 "message": {"text": text},

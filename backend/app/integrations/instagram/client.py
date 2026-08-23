@@ -1,9 +1,7 @@
 import time
 import requests
 from app.core.config import settings
-
-GRAPH = "https://graph.facebook.com/v21.0"
-
+from app.integrations.instagram.graph import graph_base, refresh_url
 
 class InstagramClient:
     def __init__(self, token: str | None = None, business_id: str | None = None):
@@ -13,14 +11,14 @@ class InstagramClient:
             raise RuntimeError("instagram_credentials_missing")
 
     def post(self, path: str, data: dict) -> dict:
-        response = requests.post(f"{GRAPH}/{path}", data={**data, "access_token": self.token}, timeout=30)
+        response = requests.post(f"{graph_base(self.token)}/{path}", data={**data, "access_token": self.token}, timeout=30)
         payload = response.json()
         if not response.ok or payload.get("error"):
             raise RuntimeError(f"instagram_api_error: {payload.get('error', payload)}")
         return payload
 
     def get(self, path: str, params: dict | None = None) -> dict:
-        response = requests.get(f"{GRAPH}/{path}", params={**(params or {}), "access_token": self.token}, timeout=30)
+        response = requests.get(f"{graph_base(self.token)}/{path}", params={**(params or {}), "access_token": self.token}, timeout=30)
         payload = response.json()
         if not response.ok or payload.get("error"):
             raise RuntimeError(f"instagram_api_error: {payload.get('error', payload)}")
@@ -47,7 +45,7 @@ def refresh_long_lived_token(token: str | None = None) -> dict:
     if not current:
         raise RuntimeError("instagram_access_token_missing")
     response = requests.get(
-        f"{GRAPH}/refresh_access_token",
+        refresh_url(current),
         params={"grant_type": "ig_refresh_token", "access_token": current}, timeout=30,
     )
     payload = response.json()

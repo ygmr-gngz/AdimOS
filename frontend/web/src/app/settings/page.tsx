@@ -181,13 +181,13 @@ const IG_CHECKLIST = [
     critical: true,
   },
   {
-    label: 'instagram_manage_messages izni',
-    detail: 'Meta Developers → App Review → Permissions → instagram_manage_messages: Approved',
+    label: 'instagram_business_manage_messages izni',
+    detail: 'Meta Developers → App Review → Permissions → instagram_business_manage_messages: Advanced Access',
     critical: true,
   },
   {
     label: 'META_ACCESS_TOKEN Railway\'de var',
-    detail: 'Page Access Token (User Token değil). graph.facebook.com/me?access_token=TOKEN ile doğrulayın.',
+    detail: 'Instagram API Setup’tan üretilen IGAA tokenı veya Facebook Login kullanılıyorsa geçerli Page Access Token.',
     critical: false,
   },
   {
