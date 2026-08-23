@@ -732,6 +732,7 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
   const [lessonName, setLessonName] = useState('')
   const [topic, setTopic] = useState('')
   const [infographicTemplate, setInfographicTemplate] = useState('card_grid')
+  const [reelMode, setReelMode] = useState<'standard' | 'animated_illustration' | 'single_question'>('animated_illustration')
   const [showQuestions, setShowQuestions] = useState(false)
   const [questions, setQuestions] = useState<CreateVideoPayload['questions']>(
     Array.from({ length: 4 }, () => ({
@@ -804,7 +805,11 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
         description: description.trim() || undefined,
         format,
         target_duration_minutes: type === 'motivasyon' ? undefined : targetMinutes,
-        requested_duration_seconds: type === 'motivasyon' ? motivationSeconds : targetMinutes * 60,  // saniye — backend kalite kapısı için
+        requested_duration_seconds: type === 'motivasyon'
+          ? motivationSeconds
+          : type === 'reels_short' && reelMode === 'single_question'
+            ? 45
+            : targetMinutes * 60,
         duration_tolerance_seconds: 8,
         // M8: backend content_track'i artık zorunlu kılıyor (danışan hattı TÜRMOB
         // uyum kapısını buradan tetikliyor). Bu panelde henüz hat seçici UI yok —
@@ -813,7 +818,12 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
         // üretimi gerektiğinde burada bir seçici eklenmeli.
         content_track: 'ogrenci',
         infographic_template: type === 'gorsel_post' ? infographicTemplate : undefined,
-        questions: type === 'soru_cozum' && showQuestions ? questions : undefined,
+        reel_mode: type === 'reels_short' ? reelMode : undefined,
+        questions: type === 'soru_cozum' && showQuestions
+          ? questions
+          : type === 'reels_short' && reelMode === 'single_question' && showQuestions
+            ? questions?.slice(0, 1)
+            : undefined,
       })
       if (type === 'gorsel_post') {
         toast.success('Görsel post oluşturuldu — incelemeye hazır!')
@@ -875,13 +885,30 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
       {/* Konu (reels_short için opsiyonel) */}
       {type === 'reels_short' && (
-        <div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>
             Konu <span style={{ color: '#94a3b8', fontWeight: 400 }}>(opsiyonel)</span>
           </label>
           <input value={topic} onChange={e => setTopic(e.target.value)}
             placeholder="Örn: Vergi beyanname döneminde dikkat edilmesi gerekenler"
             style={INP} />
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#475569', margin: '0 0 8px' }}>Anlatım Biçimi</p>
+            {([
+              ['animated_illustration', 'Animasyonlu İllüstrasyon', 'Konuya özel çizimler anlatımla oluşur ve hareket eder.'],
+              ['single_question', 'Tek Soruda Öğren', 'Beş şıklı tek soru, doğru cevap, neden ve hafıza kancası.'],
+            ] as const).map(([value, label, desc]) => (
+              <button key={value} onClick={() => setReelMode(value)} style={{
+                width: '100%', textAlign: 'left', padding: '12px 14px', marginBottom: 7,
+                borderRadius: 10, cursor: 'pointer',
+                border: `2px solid ${reelMode === value ? '#0B2A4A' : '#e2e8f0'}`,
+                background: reelMode === value ? '#0B2A4A' : '#fff',
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: reelMode === value ? '#fff' : '#0B2A4A' }}>{label}</div>
+                <div style={{ fontSize: 11, marginTop: 3, color: reelMode === value ? 'rgba(255,255,255,.68)' : '#94a3b8' }}>{desc}</div>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -944,7 +971,7 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
       )}
 
       {/* Soru çözüm — sorular katlanabilir */}
-      {type === 'soru_cozum' && (
+      {(type === 'soru_cozum' || (type === 'reels_short' && reelMode === 'single_question')) && (
         <div>
           <button
             onClick={() => setShowQuestions(v => !v)}
@@ -955,13 +982,13 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
             }}
           >
             <ChevronRight size={14} style={{ transition: 'transform 0.15s', transform: showQuestions ? 'rotate(90deg)' : 'none' }} />
-            Soruları Manuel Gir
+            {type === 'reels_short' ? 'Soruyu Manuel Gir' : 'Soruları Manuel Gir'}
             <span style={{ fontWeight: 400, color: '#94a3b8' }}>(boş bırakırsanız GPT otomatik oluşturur)</span>
           </button>
 
           {showQuestions && (
             <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {questions?.map((q, qi) => (
+              {(type === 'reels_short' ? questions?.slice(0, 1) : questions)?.map((q, qi) => (
                 <div key={qi} style={{ border: '1.5px solid #e2e8f0', borderRadius: 12, padding: 16, background: '#fafafa' }}>
                   <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: '#0B2A4A' }}>Soru {qi + 1}</p>
                   <textarea value={q.text} onChange={e => updateQuestion(qi, 'text', e.target.value)}

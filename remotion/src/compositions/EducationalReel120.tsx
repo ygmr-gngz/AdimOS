@@ -7,7 +7,7 @@
  *   AccountCardScene, TableScene, JournalEntryScene, RuleBoxScene, CommonMistakeScene
  *   EducationalReelScene — genel amaçlı (eski storyboard'lar için)
  */
-import { AbsoluteFill, Audio, Sequence } from 'remotion'
+import { AbsoluteFill, Audio, Sequence, staticFile } from 'remotion'
 import { StoryboardJSON } from '../types'
 import { BrandOverlay } from '../components/BrandOverlay'
 import { BrandWatermark } from '../components/BrandWatermark'
@@ -18,10 +18,15 @@ import { TableScene } from '../scenes/TableScene'
 import { RuleBoxScene } from '../scenes/RuleBoxScene'
 import { CommonMistakeScene } from '../scenes/CommonMistakeScene'
 import { JournalEntryScene } from '../scenes/JournalEntryScene'
+import { AnimatedIllustrationScene } from '../scenes/AnimatedIllustrationScene'
+import { ReelAnswerScene, ReelQuestionScene } from '../scenes/ReelQuestionScenes'
+import { DrawnAccountingExampleScene, DrawnQuestionExplainerScene } from '../scenes/DrawnExplainerScenes'
 import { FPS } from '../brand'
 import { TRANSITION_FRAMES, resolveSceneDurationSeconds, getSceneTimings } from '../utils'
 
 interface Props { storyboard: StoryboardJSON }
+
+const mediaSrc = (src: string) => /^(https?:|data:)/.test(src) ? src : staticFile(src.replace(/^\//, ''))
 
 // Kart tabanlı sahnelerde filigran KAPALI — kartın arkasından geçmesi
 // okunabilirliği bozuyor (Motivation sahnelerindeki aynı sorunun karşılığı,
@@ -52,6 +57,16 @@ function ReelScene({ scene, brand }: { scene: Record<string, unknown>; brand: un
     case 'JournalEntryScene':
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return <JournalEntryScene {...p as any} />
+    case 'AnimatedIllustrationScene':
+      return <AnimatedIllustrationScene scene={scene as any} />
+    case 'ReelQuestionScene':
+      return <ReelQuestionScene scene={scene as any} />
+    case 'ReelAnswerScene':
+      return <ReelAnswerScene scene={scene as any} />
+    case 'DrawnAccountingExampleScene':
+      return <DrawnAccountingExampleScene scene={scene as any} />
+    case 'DrawnQuestionExplainerScene':
+      return <DrawnQuestionExplainerScene scene={scene as any} />
     case 'ReelHookScene':
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return <EducationalReelScene scene={{ ...scene, segment_type: 'hook' } as any} brand={brand as any} />
@@ -102,7 +117,7 @@ export function EducationalReel120({ storyboard }: Props) {
         return (
           <Sequence key={scene.id} from={start} durationInFrames={durationFrames}>
             <AbsoluteFill>
-              {audioSrc && <Audio src={audioSrc} />}
+              {audioSrc && <Audio src={mediaSrc(audioSrc)} />}
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               <ReelScene scene={scene as any} brand={brand} />
               {!CARD_BASED_COMPONENTS.has(scene.component as string) && (

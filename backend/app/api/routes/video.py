@@ -104,6 +104,7 @@ class CreateVideoPayload(BaseModel):
     questions: Optional[List[QuizQuestion]] = None
     pre_storyboard: Optional[dict] = None         # infografik önceden üretilmiş storyboard
     infographic_template: Optional[str] = None    # card_grid | comparison | process
+    reel_mode: Literal["standard", "animated_illustration", "single_question"] = "standard"
     # Süre kalite kapısı (Section 1)
     requested_duration_seconds: Optional[int] = None
     duration_tolerance_seconds: int = 15
@@ -499,6 +500,19 @@ def _generate_storyboard_for_regen(
     bunun yerine bütçe büyüdükçe sahne SAYISI artmalı — sahne uzunluğu değil.
     """
     if content_type == "reels_short":
+        if payload.reel_mode == "single_question":
+            from app.modules.content.reel_enhancements import build_single_question_reel
+            from app.modules.sgs.storyboard import generate_topic_quiz_questions
+            if _questions_are_blank(payload.questions):
+                generated = generate_topic_quiz_questions(
+                    payload.topic or payload.title, payload.lesson_name or "SGS", count=1,
+                )
+                payload.questions = [QuizQuestion(**generated[0])]
+            question = payload.questions[0].model_dump()
+            return build_single_question_reel(
+                title=payload.title, topic=payload.topic or payload.title,
+                subject=payload.lesson_name or "SGS", question=question, brand=brand,
+            )
         from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
         _, _, _regen_sc = _syllable_budget_params(corrected_seconds, content_type)
         sb_new = generate_educational_reel_storyboard(
@@ -1333,30 +1347,25 @@ def _run_pipeline_inner(
 
         elif content_type == "reels_short":
             # EducationalReel120 — GPT storyboard + EducationalReelScene bileşeni
-            from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
-            _reel_budget_sec = float(payload.requested_duration_seconds or 120)
-            _, _, _reel_sc = _syllable_budget_params(_reel_budget_sec, content_type)
-            storyboard = generate_educational_reel_storyboard(
-                title=payload.title,
-                topic=payload.topic or payload.title,
-                subject=payload.lesson_name or "SGS",
-                content_series=payload.content_series,
-                description=payload.description or "",
-                brand=brand,
-                budget_seconds=_reel_budget_sec,
-                scene_count=_reel_sc,
-            )
-            storyboard["format"] = payload.format or "9:16"
-            for i, s in enumerate(storyboard.get("scenes", []), 1):
-                s["id"] = i
-
-            # ── Hece bütçesi kontrolü — TTS'den önce, 1 yeniden deneme ──────
-            _syl_ok, _syl_detail = _check_syllable_budget(storyboard, _reel_budget_sec, content_type)
-            if not _syl_ok:
-                logger.warning(
-                    "[video] %s hece bütçesi aşıldı — 1 yeniden deneme: %s",
-                    job_id[:8], _syl_detail,
+            if payload.reel_mode == "single_question":
+                from app.modules.content.reel_enhancements import build_single_question_reel
+                from app.modules.sgs.storyboard import generate_topic_quiz_questions
+                if _questions_are_blank(payload.questions):
+                    generated = generate_topic_quiz_questions(
+                        payload.topic or payload.title, payload.lesson_name or "SGS", count=1,
+                    )
+                    payload.questions = [QuizQuestion(**generated[0])]
+                _validate_manual_questions(payload.questions)
+                storyboard = build_single_question_reel(
+                    title=payload.title, topic=payload.topic or payload.title,
+                    subject=payload.lesson_name or "SGS",
+                    question=payload.questions[0].model_dump(), brand=brand,
                 )
+                _reel_budget_sec = float(payload.requested_duration_seconds or 60)
+            else:
+                from app.modules.sgs.educational_reel_storyboard import generate_educational_reel_storyboard
+                _reel_budget_sec = float(payload.requested_duration_seconds or 120)
+                _, _, _reel_sc = _syllable_budget_params(_reel_budget_sec, content_type)
                 storyboard = generate_educational_reel_storyboard(
                     title=payload.title,
                     topic=payload.topic or payload.title,
@@ -1365,18 +1374,39 @@ def _run_pipeline_inner(
                     description=payload.description or "",
                     brand=brand,
                     budget_seconds=_reel_budget_sec,
-                    syllable_feedback=_syl_detail,
                     scene_count=_reel_sc,
                 )
                 storyboard["format"] = payload.format or "9:16"
                 for i, s in enumerate(storyboard.get("scenes", []), 1):
                     s["id"] = i
-                _syl_ok2, _syl_detail2 = _check_syllable_budget(storyboard, _reel_budget_sec, content_type)
-                if not _syl_ok2:
+
+                # ── Hece bütçesi kontrolü — TTS'den önce, 1 yeniden deneme ──────
+                _syl_ok, _syl_detail = _check_syllable_budget(storyboard, _reel_budget_sec, content_type)
+                if not _syl_ok:
                     logger.warning(
-                        "[video] %s 2. deneme sonrası hece aşımı devam ediyor: %s — devam edildi",
-                        job_id[:8], _syl_detail2,
+                        "[video] %s hece bütçesi aşıldı — 1 yeniden deneme: %s",
+                        job_id[:8], _syl_detail,
                     )
+                    storyboard = generate_educational_reel_storyboard(
+                        title=payload.title,
+                        topic=payload.topic or payload.title,
+                        subject=payload.lesson_name or "SGS",
+                        content_series=payload.content_series,
+                        description=payload.description or "",
+                        brand=brand,
+                        budget_seconds=_reel_budget_sec,
+                        syllable_feedback=_syl_detail,
+                        scene_count=_reel_sc,
+                    )
+                    storyboard["format"] = payload.format or "9:16"
+                    for i, s in enumerate(storyboard.get("scenes", []), 1):
+                        s["id"] = i
+                    _syl_ok2, _syl_detail2 = _check_syllable_budget(storyboard, _reel_budget_sec, content_type)
+                    if not _syl_ok2:
+                        logger.warning(
+                            "[video] %s 2. deneme sonrası hece aşımı devam ediyor: %s — devam edildi",
+                            job_id[:8], _syl_detail2,
+                        )
 
         elif content_type == "konu_anlatimi":
             from app.modules.sgs.lesson_storyboard import generate_lesson_storyboard
@@ -1920,6 +1950,17 @@ def _run_pipeline_inner(
             storyboard["requested_duration_seconds"] = payload.requested_duration_seconds
             storyboard["duration_tolerance_seconds"] = _dur_tolerance_sec
 
+        # Görseller yalnızca süre/TTS kapıları geçildikten sonra üretilir. Böylece
+        # duration retry pahalı Image API çağrılarını tekrarlamaz.
+        if content_type == "reels_short" and payload.reel_mode == "animated_illustration":
+            from app.modules.content.reel_enhancements import add_animated_illustrations
+            storyboard = add_animated_illustrations(
+                storyboard, job_id=job_id, topic=payload.topic or payload.title,
+            )
+            sb.table("video_jobs").update({
+                "storyboard": storyboard, "updated_at": "now()",
+            }).eq("id", job_id).execute()
+
         # ── 3. Pre-render ses kapısı (v2 §6.2) ────────────────
         audio_errors = check_audio_urls(storyboard)
         if audio_errors:
@@ -2124,7 +2165,7 @@ def create_video_job(payload: CreateVideoPayload, background_tasks: BackgroundTa
         _ct = _nct(payload.type)
     except Exception:
         _ct = payload.type
-    if _ct == "soru_cozum":
+    if _ct == "soru_cozum" or (_ct == "reels_short" and payload.reel_mode == "single_question"):
         try:
             _validate_manual_questions(payload.questions)
         except ValueError as exc:
@@ -2365,6 +2406,7 @@ def _rebuild_payload_from_job(job: dict) -> "CreateVideoPayload":
             # olabilir — geriye dönük uyumluluk fallback'i (bkz. recovery yolu notu).
             content_track=raw.get("content_track") or "ogrenci",
             infographic_template=raw.get("infographic_template"),
+            reel_mode=raw.get("reel_mode") or "standard",
             pre_storyboard=raw.get("pre_storyboard"),
         )
     # Fallback: storyboard'dan soruları çıkar (payload_json yoksa — eski işler)

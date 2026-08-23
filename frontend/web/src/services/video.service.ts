@@ -90,6 +90,7 @@ export interface CreateVideoPayload {
   duration_tolerance_seconds?: number   // varsayılan 8 saniye
   pre_storyboard?: Record<string, unknown>
   infographic_template?: string
+  reel_mode?: 'standard' | 'animated_illustration' | 'single_question'
   content_series?: string
   content_track: ContentTrack   // M8: backend'de zorunlu — burada da opsiyonel bırakılmadı
   storyboard_version?: number

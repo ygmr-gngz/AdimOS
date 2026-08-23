@@ -2,7 +2,7 @@
  * TableScene — karşılaştırma tablosu (maks. 4 sütun × 6 satır).
  * Zebra satırlar, CardShell (zemin/kart/gölge/kenarlık), dinamik ölçekleme.
  */
-import { interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
+import { interpolate, useCurrentFrame, useVideoConfig } from 'remotion'
 import { T } from '../theme/tokens'
 import { CardShell } from '../components/CardShell'
 import { estimateLines, fieldMinScale, solveCardScale } from '../theme/dynamicScale'
@@ -22,13 +22,12 @@ export function TableScene({
   title, subtitle, headers, rows, highlight_col, format = '9:16', canvasColor,
 }: TableSceneProps) {
   const frame = useCurrentFrame()
-  const { fps, height: videoHeight } = useVideoConfig()
+  const { height: videoHeight } = useVideoConfig()
   const colCount = headers.length
   const visibleRows = rows.slice(0, 6)
 
-  const cardProgress = spring({ frame, fps, config: { damping: 14, stiffness: 100 } })
-  const cardY = interpolate(cardProgress, [0, 1], [60, 0])
-  const cardOpacity = interpolate(cardProgress, [0, 1], [0, 1])
+  // Tablo geometrisi hareket etmez: çizgiler oluşur, sonra hücreler yazılır.
+  const cardOpacity = interpolate(frame, [0, 10], [0, 1], { extrapolateRight: 'clamp' })
 
   const L = format === '16:9' ? T.layout16x9 : T.layout9x16
   const minScale = fieldMinScale(Object.values(L.font))
@@ -70,7 +69,7 @@ export function TableScene({
   const entryFont = L.font.entry.target * scale
 
   return (
-    <CardShell format={format} opacity={cardOpacity} translateY={cardY} canvasColor={canvasColor}>
+    <CardShell format={format} opacity={cardOpacity} translateY={0} canvasColor={canvasColor}>
       <div style={{ padding: `${T.space.lg}px ${L.cardPad}px 0` }}>
         {title && (
           <div style={{ fontSize: titleFont, fontWeight: 800, color: T.color.navy900, lineHeight: 1.15 }}>
@@ -84,7 +83,7 @@ export function TableScene({
         )}
       </div>
 
-      <div style={{ margin: `${T.space.md}px ${L.cardPad}px ${T.space.lg}px`, borderRadius: T.radius.chip, overflow: 'hidden', border: `1px solid ${T.color.border}` }}>
+      <div style={{ position: 'relative', margin: `${T.space.md}px ${L.cardPad}px ${T.space.lg}px`, borderRadius: T.radius.chip, overflow: 'hidden', border: `1px solid ${T.color.border}` }}>
         {/* Başlık satırı */}
         <div style={{
           display: 'grid',
@@ -100,24 +99,20 @@ export function TableScene({
               background: i === highlight_col ? T.color.gold500 : undefined,
               color: i === highlight_col ? T.color.navy900 : T.color.surface,
             }}>
-              {h}
+              {h.slice(0, Math.ceil(h.length * interpolate(frame, [12 + i * 5, 28 + i * 5], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })))}
             </div>
           ))}
         </div>
 
         {/* Veri satırları — zebra */}
         {visibleRows.map((row, ri) => {
-          const rowDelay = ri * 4
-          const rowOpacity = interpolate(frame, [rowDelay, rowDelay + 8], [0, 1], { extrapolateRight: 'clamp' })
-          const rowY = interpolate(frame, [rowDelay, rowDelay + 8], [20, 0], { extrapolateRight: 'clamp' })
+          const rowDelay = 32 + ri * 12
 
           return (
             <div key={ri} style={{
               display: 'grid',
               gridTemplateColumns: `repeat(${colCount}, 1fr)`,
               background: ri % 2 === 0 ? T.color.surface : T.color.canvas,
-              opacity: rowOpacity,
-              transform: `translateY(${rowY}px)`,
               borderTop: `1px solid ${T.color.border}`,
             }}>
               {row.slice(0, colCount).map((cell, ci) => (
@@ -130,12 +125,15 @@ export function TableScene({
                   color: ci === highlight_col ? T.color.navy900 : T.color.text,
                   fontVariantNumeric: 'tabular-nums',
                 }}>
-                  {cell}
+                  {cell.slice(0, Math.ceil(cell.length * interpolate(frame, [rowDelay + ci * 3, rowDelay + 10 + ci * 3], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })))}
                 </div>
               ))}
             </div>
           )
         })}
+        <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+          <rect x="3" y="3" width="994" height="994" rx="24" fill="none" stroke={T.color.navy900} strokeWidth="6" vectorEffect="non-scaling-stroke" strokeDasharray="4000" strokeDashoffset={4000 * (1 - interpolate(frame, [0, 24], [0, 1], { extrapolateRight: 'clamp' }))} />
+        </svg>
       </div>
     </CardShell>
   )

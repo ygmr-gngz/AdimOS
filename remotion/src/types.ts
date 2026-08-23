@@ -238,6 +238,11 @@ export interface Scene {
   hook_text?: string               // kanca metni (0-5s)
   cta_text?: string                // call-to-action metni
   highlight_stat?: string          // vurgulanacak istatistik/rakam
+  illustration_url?: string        // Reels için konuya özel üretilen illüstrasyon
+  animation_preset?: 'draw_reveal' | 'parallax_parts' | 'focus_pulse'
+  key_takeaway?: string            // sahnenin tek cümlelik can alıcı noktası
+  save_label?: string              // kaydetmelik hızlı bilgi etiketi
+  memory_hook?: string
 
   // Tahta soru çözümü (ChalkboardSolutionScene)
   given?: string[]                // verilenler: ["a - b = 32", "a = 2b"]
