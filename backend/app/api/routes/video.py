@@ -86,8 +86,10 @@ def _effective_duration_tolerance(content_type: str, requested: int, supplied: i
 _REMOTION_TRANSITION_SECONDS = 0.5
 
 
-def _expected_render_duration(tts_seconds: float, scene_count: int) -> float:
-    return tts_seconds + max(0, scene_count) * _REMOTION_TRANSITION_SECONDS
+def _expected_render_duration(tts_seconds: float, scene_count: int, content_type: str = "") -> float:
+    # Motivasyon sahneleri ses kaydırmamak için artık boş geçiş uzatması kullanmaz.
+    transition = 0 if content_type == "motivasyon" else max(0, scene_count) * _REMOTION_TRANSITION_SECONDS
+    return tts_seconds + transition
 
 
 def _resolve_motivation_topic(raw_topic: str | None) -> tuple[str, str]:
@@ -114,7 +116,7 @@ class CreateVideoPayload(BaseModel):
     pre_storyboard: Optional[dict] = None         # infografik önceden üretilmiş storyboard
     infographic_template: Optional[str] = None    # card_grid | comparison | process
     reel_mode: Literal["standard", "animated_illustration", "single_question"] = "standard"
-    motivation_mode: Literal["editorial", "viral_title"] = "editorial"
+    motivation_mode: Literal["editorial", "smiling", "viral_title"] = "editorial"
     # Süre kalite kapısı (Section 1)
     requested_duration_seconds: Optional[int] = None
     duration_tolerance_seconds: int = 15
@@ -552,6 +554,7 @@ def _generate_storyboard_for_regen(
             platform="reels",
             job_id=job_id,
             correction_hint=correction_hint,
+            style="smiling" if payload.motivation_mode in ("smiling", "viral_title") else "enhanced",
         )
         scenes = []
         for i, scene in enumerate(result.get("scenes", []), 1):
@@ -1304,19 +1307,7 @@ def _run_pipeline_inner(
                         "ChalkboardSolutionScene üretildi — storyboard eksik olabilir"
                     )
         elif content_type == "motivasyon":
-            if payload.motivation_mode == "viral_title":
-                from app.modules.content.reel_enhancements import build_viral_title_reel
-                storyboard = build_viral_title_reel(
-                    title=payload.title,
-                    topic=payload.topic or "SMMM sınav motivasyonu",
-                    brand=brand,
-                )
-                storyboard["video_type"] = "motivation"
-                # Bu özel motivasyon tek sahnelidir; normal çok-sahneli üretici atlanır.
-                selected_title = payload.topic or "Unvana Giden Yol"
-                topic_text = selected_title
-            else:
-                storyboard = None
+            storyboard = None
             from app.modules.content.motivation_generator import generate_motivation_storyboard
             if storyboard is None:
                 selected_title, topic_text = _resolve_motivation_topic(payload.topic)
@@ -1348,6 +1339,7 @@ def _run_pipeline_inner(
                     duration=duration_sec,
                     platform="reels",
                     job_id=job_id,
+                    style="smiling" if payload.motivation_mode in ("smiling", "viral_title") else "enhanced",
                 )
                 scenes = []
                 for i, scene in enumerate(result.get("scenes", []), 1):
@@ -1904,7 +1896,7 @@ def _run_pipeline_inner(
                     s.get("duration_seconds") or 0 for s in storyboard.get("scenes", [])
                 )
                 render_total_sec = _expected_render_duration(
-                    tts_total_sec, len(storyboard.get("scenes", [])),
+                    tts_total_sec, len(storyboard.get("scenes", [])), content_type,
                 )
                 req = payload.requested_duration_seconds
                 post_tolerance = _dur_tolerance_sec
@@ -2433,6 +2425,7 @@ def _rebuild_payload_from_job(job: dict) -> "CreateVideoPayload":
             content_track=raw.get("content_track") or "ogrenci",
             infographic_template=raw.get("infographic_template"),
             reel_mode=raw.get("reel_mode") or "standard",
+            motivation_mode=raw.get("motivation_mode") or "editorial",
             pre_storyboard=raw.get("pre_storyboard"),
         )
     # Fallback: storyboard'dan soruları çıkar (payload_json yoksa — eski işler)

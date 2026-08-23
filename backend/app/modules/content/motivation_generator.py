@@ -225,6 +225,7 @@ def generate_motivation_storyboard(
     platform: str = "reels",
     job_id: str = "",
     correction_hint: str | None = None,
+    style: str = "enhanced",
 ) -> dict:
     # 2026-08-08 — iki birleşik bulgu, aynı kök sorunun parçası:
     #
@@ -310,6 +311,18 @@ def generate_motivation_storyboard(
         # geçirmiyordu, retry turları kör tekrar üretim yapıyordu (aynı sapma
         # tekrarlanıyordu: tur1 %-51, tur2 %-58 — düzelmiyor, rastgele dalgalanıyordu).
         user_msg += f"\n\nÖNEMLİ DÜZELTME (önceki üretimden): {correction_hint}"
+    if style == "smiling":
+        user_msg += """
+
+GÜLÜMSETEN MOTİVASYON BİÇİMİ (ZORUNLU):
+- Adayın yaşadığı gerçek, küçük bir çalışma anını sıcak ve hafif mizahla anlat.
+- Absürt şaka, küçümseme, argo ve yapay espri kullanma.
+- En az iki sahnede gülümseten mikro gözlem kullan: soğuyan kahve, sürekli ertelenen
+  deneme, hesap makinesine anlamlı anlamlı bakmak, fosforlu kalemin ders çalışmış sayılması gibi.
+- Mizahın hemen ardından uygulanabilir tek küçük adım ve teşvik gelsin.
+- Her sahneye illustration_kind alanı ekle; yalnızca coffee, calendar, calculator,
+  checklist veya finish_line değerlerinden birini kullan.
+"""
 
     logger.info(
         "[motivation-prompt] job=%s duration=%ss hedef_sahne=%d adim_sahnesi=%d "
@@ -356,6 +369,9 @@ def generate_motivation_storyboard(
                 scene["component"] = "MotivationScene"
             if not scene.get("id"):
                 scene["id"] = f"scene_{i + 1:02d}"
+            scene["motivation_style"] = style
+            if style == "smiling" and not scene.get("illustration_kind"):
+                scene["illustration_kind"] = ("coffee", "calendar", "calculator", "checklist", "finish_line")[i % 5]
 
         full_text = _all_text(scenes)
         sgs_elements = _find_sgs_elements(full_text)

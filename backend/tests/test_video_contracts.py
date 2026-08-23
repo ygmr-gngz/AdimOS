@@ -49,6 +49,7 @@ def test_long_video_tolerance_scales_with_requested_duration() -> None:
 
 def test_render_duration_includes_scene_transition_frames() -> None:
     assert _expected_render_duration(52.78, 13) == pytest.approx(59.28)
+    assert _expected_render_duration(52.78, 13, "motivasyon") == pytest.approx(52.78)
 
 
 def test_spoken_text_has_priority_for_tts() -> None:

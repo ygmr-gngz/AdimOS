@@ -322,12 +322,14 @@ function estimateTotalFrames(storyboard: any, jobId?: string): number {
     return acc + resolveSceneDurationSeconds(s.duration_seconds, s.id)
   }, 0)
 
-  const total = sceneSum + scenes.length * TRANSITION_SECONDS
+  const isMotivation = ['motivasyon', 'motivation'].includes(String(storyboard?.video_type ?? '').toLowerCase())
+  const transitionTotal = isMotivation ? 0 : scenes.length * TRANSITION_SECONDS
+  const total = sceneSum + transitionTotal
   const frames = Math.round(total * FPS)
   console.log(
     `[lambda] frames${tag} kaynak=scene_sum_measured` +
     ` sahne=${scenes.length} sceneSumSn=${sceneSum.toFixed(2)}` +
-    ` gecisSn=${(scenes.length * TRANSITION_SECONDS).toFixed(2)}` +
+    ` gecisSn=${transitionTotal.toFixed(2)}` +
     ` toplamSn=${total.toFixed(2)} fps=${FPS} değer=${frames}`,
   )
 
@@ -672,7 +674,9 @@ function _toleranceCheck(
   // (bkz. src/compositions/*.tsx) — gerçek çıktı totalSec'ten sistematik olarak
   // sceneCount × TRANSITION_SECONDS daha uzun. Kapı, ham ölçüm yerine bu
   // beklenen render süresiyle karşılaştırır (aynı formül estimateTotalFrames'te).
-  const expectedSec = totalSec + sceneCount * TRANSITION_SECONDS
+  const expectedSec = compositionId === 'MotivationVideo'
+    ? totalSec
+    : totalSec + sceneCount * TRANSITION_SECONDS
   // ffprobe yüzdelik saniye, Remotion ise kare bazında yuvarlar. Örn. 53.02s,
   // 53.00s üst sınırını yalnızca tek kareden az aştığı için reddedilmemeli.
   const frameEpsilon = 1 / FPS

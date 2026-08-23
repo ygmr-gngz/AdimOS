@@ -8,7 +8,29 @@ const TEAL = '#0F766E'
 const ORANGE = '#F28C28'
 const PAPER = '#FFFEFB'
 
-function EditorialIllustration({ kind }: { kind: string }) {
+function EditorialIllustration({ kind, smiling = false }: { kind: string; smiling?: boolean }) {
+  if (smiling) {
+    const label = kind === 'coffee' ? 'KAHVE SOĞUDU' : kind === 'calendar' ? 'BUGÜN BAŞLA'
+      : kind === 'calculator' ? 'NETLER KONUŞSUN' : kind === 'checklist' ? 'BİR TIK DAHA'
+      : 'UNVANA DOĞRU'
+    return <svg width="640" height="420" viewBox="0 0 640 420" fill="none" aria-hidden="true">
+      <path d="M80 340C180 370 455 372 560 340" stroke="#D8D2C5" strokeWidth="6" strokeLinecap="round" />
+      {kind === 'coffee' ? <>
+        <path d="M205 145H410V300C410 330 380 350 307 350C235 350 205 330 205 300V145Z" fill="#FFF0A9" stroke={NAVY} strokeWidth="8" />
+        <path d="M410 185H475C520 185 520 270 410 270" stroke={NAVY} strokeWidth="8" />
+        <path d="M255 110C225 70 285 65 255 25M330 110C300 70 360 65 330 25" stroke={TEAL} strokeWidth="7" strokeLinecap="round" />
+      </> : kind === 'calculator' ? <>
+        <rect x="205" y="55" width="235" height="300" rx="30" fill="#E8F0FF" stroke={NAVY} strokeWidth="8" />
+        <rect x="245" y="95" width="155" height="58" rx="10" fill="#FFF" stroke={NAVY} strokeWidth="6" />
+        {[0,1,2].map(r => [0,1,2].map(c => <circle key={`${r}-${c}`} cx={270+c*55} cy={205+r*55} r="16" fill={r === 2 && c === 2 ? ORANGE : TEAL} />))}
+      </> : <>
+        <rect x="150" y="65" width="340" height="280" rx="28" fill="#FAF7EF" stroke={NAVY} strokeWidth="8" />
+        {[0,1,2].map(i => <g key={i}><rect x="205" y={125+i*62} width="30" height="30" rx="5" stroke={TEAL} strokeWidth="6" /><path d={`M212 ${140+i*62}l10 10 22-28`} stroke={ORANGE} strokeWidth="7" strokeLinecap="round" /><path d={`M270 ${140+i*62}h145`} stroke={NAVY} strokeWidth="7" strokeLinecap="round" /></g>)}
+      </>}
+      <rect x="170" y="350" width="300" height="52" rx="12" fill="#FFE279" stroke={NAVY} strokeWidth="5" />
+      <text x="320" y="385" textAnchor="middle" fill={NAVY} fontSize="24" fontWeight="900">{label}</text>
+    </svg>
+  }
   const isTarget = kind.includes('Focus') || kind.includes('Outro')
   const isProblem = kind.includes('Problem') || kind.includes('Empathy')
   return (
@@ -51,6 +73,7 @@ export function MotivationEditorialScene({ scene, brand }: Props) {
   const enter = spring({ frame, fps, config: { damping: 20, stiffness: 150 } })
   const opacity = interpolate(frame, [0, 16], [0, 1], { extrapolateRight: 'clamp' })
   const audioUrl = scene.audioUrl ?? scene.tts_url
+  const smiling = scene.motivation_style === 'smiling'
 
   return (
     <AbsoluteFill style={{ background: PAPER, overflow: 'hidden', fontFamily: brand.font_body }}>
@@ -71,11 +94,11 @@ export function MotivationEditorialScene({ scene, brand }: Props) {
         )}
       </div>
       <div style={{ position: 'absolute', left: 220, bottom: 210, opacity, transform: `translateY(${(1 - enter) * 35}px)` }}>
-        <EditorialIllustration kind={kind} />
+        <EditorialIllustration kind={String(scene.illustration_kind ?? kind)} smiling={smiling} />
       </div>
       <div style={{ position: 'absolute', left: 92, bottom: 104, display: 'flex', alignItems: 'center', gap: 18, color: NAVY }}>
         <div style={{ width: 14, height: 14, borderRadius: 99, background: ORANGE }} />
-        <span style={{ fontSize: 27, fontWeight: 800 }}>Küçük adım. Gerçek ilerleme.</span>
+        <span style={{ fontSize: 27, fontWeight: 800 }}>{smiling ? 'Gülümse, sonra bir soru daha.' : 'Küçük adım. Gerçek ilerleme.'}</span>
       </div>
       {audioUrl && <Audio src={audioUrl} />}
     </AbsoluteFill>

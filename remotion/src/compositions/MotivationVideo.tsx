@@ -11,7 +11,6 @@ import { CaptionOverlay } from '../components/CaptionOverlay'
 import { MotivationEditorialScene } from '../scenes/MotivationEditorialScene'
 import { ViralTitleScene } from '../scenes/ViralTitleScene'
 import { FPS } from '../brand'
-import { TRANSITION_FRAMES } from '../utils'
 
 interface Props { storyboard: StoryboardJSON }
 
@@ -42,7 +41,8 @@ export function MotivationVideo({ storyboard }: Props) {
     const safeSec = (typeof raw === 'number' && isFinite(raw) && raw > 0) ? raw
       : (typeof raw === 'string' && Number(raw) > 0) ? Number(raw)
       : DEFAULT_SCENE_SEC
-    const durationFrames = Math.max(TRANSITION_FRAMES + 1, Math.round(safeSec * FPS) + TRANSITION_FRAMES)
+    // Motivasyonda sahne sonuna sessiz geçiş eklemek ses/görüntü kayması yaratıyordu.
+    const durationFrames = Math.max(1, Math.round(safeSec * FPS))
     cursor += durationFrames
     return { scene, start, durationFrames }
   })
@@ -92,6 +92,6 @@ export function getMotivationTotalFrames(storyboard: StoryboardJSON | undefined)
     const safeSec = (typeof raw === 'number' && isFinite(raw) && raw > 0) ? raw
       : (typeof raw === 'string' && Number(raw) > 0) ? Number(raw)
       : DEFAULT_SCENE_SEC
-    return acc + Math.max(TRANSITION_FRAMES + 1, Math.round(safeSec * FPS) + TRANSITION_FRAMES)
+    return acc + Math.max(1, Math.round(safeSec * FPS))
   }, 0)
 }

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-23T15:51:33.140Z",
+  "generated_at": "2026-08-23T17:44:13.955Z",
   "remotion_version": "4.0.488",
   "compositions": [
     {
@@ -19,6 +19,11 @@
         "JournalEntryScene",
         "RuleBoxScene",
         "CommonMistakeScene",
+        "AnimatedIllustrationScene",
+        "ReelQuestionScene",
+        "ReelAnswerScene",
+        "DrawnAccountingExampleScene",
+        "DrawnQuestionExplainerScene",
         "SplitLessonScene"
       ],
       "required": [

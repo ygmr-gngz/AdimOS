@@ -28,10 +28,10 @@ def test_single_question_reel_has_five_options_and_memory_hook():
     )
     assert board["reel_mode"] == "single_question"
     assert [s["component"] for s in board["scenes"]] == [
-        "ReelHookScene", "ReelQuestionScene", "ReelAnswerScene", "ReelCtaScene",
+        "ReelHookScene", "DrawnQuestionExplainerScene", "ReelCtaScene",
     ]
     assert [o["label"] for o in board["scenes"][1]["options"]] == list("ABCDE")
-    assert board["scenes"][2]["memory_hook"]
+    assert board["scenes"][1]["memory_hook"]
 
 
 def test_single_question_rejects_missing_option():
@@ -69,10 +69,12 @@ def test_animated_illustrations_enrich_only_three_scenes(monkeypatch):
         {"id": i, "component": "ReelConceptScene", "segment_type": "content", "title": f"S{i}", "voice_text": "Açıklama"}
         for i in range(1, 6)
     ]}
-    result = add_animated_illustrations(board, job_id="job-1", topic="KDV", client=client, limit=3)
+    result = add_animated_illustrations(board, job_id="job-1", topic="KDV", client=client, limit=5)
     illustrated = [s for s in result["scenes"] if s["component"] == "AnimatedIllustrationScene"]
-    assert len(illustrated) == 3
-    assert [s["animation_preset"] for s in illustrated] == ["draw_reveal", "parallax_parts", "focus_pulse"]
+    assert len(illustrated) == 5
+    assert [s["animation_preset"] for s in illustrated] == [
+        "draw_reveal", "parallax_parts", "focus_pulse", "draw_reveal", "parallax_parts",
+    ]
 
 
 def test_animated_mode_keeps_structured_table_as_real_table(monkeypatch):

@@ -66,6 +66,8 @@ CONTENT_PIPELINES: dict[str, dict] = {
             "TableScene", "CommonMistakeScene", "RuleBoxScene",
             # geriye dönük uyumluluk — eski EducationalReelScene bazlı storyboard'lar
             "EducationalReelScene",
+            "AnimatedIllustrationScene", "ReelQuestionScene", "ReelAnswerScene",
+            "DrawnAccountingExampleScene", "DrawnQuestionExplainerScene",
         ],
         "required_scenes": ["ReelHookScene"],
     },

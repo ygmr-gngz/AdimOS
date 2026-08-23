@@ -109,6 +109,11 @@ export type SceneComponent =
   | 'ReelMistakeScene'
   | 'ReelExamTipScene'
   | 'ViralTitleScene'
+  | 'AnimatedIllustrationScene'
+  | 'ReelQuestionScene'
+  | 'ReelAnswerScene'
+  | 'DrawnAccountingExampleScene'
+  | 'DrawnQuestionExplainerScene'
 
 export interface QuizOption {
   label: string        // A, B, C, D, E
@@ -225,6 +230,8 @@ export interface Scene {
   canvasColor?: string         // still fon override (server/index.ts /stills) — kart still özelliği, video render'ında kullanılmaz
   step_number?: number         // MotivationStepScene adım numarası
   step_title?: string          // MotivationStepScene adım başlığı
+  motivation_style?: 'enhanced' | 'smiling'
+  illustration_kind?: 'coffee' | 'calendar' | 'calculator' | 'checklist' | 'finish_line'
   captions?: { start: number; end: number; text: string }[]
 
   // Konu anlatımı (SplitLessonScene)
@@ -251,6 +258,7 @@ export interface Scene {
   key_takeaway?: string            // sahnenin tek cümlelik can alıcı noktası
   save_label?: string              // kaydetmelik hızlı bilgi etiketi
   memory_hook?: string
+  clue_text?: string
 
   // Tahta soru çözümü (ChalkboardSolutionScene)
   given?: string[]                // verilenler: ["a - b = 32", "a = 2b"]

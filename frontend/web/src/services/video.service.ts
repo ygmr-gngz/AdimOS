@@ -91,7 +91,7 @@ export interface CreateVideoPayload {
   pre_storyboard?: Record<string, unknown>
   infographic_template?: string
   reel_mode?: 'standard' | 'animated_illustration' | 'single_question'
-  motivation_mode?: 'editorial' | 'viral_title'
+  motivation_mode?: 'editorial' | 'smiling'
   content_series?: string
   content_track: ContentTrack   // M8: backend'de zorunlu — burada da opsiyonel bırakılmadı
   storyboard_version?: number

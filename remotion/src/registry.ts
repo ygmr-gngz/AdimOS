@@ -40,6 +40,11 @@ export const SCENE_REGISTRY: Record<string, CompositionRegistryEntry> = {
       "JournalEntryScene",
       "RuleBoxScene",
       "CommonMistakeScene",
+      "AnimatedIllustrationScene",
+      "ReelQuestionScene",
+      "ReelAnswerScene",
+      "DrawnAccountingExampleScene",
+      "DrawnQuestionExplainerScene",
       "SplitLessonScene",
       // Gelecekte eklenecek (Bölüm 10):
       // "MistakeScene", "ExamTipScene", "RecapScene", "ComparisonScene"

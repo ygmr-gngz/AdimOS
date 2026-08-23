@@ -99,10 +99,10 @@ export function DrawnQuestionExplainerScene({ scene }: { scene: Scene }) {
   return <AbsoluteFill style={{ color: LESSON_PALETTE.NAVY, fontFamily: 'Noto Sans, sans-serif' }}>
     <GridPaper />
     <div style={{ position: 'absolute', top: 190, left: 68, right: 68, opacity: question }}>
-      <div style={{ color: LESSON_PALETTE.TEAL, fontSize: 23, fontWeight: 900, letterSpacing: 3 }}>TEK SORUDA ÖĞREN</div>
+      <div style={{ color: LESSON_PALETTE.TEAL, fontSize: 23, fontWeight: 900, letterSpacing: 3 }}>ALİ’NİN YOLCULUĞU • TEK SORUDA ÖĞREN</div>
       <div style={{ fontSize: 43, fontWeight: 950, lineHeight: 1.2, marginTop: 24 }}>{scene.question_text}</div>
       <div style={{ height: 8, width: `${clue * 74}%`, background: '#FFE279', borderRadius: 6, marginTop: 16 }} />
-      <div style={{ color: '#9A6A00', fontSize: 24, fontWeight: 900, marginTop: 10, opacity: clue }}>İpucu: “üretime giren” ifadesine odaklan.</div>
+      <div style={{ color: '#9A6A00', fontSize: 24, fontWeight: 900, marginTop: 10, opacity: clue }}>İpucu: {scene.clue_text || 'Sorudaki işlemin niteliğine odaklan.'}</div>
     </div>
 
     <div style={{ position: 'absolute', top: 595, left: 65, right: 65, display: 'flex', flexDirection: 'column', gap: 16 }}>

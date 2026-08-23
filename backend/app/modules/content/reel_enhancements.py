@@ -33,23 +33,19 @@ def build_single_question_reel(
     scenes = [
         {
             "id": 1, "component": "ReelHookScene", "segment_type": "hook", "visual_source": "text_only",
-            "hook_text": "Bunu gerçekten anladın mı?", "highlight_stat": "1 SORU",
-            "voice_text": f"{topic} konusunda zorlandığın noktayı tek soruda netleştirelim.",
+            "hook_text": "Ali bu kaydı doğru yapabilecek mi?", "highlight_stat": "1 SORU",
+            "voice_text": f"Ali'nin günlük işinden yola çıkıp {topic} konusunu tek soruda netleştirelim.",
         },
         {
-            "id": 2, "component": "ReelQuestionScene", "segment_type": "question", "visual_source": "text_only",
-            "title": "Önce sen cevapla", "question_text": question_text, "options": options,
+            "id": 2, "component": "DrawnQuestionExplainerScene", "segment_type": "question", "visual_source": "code_drawn",
+            "title": "Ali'nin Yolculuğu", "story_character": "Ali", "question_text": question_text, "options": options,
             "correct_label": correct,
-            "voice_text": f"{question_text} Beş şık ekranda. Cevabını seçmek için birkaç saniye düşün.",
-        },
-        {
-            "id": 3, "component": "ReelAnswerScene", "segment_type": "answer", "visual_source": "text_only",
-            "title": f"Doğru cevap: {correct}", "options": options, "correct_label": correct,
             "explanation": explanation, "memory_hook": memory_hook,
-            "voice_text": f"Doğru cevap {correct} şıkkı. {explanation} Akılda tut: {memory_hook}.",
+            "clue_text": "Sorudaki işlemin niteliğine ve hesabın çalışma yönüne odaklan.",
+            "voice_text": f"{question_text} Beş şıktan birini seç. Doğru cevap {correct} şıkkı. {explanation} Akılda tut: {memory_hook}.",
         },
         {
-            "id": 4, "component": "ReelCtaScene", "segment_type": "outro", "visual_source": "text_only",
+            "id": 3, "component": "ReelCtaScene", "segment_type": "outro", "visual_source": "text_only",
             "title": "Şimdi gerçekten biliyorsun", "cta_text": "Zorlandığın konuyu yaz",
             "voice_text": "Anlamadığın konuyu yaz; onu da mantığıyla açıklayalım. @adimmusavir",
         },
@@ -117,7 +113,8 @@ def add_animated_illustrations(
         scene["component"] = "AnimatedIllustrationScene"
         scene["visual_source"] = "photo"
         scene["illustration_url"] = url
-        scene["animation_preset"] = ("draw_reveal", "parallax_parts", "focus_pulse")[order - 1]
+        presets = ("draw_reveal", "parallax_parts", "focus_pulse")
+        scene["animation_preset"] = presets[(order - 1) % len(presets)]
         takeaway = (
             scene.get("exam_tip") or scene.get("common_mistake")
             or (scene.get("bullet_points") or [scene.get("title") or topic])[0]
