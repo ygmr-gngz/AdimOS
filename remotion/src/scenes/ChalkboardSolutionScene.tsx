@@ -8,7 +8,7 @@
  *
  * Font fallback zinciri matematik sembolleri için Noto Sans kullanır.
  */
-import { interpolate, useCurrentFrame, useVideoConfig, Audio } from 'remotion'
+import { interpolate, useCurrentFrame, useVideoConfig, Audio, staticFile } from 'remotion'
 import { Scene, BrandConfig, ChalkboardStep } from '../types'
 import { LESSON_PALETTE as L } from '../brand'
 
@@ -42,6 +42,12 @@ function QuestionPanel({ scene, brand, fadeIn }: {
   scene: Scene; brand: BrandConfig; fadeIn: number
 }) {
   const options = scene.options ?? []
+  const questionLength = scene.question_text?.length ?? 0
+  const contextLength = scene.context_text?.length ?? 0
+  const optionMax = Math.max(0, ...options.map(option => option.text.length))
+  const questionFont = questionLength > 165 ? 24 : questionLength > 105 ? 28 : 32
+  const contextFont = contextLength > 220 ? 17 : contextLength > 130 ? 20 : 23
+  const optionFont = optionMax > 70 ? 18 : optionMax > 45 ? 20 : 22
   return (
     <div style={{
       width: '56%', height: '100%',
@@ -62,7 +68,7 @@ function QuestionPanel({ scene, brand, fadeIn }: {
             {scene.question_number}
           </span>
         )}
-        <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', fontFamily: 'Lato', letterSpacing: 1.5 }}>
+        <span style={{ fontSize: 12, fontWeight: 800, color: L.NAVY, fontFamily: 'Lato', letterSpacing: 1.5 }}>
           SORU METNİ
         </span>
       </div>
@@ -82,7 +88,7 @@ function QuestionPanel({ scene, brand, fadeIn }: {
             REFERANS METİN
           </div>
           <p style={{
-            fontSize: 26, color: L.DARK, lineHeight: 1.55, margin: 0,
+            fontSize: contextFont, color: L.DARK, lineHeight: 1.45, margin: 0,
             fontFamily: HEAD_FONT, fontStyle: 'italic',
           }}>
             {scene.context_text}
@@ -97,8 +103,8 @@ function QuestionPanel({ scene, brand, fadeIn }: {
           borderRadius: 12, padding: '12px 14px', marginBottom: 14,
         }}>
           <p style={{
-            fontSize: 38, fontFamily: HEAD_FONT, fontWeight: 600,
-            color: L.DARK, lineHeight: 1.5, margin: 0,
+            fontSize: questionFont, fontFamily: HEAD_FONT, fontWeight: 650,
+            color: L.DARK, lineHeight: 1.38, margin: 0,
           }}>
             {scene.question_text}
           </p>
@@ -107,21 +113,21 @@ function QuestionPanel({ scene, brand, fadeIn }: {
 
       {/* Seçenekler (A-E) */}
       {options.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 12 }}>
           {options.map(opt => (
             <div key={opt.label} style={{
               display: 'flex', alignItems: 'flex-start', gap: 8,
             }}>
               <div style={{
-                width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
                 background: L.NAVY, color: '#fff',
-                fontWeight: 800, fontSize: 10,
+                fontWeight: 800, fontSize: 12,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 marginTop: 2,
               }}>
                 {opt.label}
               </div>
-              <span style={{ fontSize: 22, color: L.MID, lineHeight: 1.45 }}>{opt.text}</span>
+              <span style={{ fontSize: optionFont, color: L.MID, lineHeight: 1.35 }}>{opt.text}</span>
             </div>
           ))}
         </div>
@@ -148,7 +154,7 @@ function QuestionPanel({ scene, brand, fadeIn }: {
                   flexShrink: 0, marginTop: 2,
                 }} />
                 <span style={{
-                  fontSize: 34, color: L.DARK, fontFamily: MATH_FONT,
+                  fontSize: 22, color: L.DARK, fontFamily: MATH_FONT,
                   fontWeight: 700, lineHeight: 1.45,
                 }}>
                   {g}
@@ -173,7 +179,7 @@ function QuestionPanel({ scene, brand, fadeIn }: {
             borderRadius: 10, padding: '10px 16px',
           }}>
             <span style={{
-              fontSize: 36, color: L.NAVY, fontFamily: MATH_FONT,
+              fontSize: 26, color: L.NAVY, fontFamily: MATH_FONT,
               fontWeight: 800,
             }}>
               {scene.asked}
@@ -309,7 +315,7 @@ function ChalkboardPanel({ steps, frame, totalFrames, brand }: {
 
                   {/* Tahta metni */}
                   <div style={{
-                    fontSize: isActive ? 58 : 46,
+                    fontSize: step.board_text.length > 42 ? (isActive ? 34 : 30) : (isActive ? 46 : 39),
                     fontFamily: MATH_FONT,
                     fontWeight: isActive ? 700 : 600,
                     color: isActive ? color : (isPast ? L.MID : color),
@@ -358,8 +364,8 @@ function ChalkboardPanel({ steps, frame, totalFrames, brand }: {
 // ── Ana bileşen ───────────────────────────────────────────────
 export function ChalkboardSolutionScene({ scene, brand }: Props) {
   const frame      = useCurrentFrame()
-  const { fps }    = useVideoConfig()
-  const totalFrames = Math.round(scene.duration_seconds * fps)
+  const { durationInFrames } = useVideoConfig()
+  const totalFrames = durationInFrames
   const steps      = scene.chalkboard_steps ?? []
 
   const fadeIn     = interpolate(frame, [0, 20], [0, 1], { extrapolateRight: 'clamp' })
@@ -376,7 +382,7 @@ export function ChalkboardSolutionScene({ scene, brand }: Props) {
   return (
     <div style={{
       width: '100%', height: '100%',
-      background: '#A3DBFA',
+      background: '#FFFEFB',
       display: 'flex', flexDirection: 'column',
       fontFamily: MATH_FONT,
       overflow: 'hidden', position: 'relative',
@@ -396,7 +402,7 @@ export function ChalkboardSolutionScene({ scene, brand }: Props) {
       <div style={{
         display: 'flex', flex: 1, overflow: 'hidden',
         margin: '58px 60px 42px', background: '#FDFDFB',
-        border: '10px solid #111111', borderRadius: 32,
+        border: '7px solid #0B2A4A', borderRadius: 28,
       }}>
         <QuestionPanel scene={scene} brand={brand} fadeIn={fadeIn} />
         <ChalkboardPanel steps={steps} frame={frame} totalFrames={totalFrames} brand={brand} />
@@ -447,7 +453,7 @@ export function ChalkboardSolutionScene({ scene, brand }: Props) {
             }}>
               <span style={{ fontSize: 14 }}>✅</span>
               <span style={{
-                fontSize: 52, color: '#166534', fontFamily: MATH_FONT,
+                fontSize: (scene.answer?.length ?? 0) > 60 ? 27 : 36, color: '#166534', fontFamily: MATH_FONT,
                 fontWeight: 900, letterSpacing: 0.5,
               }}>
                 {scene.answer}
@@ -457,7 +463,7 @@ export function ChalkboardSolutionScene({ scene, brand }: Props) {
         </div>
       )}
 
-      {scene.tts_url && <Audio src={scene.tts_url} />}
+      {scene.tts_url && <Audio src={/^(https?:|data:)/.test(scene.tts_url) ? scene.tts_url : staticFile(scene.tts_url.replace(/^\//, ''))} />}
     </div>
   )
 }

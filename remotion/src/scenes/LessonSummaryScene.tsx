@@ -10,6 +10,7 @@ export const LessonSummaryScene: React.FC<Props> = ({ scene, brand }) => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const bullets = scene.bullet_points ?? []
+  const titleSize = (scene.title?.length ?? 0) > 58 ? 33 : 42
 
   const spr = (delay: number) =>
     spring({ frame: frame - delay, fps, config: { damping: 16, stiffness: 130, mass: 1 } })
@@ -48,7 +49,7 @@ export const LessonSummaryScene: React.FC<Props> = ({ scene, brand }) => {
         </div>
         <h2 style={{
           opacity: spr(4), transform: `translateY(${(1 - spr(4)) * 12}px)`,
-          fontSize: 42, fontWeight: 900, color: '#FFFFFF',
+          fontSize: titleSize, fontWeight: 900, color: '#FFFFFF',
           fontFamily: brand.font_heading ?? 'Playfair Display',
           margin: 0, textAlign: 'center',
         }}>
@@ -84,7 +85,7 @@ export const LessonSummaryScene: React.FC<Props> = ({ scene, brand }) => {
                 </span>
               </div>
               <p style={{
-                fontSize: 20, color: L.DARK, margin: 0,
+                fontSize: b.length > 72 ? 17 : 20, color: L.DARK, margin: 0,
                 lineHeight: 1.5, fontWeight: 500, flex: 1,
               }}>
                 {b}

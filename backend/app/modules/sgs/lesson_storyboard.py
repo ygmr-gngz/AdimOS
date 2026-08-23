@@ -20,6 +20,7 @@ _VALID_COMPONENTS = frozenset({
     "LessonTitleScene", "LessonConceptScene", "LessonCardScene",
     "LessonExampleScene", "LessonSummaryScene",
     "LessonInfographicScene", "LessonMindMapScene",
+    "LessonDrawnExplainerScene",
 })
 
 # Bilinen eşdeğer adlar → kanonik bileşen (registry veya LLM kalıntısı)
@@ -180,6 +181,18 @@ VİDEO BİLGİSİ:
    - duration_seconds: 0
    - Kullanım: alt konu haritası ve dersin genel sistemi. Serbest görsel/prompt üretme.
 
+8. LessonDrawnExplainerScene (EN AZ 2 adet — anlatımla birlikte çizilen süreç):
+   - title: süreç başlığı (max 55 karakter)
+   - definition: tek cümle bağlam (max 140 karakter)
+   - visual_nodes: soldan sağa 3-4 düğüm. Her düğümde:
+     - kind: factory | document | money | person | scale | calculator | building
+     - label: max 22 karakter
+     - detail: max 28 karakter
+   - key_point: finalde post-it üzerinde çıkan tek kural (max 100 karakter)
+   - voice_text: düğümleri soldan sağa ve okların anlamıyla açıkla (120-180 kelime)
+   - duration_seconds: 0
+   - Fabrika/üretim konusunda factory kullan; baca dumanı ve oklar render sırasında çizilir.
+
 ════════ SAHNE SAYISI VE EKRAN KULLANIMI KILAVUZU ════════
 {target_minutes} dakika için ZORUNLU sahne dizisi ({min_scene_count}-18 sahne):
 - 1 LessonTitleScene (~25s)
@@ -187,6 +200,7 @@ VİDEO BİLGİSİ:
 - 2-3 LessonCardScene (her biri ~75s — tablo/liste içerikleri için)
 - 1-2 LessonInfographicScene (kavram karşılaştırması)
 - 1 LessonMindMapScene (konu haritası)
+- 2-3 LessonDrawnExplainerScene (neden-sonuç ve işlem akışları)
 - 4-6 LessonExampleScene (her biri ~110-140s — her örnek için ayrı sahne)
 - 1 LessonSummaryScene (~60s)
 
@@ -280,6 +294,20 @@ düzeltmesi varsa voice_text uzunluklarını o geri bildirime göre değiştir.
       "duration_seconds": 0
     }},
     {{
+      "component": "LessonDrawnExplainerScene",
+      "title": "Ali'nin İşletmesinde İşlem Akışı",
+      "definition": "Belgeden muhasebe kaydına giden yolu takip edelim.",
+      "visual_nodes": [
+        {{"kind": "person", "label": "Ali", "detail": "İşlemi yapar"}},
+        {{"kind": "document", "label": "Belge", "detail": "Olay belgelenir"}},
+        {{"kind": "factory", "label": "İşletme", "detail": "Değer hareket eder"}},
+        {{"kind": "calculator", "label": "Muhasebe", "detail": "Kayıt tamamlanır"}}
+      ],
+      "key_point": "Belge → ekonomik olay → doğru hesap → dengeli kayıt",
+      "voice_text": "...",
+      "duration_seconds": 0
+    }},
+    {{
       "component": "LessonSummaryScene",
       "title": "{topic} — Özet",
       "bullet_points": ["...", "..."],
@@ -331,14 +359,18 @@ Sadece JSON döndür. Başka hiçbir metin yok."""
         _apply_aliases(scenes)
         unknown = _unknown_components(scenes)
 
-        if unknown:
+        drawn_scenes = [s for s in scenes if s.get("component") == "LessonDrawnExplainerScene"]
+        drawn_count = len(drawn_scenes)
+        invalid_drawn_first = [s for s in drawn_scenes if not 3 <= len(s.get("visual_nodes") or []) <= 4]
+        if unknown or drawn_count < 2 or invalid_drawn_first:
             logger.warning(
-                f"[lesson-storyboard] geçersiz bileşen(ler): {unknown} — şema hatası geri besleniyor"
+                f"[lesson-storyboard] bileşen sorunu: unknown={unknown} drawn={drawn_count}/2 — geri besleniyor"
             )
             retry_msg = (
-                f"Hata: Geçersiz bileşen adı kullanıldı: {unknown}. "
+                f"Hata: Geçersiz bileşen adı: {unknown}. "
                 f"Yalnızca şu adlar geçerlidir: {sorted(_VALID_COMPONENTS)}. "
-                "Storyboard'u aynı içerikle ancak yalnızca bu geçerli bileşen adlarını kullanarak yeniden üret."
+                "Ayrıca en az iki LessonDrawnExplainerScene zorunludur; her birinde 3-4 dolu visual_nodes olmalı. "
+                "Storyboard'u aynı içerikle bu iki koşulu düzelterek yeniden üret."
             )
             raw_resp2 = _client.chat.completions.create(
                 model="gpt-4o",
@@ -358,12 +390,16 @@ Sadece JSON döndür. Başka hiçbir metin yok."""
 
             _apply_aliases(scenes)
             still_unknown = _unknown_components(scenes)
-            if still_unknown:
+            still_drawn = [s for s in scenes if s.get("component") == "LessonDrawnExplainerScene"]
+            invalid_drawn = [s for s in still_drawn if not 3 <= len(s.get("visual_nodes") or []) <= 4]
+            if still_unknown or len(still_drawn) < 2 or invalid_drawn:
                 from app.errors.registry import PipelineErrorException
                 raise PipelineErrorException(
                     "invalid_scene_for_content_type",
                     admin_detail={
                         "invalid_scenes": still_unknown,
+                        "drawn_scene_count": len(still_drawn),
+                        "invalid_drawn_scene_count": len(invalid_drawn),
                         "content_type": "konu_anlatimi",
                         "attempts": 2,
                     },

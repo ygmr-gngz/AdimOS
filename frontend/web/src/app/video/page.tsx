@@ -733,6 +733,7 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
   const [topic, setTopic] = useState('')
   const [infographicTemplate, setInfographicTemplate] = useState('card_grid')
   const [reelMode, setReelMode] = useState<'standard' | 'animated_illustration' | 'single_question'>('animated_illustration')
+  const [motivationMode, setMotivationMode] = useState<'editorial' | 'viral_title'>('editorial')
   const [showQuestions, setShowQuestions] = useState(false)
   const [questions, setQuestions] = useState<CreateVideoPayload['questions']>(
     Array.from({ length: 4 }, () => ({
@@ -819,6 +820,7 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
         content_track: 'ogrenci',
         infographic_template: type === 'gorsel_post' ? infographicTemplate : undefined,
         reel_mode: type === 'reels_short' ? reelMode : undefined,
+        motivation_mode: type === 'motivasyon' ? motivationMode : undefined,
         questions: type === 'soru_cozum' && showQuestions
           ? questions
           : type === 'reels_short' && reelMode === 'single_question' && showQuestions
@@ -924,6 +926,15 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
           <p style={{ margin: '6px 0 0', fontSize: 12, color: '#94a3b8' }}>
             30-90 saniye, dikey format (9:16), beyaz editoryal tasarım
           </p>
+          <div style={{ marginTop: 14 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#475569', margin: '0 0 8px' }}>Motivasyon Biçimi</p>
+            {([['editorial', 'Gülümseten Editoryal', 'Gerçekçi, teşvik edici ve hafif mizahlı akış.'], ['viral_title', 'Unvana Giden Yol', 'Viral anlatım kalıbından özgün unvan ve emek motivasyonu.']] as const).map(([value, label, desc]) => (
+              <button key={value} onClick={() => setMotivationMode(value)} style={{ width: '100%', textAlign: 'left', padding: '12px 14px', marginBottom: 7, borderRadius: 10, cursor: 'pointer', border: `2px solid ${motivationMode === value ? '#0B2A4A' : '#e2e8f0'}`, background: motivationMode === value ? '#0B2A4A' : '#fff' }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: motivationMode === value ? '#fff' : '#0B2A4A' }}>{label}</div>
+                <div style={{ fontSize: 11, marginTop: 3, color: motivationMode === value ? 'rgba(255,255,255,.68)' : '#94a3b8' }}>{desc}</div>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

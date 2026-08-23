@@ -11,6 +11,9 @@ export const LessonExampleScene: React.FC<Props> = ({ scene, brand }) => {
   const { fps } = useVideoConfig()
   const rows = scene.journal_rows ?? []
   const steps = scene.calculation_steps ?? []
+  const titleSize = (scene.title?.length ?? 0) > 46 ? 31 : 38
+  const questionSize = (scene.question_text?.length ?? 0) > 170 ? 16 : 19
+  const explanationSize = (scene.explanation?.length ?? 0) > 170 ? 14 : 17
 
   const spr = (delay: number) =>
     spring({ frame: frame - delay, fps, config: { damping: 16, stiffness: 130, mass: 1 } })
@@ -42,7 +45,7 @@ export const LessonExampleScene: React.FC<Props> = ({ scene, brand }) => {
             </span>
           </div>
           <h2 style={{
-            fontSize: 38, fontWeight: 900, color: L.NAVY,
+            fontSize: titleSize, fontWeight: 900, color: L.NAVY,
             fontFamily: brand.font_heading ?? 'Playfair Display',
             margin: 0, lineHeight: 1.2,
           }}>
@@ -58,7 +61,7 @@ export const LessonExampleScene: React.FC<Props> = ({ scene, brand }) => {
             borderRadius: 14, padding: '20px 28px',
           }}>
             <p style={{
-              fontSize: 19, color: L.DARK, lineHeight: 1.65,
+              fontSize: questionSize, color: L.DARK, lineHeight: 1.5,
               margin: 0,
             }}>
               {scene.question_text}
@@ -174,7 +177,7 @@ export const LessonExampleScene: React.FC<Props> = ({ scene, brand }) => {
             background: L.GREEN_BG, border: `1px solid ${L.GREEN}`,
             borderRadius: 12, padding: '14px 22px',
           }}>
-            <p style={{ fontSize: 17, color: '#166534', margin: 0, lineHeight: 1.55 }}>
+            <p style={{ fontSize: explanationSize, color: '#166534', margin: 0, lineHeight: 1.45 }}>
               ✅ {scene.explanation}
             </p>
           </div>

@@ -10,6 +10,9 @@ export const LessonConceptScene: React.FC<Props> = ({ scene, brand }) => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const bullets = scene.bullet_points ?? []
+  const titleSize = (scene.title?.length ?? 0) > 46 ? 44 : 54
+  const definitionSize = (scene.definition?.length ?? 0) > 150 ? 20 : 24
+  const bulletSize = Math.max(18, ...bullets.map(item => item.length)) > 68 ? 19 : 22
 
   const spr = (delay: number, damp = 16, stiff = 140) =>
     spring({ frame: frame - delay, fps, config: { damping: damp, stiffness: stiff, mass: 1 } })
@@ -39,7 +42,7 @@ export const LessonConceptScene: React.FC<Props> = ({ scene, brand }) => {
             </span>
           )}
           <h2 style={{
-            fontSize: 54, fontWeight: 900, color: L.NAVY,
+            fontSize: titleSize, fontWeight: 900, color: L.NAVY,
             fontFamily: brand.font_heading ?? 'Playfair Display',
             margin: 0, textAlign: 'center', lineHeight: 1.15,
           }}>
@@ -56,7 +59,7 @@ export const LessonConceptScene: React.FC<Props> = ({ scene, brand }) => {
             marginBottom: 36, width: '100%', maxWidth: 900,
           }}>
             <p style={{
-              fontSize: 24, color: L.DARK, lineHeight: 1.6,
+              fontSize: definitionSize, color: L.DARK, lineHeight: 1.5,
               margin: 0, textAlign: 'center', fontStyle: 'italic',
             }}>
               {scene.definition}
@@ -82,7 +85,7 @@ export const LessonConceptScene: React.FC<Props> = ({ scene, brand }) => {
                     flexShrink: 0, marginTop: 10,
                   }} />
                   <p style={{
-                    fontSize: 22, color: L.MID, lineHeight: 1.55,
+                    fontSize: bulletSize, color: L.MID, lineHeight: 1.45,
                     margin: 0, fontWeight: 500,
                   }}>
                     {b}

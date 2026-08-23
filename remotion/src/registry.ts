@@ -34,6 +34,7 @@ export const SCENE_REGISTRY: Record<string, CompositionRegistryEntry> = {
       "LessonSummaryScene",
       "LessonInfographicScene",
       "LessonMindMapScene",
+      "LessonDrawnExplainerScene",
       "AccountCardScene",
       "TableScene",
       "JournalEntryScene",
@@ -122,6 +123,7 @@ export const SCENE_REGISTRY: Record<string, CompositionRegistryEntry> = {
       "MotivationFocusScene",
       "MotivationOutroScene",
       "MotivationScene",          // eski/genel amaçlı
+      "ViralTitleScene",          // özgün unvan/emek motivasyonu
     ],
     required: ["component", "duration_seconds"],
   },

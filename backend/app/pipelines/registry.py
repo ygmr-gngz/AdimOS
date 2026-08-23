@@ -38,6 +38,7 @@ CONTENT_PIPELINES: dict[str, dict] = {
             "LessonTitleScene", "LessonConceptScene", "LessonSummaryScene",
             "LessonCardScene", "LessonExampleScene",
             "LessonInfographicScene", "LessonMindMapScene",
+            "LessonDrawnExplainerScene",
             "TAccountScene", "CalculationStepsScene",
             # SGS konu anlatımı (sgs.py) — maks. 4 sahne, tek bileşen tekrarı validate_routing ile yakalanır
             "SplitLessonScene",
@@ -81,7 +82,7 @@ CONTENT_PIPELINES: dict[str, dict] = {
             "MotivationTurnScene", "MotivationStepScene", "MotivationProofScene",
             "MotivationFocusScene", "MotivationOutroScene",
             # geriye dönük uyumluluk — LLM zaman zaman eski bileşen adı üretir
-            "MotivationScene",
+            "MotivationScene", "ViralTitleScene",
         ],
         # LLM çıktısı tutarsız olduğundan minimal zorunluluk: hook var mı?
         "required_scenes": ["MotivationHookScene"],
@@ -201,6 +202,10 @@ def validate_routing(content_type: str, scenes: list[dict]) -> None:
         )
 
     missing = set(cfg["required_scenes"]) - used_set
+    # ViralTitleScene tek sahnelik, kendi kanca anatomisine sahip motivasyondur;
+    # ayrıca MotivationHookScene eklemek aynı cümleyi iki kez göstermeye yol açar.
+    if ct == "motivation" and "ViralTitleScene" in used_set:
+        missing.discard("MotivationHookScene")
     if missing:
         raise PipelineErrorException(
             "invalid_scene_for_content_type",

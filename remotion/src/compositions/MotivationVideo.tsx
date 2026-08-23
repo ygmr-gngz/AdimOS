@@ -9,6 +9,7 @@ import { BrandOverlay } from '../components/BrandOverlay'
 import { BrandWatermark } from '../components/BrandWatermark'
 import { CaptionOverlay } from '../components/CaptionOverlay'
 import { MotivationEditorialScene } from '../scenes/MotivationEditorialScene'
+import { ViralTitleScene } from '../scenes/ViralTitleScene'
 import { FPS } from '../brand'
 import { TRANSITION_FRAMES } from '../utils'
 
@@ -25,6 +26,9 @@ function MotivationSceneDispatcher({
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const p = { scene: scene as unknown as any, brand: brand as any }
+  if (scene.component === 'ViralTitleScene') {
+    return <ViralTitleScene scene={p.scene} />
+  }
   return <MotivationEditorialScene {...p} />
 }
 

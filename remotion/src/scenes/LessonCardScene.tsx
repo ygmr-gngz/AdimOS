@@ -11,6 +11,8 @@ const Card: React.FC<{ card: InfographicCard; delay: number; isHighlighted: bool
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const cardIn = spring({ frame: frame - delay, fps, config: { damping: 16, stiffness: 130, mass: 1 } })
+  const titleSize = card.title.length > 24 ? 14 : 17
+  const contentSize = (card.content?.length ?? 0) > 70 ? 13 : 15
 
   return (
     <div style={{
@@ -37,7 +39,7 @@ const Card: React.FC<{ card: InfographicCard; delay: number; isHighlighted: bool
             </span>
           )}
           <div style={{
-            fontSize: 17, fontWeight: 800, color: L.NAVY,
+            fontSize: titleSize, fontWeight: 800, color: L.NAVY,
             fontFamily: 'Lato', lineHeight: 1.2,
           }}>
             {card.title}
@@ -53,7 +55,7 @@ const Card: React.FC<{ card: InfographicCard; delay: number; isHighlighted: bool
       {/* İçerik */}
       {card.content && (
         <p style={{
-          fontSize: 15, color: L.MID, lineHeight: 1.55,
+          fontSize: contentSize, color: L.MID, lineHeight: 1.45,
           margin: '0 0 10px', fontFamily: 'Lato',
         }}>
           {card.content}
@@ -85,6 +87,7 @@ export const LessonCardScene: React.FC<Props> = ({ scene, brand }) => {
   const frame = useCurrentFrame()
   const { fps, durationInFrames } = useVideoConfig()
   const cards = scene.cards ?? []
+  const dense = cards.length > 4
 
   // Sahne ilerledikçe kartları sırayla vurgula
   const highlightIndex = cards.length > 1
@@ -115,7 +118,7 @@ export const LessonCardScene: React.FC<Props> = ({ scene, brand }) => {
             marginBottom: 32,
           }}>
             <h2 style={{
-              fontSize: 36, fontWeight: 900, color: L.NAVY,
+              fontSize: (scene.infographic_title?.length ?? 0) > 48 ? 30 : 36, fontWeight: 900, color: L.NAVY,
               fontFamily: brand.font_heading ?? 'Playfair Display',
               margin: '0 0 6px',
             }}>
@@ -134,7 +137,7 @@ export const LessonCardScene: React.FC<Props> = ({ scene, brand }) => {
           {Array.from({ length: rows }).map((_, rowIdx) => {
             const rowCards = cards.slice(rowIdx * perRow, (rowIdx + 1) * perRow)
             return (
-              <div key={rowIdx} style={{ display: 'flex', gap: 16, flex: 1 }}>
+              <div key={rowIdx} style={{ display: 'flex', gap: dense ? 12 : 16, flex: 1 }}>
                 {rowCards.map((card, i) => {
                   const globalIdx = rowIdx * perRow + i
                   return (

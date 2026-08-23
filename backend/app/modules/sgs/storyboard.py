@@ -133,7 +133,7 @@ SAHNE 2 ile {q_count + 1} arası — Her soru için ChalkboardSolutionScene:
   - total_questions: {q_count}
   - context_text: Soruda "yukarıdaki/aşağıdaki/bu cümlede/bu parçada/verilen cümlede" gibi ifade varsa referans metni/cümleyi buraya eksiksiz kopyala. Yoksa boş string.
   - question_text: YALNIZCA soru kökü (referans metin context_text'e taşındı), max 200 karakter
-  - options: TÜM şıkları A,B,C,D ve varsa E [{{"label":"A","text":"..."}}] formatında kopyala — HİÇBİR ŞIK ATLANMAZ
+  - options: TÜM şıkları TAM OLARAK A,B,C,D,E [{{"label":"A","text":"..."}}] formatında kopyala — BEŞİNCİ ŞIK ATLANAMAZ
   - correct_label: Doğru şık harfi (A/B/C/D/E)
   - given: Verilenler listesi — her madde max 50 karakter ["...", "..."]
   - asked: İstenen — "... = ?" formatında, max 50 karakter
@@ -246,6 +246,21 @@ Sadece JSON döndür. Başka hiçbir metin yok."""
                 return {k: _nfc(v) for k, v in obj.items()}
             return obj
         scenes = [_nfc(s) for s in scenes]
+        # LLM şıkları özetleyemez veya E'yi atlayamaz: kaynak soruyu tek doğruluk
+        # kaynağı olarak her çözüm sahnesine geri yazarız.
+        for scene in scenes:
+            if scene.get("component") != "ChalkboardSolutionScene":
+                continue
+            q_index = int(scene.get("question_number") or 0) - 1
+            if not 0 <= q_index < len(questions):
+                raise RuntimeError("Soru çözüm sahnesinde geçersiz question_number")
+            source = questions[q_index]
+            source_options = source.get("options") or []
+            labels = [str(option.get("label") or "").strip().upper() for option in source_options]
+            if labels != ["A", "B", "C", "D", "E"]:
+                raise RuntimeError(f"Soru {q_index + 1}: kaynak A-E şıkları eksiksiz olmalı")
+            scene["options"] = source_options
+            scene["correct_label"] = source.get("correct_option", source.get("correct_label"))
         result["scenes"] = scenes
 
         chalk_count = sum(1 for s in scenes if s.get("component") == "ChalkboardSolutionScene")

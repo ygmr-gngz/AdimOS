@@ -8,7 +8,9 @@ from PIL import Image
 from app.modules.content.reel_enhancements import (
     add_animated_illustrations,
     build_single_question_reel,
+    build_viral_title_reel,
 )
+from app.pipelines.registry import validate_routing
 
 
 def _question():
@@ -37,6 +39,15 @@ def test_single_question_rejects_missing_option():
     question["options"] = question["options"][:4]
     with pytest.raises(ValueError, match="A-E"):
         build_single_question_reel(title="x", topic="x", subject="x", question=question, brand={})
+
+
+def test_viral_title_reel_uses_dedicated_scene_and_original_copy_bank():
+    board = build_viral_title_reel(title="Unvan", topic="SMMM sınav motivasyonu", brand={})
+    assert len(board["scenes"]) == 1
+    assert board["scenes"][0]["component"] == "ViralTitleScene"
+    assert "unvan" in board["scenes"][0]["subtitle"].lower()
+    assert board["scenes"][0]["voice_text"]
+    validate_routing("motivasyon", board["scenes"])
 
 
 def test_animated_illustrations_enrich_only_three_scenes(monkeypatch):

@@ -83,7 +83,7 @@ _CHUNK_QUESTION_EXAMPLE = """\
       "year": "2023",
       "difficulty": "orta",
       "question_text": "Tam soru metni...",
-      "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+      "options": ["A) ...", "B) ...", "C) ...", "D) ...", "E) ..."],
       "correct_option": "C",
       "lesson_confidence": 0.95
     }}"""
@@ -341,7 +341,7 @@ def _analyze_single(pdf_text: str, pdf_name: str) -> dict:
       "year": "2023",
       "difficulty": "orta",
       "question_text": "Tam soru metni...",
-      "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+      "options": ["A) ...", "B) ...", "C) ...", "D) ...", "E) ..."],
       "correct_option": "C",
       "explanation": "C şıkkı doğrudur çünkü...",
       "lesson_confidence": 0.95,

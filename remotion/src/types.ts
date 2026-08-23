@@ -62,6 +62,7 @@ export type SceneComponent =
   | 'LessonSummaryScene'
   | 'LessonInfographicScene'
   | 'LessonMindMapScene'
+  | 'LessonDrawnExplainerScene'
   // Pedagojik matematik çözümü (tahta)
   | 'ChalkboardSolutionScene'
   // 2 Dakikalık Eğitim Reels
@@ -107,9 +108,10 @@ export type SceneComponent =
   | 'ReelExampleScene'
   | 'ReelMistakeScene'
   | 'ReelExamTipScene'
+  | 'ViralTitleScene'
 
 export interface QuizOption {
-  label: string        // A, B, C, D
+  label: string        // A, B, C, D, E
   text: string
   is_correct?: boolean
 }
@@ -161,6 +163,12 @@ export interface InfographicCard {
   example?: string          // örnek
   tip?: string              // püf noktası
   icon?: string             // emoji ikon
+}
+
+export interface VisualNode {
+  kind: 'factory' | 'document' | 'money' | 'person' | 'scale' | 'calculator' | 'building'
+  label: string
+  detail?: string
 }
 
 export interface Scene {
@@ -261,6 +269,7 @@ export interface Scene {
   comparison_right?: { title: string; items: string[] }
   process_steps?: { number: number; title: string; desc: string }[]
   footer_note?: string
+  visual_nodes?: VisualNode[]
 }
 
 export interface BrandConfig {

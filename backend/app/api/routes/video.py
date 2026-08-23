@@ -105,6 +105,7 @@ class CreateVideoPayload(BaseModel):
     pre_storyboard: Optional[dict] = None         # infografik önceden üretilmiş storyboard
     infographic_template: Optional[str] = None    # card_grid | comparison | process
     reel_mode: Literal["standard", "animated_illustration", "single_question"] = "standard"
+    motivation_mode: Literal["editorial", "viral_title"] = "editorial"
     # Süre kalite kapısı (Section 1)
     requested_duration_seconds: Optional[int] = None
     duration_tolerance_seconds: int = 15
@@ -1294,9 +1295,23 @@ def _run_pipeline_inner(
                         "ChalkboardSolutionScene üretildi — storyboard eksik olabilir"
                     )
         elif content_type == "motivasyon":
+            if payload.motivation_mode == "viral_title":
+                from app.modules.content.reel_enhancements import build_viral_title_reel
+                storyboard = build_viral_title_reel(
+                    title=payload.title,
+                    topic=payload.topic or "SMMM sınav motivasyonu",
+                    brand=brand,
+                )
+                storyboard["video_type"] = "motivation"
+                # Bu özel motivasyon tek sahnelidir; normal çok-sahneli üretici atlanır.
+                selected_title = payload.topic or "Unvana Giden Yol"
+                topic_text = selected_title
+            else:
+                storyboard = None
             from app.modules.content.motivation_generator import generate_motivation_storyboard
-            selected_title, topic_text = _resolve_motivation_topic(payload.topic)
-            if not (payload.topic or "").strip():
+            if storyboard is None:
+                selected_title, topic_text = _resolve_motivation_topic(payload.topic)
+            if storyboard is None and not (payload.topic or "").strip():
                 # B.6.3 — kullanıcı konu girmedi: bankadan, son 60 günde
                 # kullanılmayan bir konu seçilir. payload.topic'e YALIN başlık
                 # yazılır (regen turlarında aynı konu tekrar kullanılsın VE
@@ -1318,32 +1333,31 @@ def _run_pipeline_inner(
                 raw_dur if (raw_dur and _mot_dur["min"] <= raw_dur <= _mot_dur["max"])
                 else _mot_dur["default"]
             )
-            result = generate_motivation_storyboard(
-                topic=topic_text,
-                duration=duration_sec,
-                platform="reels",
-                job_id=job_id,
-            )
-            scenes = []
-            for i, scene in enumerate(result.get("scenes", []), 1):
-                s = dict(scene)
-                s["id"] = i
-                # component yoksa fallback
-                if not s.get("component"):
-                    s["component"] = "MotivationScene"
-                # voice_text normalizasyonu
-                if not s.get("voice_text"):
-                    s["voice_text"] = s.get("spoken_text") or s.get("narration") or ""
-                scenes.append(s)
-            scenes = _attach_visual_assets(scenes, job_id, payload.content_track)
-            storyboard = {
-                "video_type": payload.type,
-                "title": result.get("title", payload.title),
-                "format": payload.format,
-                "language": "tr",
-                "brand": brand,
-                "scenes": scenes,
-            }
+            if storyboard is None:
+                result = generate_motivation_storyboard(
+                    topic=topic_text,
+                    duration=duration_sec,
+                    platform="reels",
+                    job_id=job_id,
+                )
+                scenes = []
+                for i, scene in enumerate(result.get("scenes", []), 1):
+                    s = dict(scene)
+                    s["id"] = i
+                    if not s.get("component"):
+                        s["component"] = "MotivationScene"
+                    if not s.get("voice_text"):
+                        s["voice_text"] = s.get("spoken_text") or s.get("narration") or ""
+                    scenes.append(s)
+                scenes = _attach_visual_assets(scenes, job_id, payload.content_track)
+                storyboard = {
+                    "video_type": payload.type,
+                    "title": result.get("title", payload.title),
+                    "format": payload.format,
+                    "language": "tr",
+                    "brand": brand,
+                    "scenes": scenes,
+                }
 
         elif content_type == "reels_short":
             # EducationalReel120 — GPT storyboard + EducationalReelScene bileşeni

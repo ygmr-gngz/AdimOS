@@ -104,7 +104,7 @@ JSON:
 {{
     "title": "Başlık: '[Konu] Soru Çözümü | SMMM Sınavı'",
     "question_text": "Soru metni (varsa senin ürettiğin, yoksa boş bırak)",
-    "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+    "options": ["A) ...", "B) ...", "C) ...", "D) ...", "E) ..."],
     "correct_option": "A",
     "sections": [
         {{"title": "Bölüm adı", "content": "Seslendirilecek metin"}},
@@ -231,7 +231,7 @@ JSON formatı:
       "narration": "Sorumuzu okuyalım. [soruyu oku ve şıkları seslendir]",
       "display_lines": ["Soru"],
       "question_text": "Tam soru metni burada",
-      "options": ["A) Birinci şık", "B) İkinci şık", "C) Üçüncü şık", "D) Dördüncü şık"]
+      "options": ["A) Birinci şık", "B) İkinci şık", "C) Üçüncü şık", "D) Dördüncü şık", "E) Beşinci şık"]
     }},
     {{
       "type": "concept",
@@ -244,7 +244,7 @@ JSON formatı:
       "title": "Şık Analizi",
       "narration": "Şıkları tek tek değerlendirelim. A şıkkı yanlış çünkü... [analiz et]",
       "display_lines": ["• A yanlış: kısa açıklama", "• B yanlış: kısa açıklama", "• C doğru: neden doğru"],
-      "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+      "options": ["A) ...", "B) ...", "C) ...", "D) ...", "E) ..."],
       "correct_option": "C"
     }},
     {{
@@ -252,7 +252,7 @@ JSON formatı:
       "title": "Doğru Cevap",
       "narration": "Doğru cevap C şıkkıdır. [detaylı açıkla]",
       "display_lines": [],
-      "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+      "options": ["A) ...", "B) ...", "C) ...", "D) ...", "E) ..."],
       "correct_option": "C",
       "explanation": "Doğru cevabın açıklaması burada"
     }},
@@ -398,7 +398,7 @@ KRİTİK KURALLAR:
 - display_lines: EKRANDA görünür — max 5 satır, HER SATIR max 50 karakter
 - Comparison sahnesinde left_title ve right_title ZORUNLU
 - Example sahnesinde scenario alanı ZORUNLU (max 80 karakter)
-- Question ve Answer sahnelerinde options[] ve correct_option ZORUNLU
+- Question, OptionAnalysis ve Answer sahnelerinde options[] TAM OLARAK A-B-C-D-E olmak zorunda; beşinci şık atlanamaz. correct_option ZORUNLU.
 - Exam_tip sahnesinde tip alanı ZORUNLU
 - Summary sahnesinde rows[] ZORUNLU
 - Her sahne için narration MUTLAKA doldurulsun — boş bırakma

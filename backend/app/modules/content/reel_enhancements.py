@@ -127,3 +127,26 @@ def add_animated_illustrations(
         logger.info("[reel-illustration] job=%s scene=%s preset=%s", job_id[:8], scene.get("id"), scene["animation_preset"])
     storyboard["reel_mode"] = "animated_illustration"
     return storyboard
+def build_viral_title_reel(*, title: str, topic: str, brand: dict) -> dict:
+    """Onaylı kısa metin bankasından unvan/emeğe odaklı, özgün Reel üretir.
+
+    Viral içeriklerden yapı alınır; üçüncü taraf sözleri otomatik kopyalanmaz.
+    """
+    clean_topic = (topic or "").strip().lower()
+    if any(word in clean_topic for word in ("sınav", "sgs", "smmm", "ymm", "unvan")):
+        hook = "Biz soyadına eklenenlerle değil,"
+        payoff = "adının önüne emekle eklenen unvanlarla ilgileniyoruz."
+        note = "SMMM • YMM • SGS — Her harfin arkasında emek var."
+    else:
+        hook = "Herkes sonucu konuşurken,"
+        payoff = "biz o sonucun arkasındaki sessiz emeği büyütüyoruz."
+        note = "Bugünkü küçük çalışma, yarının unvanına yazılır."
+    return {
+        "video_type": "reel", "title": title, "format": "9:16", "language": "tr",
+        "brand": brand,
+        "scenes": [{
+            "id": 1, "component": "ViralTitleScene", "duration_seconds": 18,
+            "title": hook, "subtitle": payoff, "key_takeaway": note,
+            "voice_text": f"{hook} {payoff} {note}",
+        }],
+    }

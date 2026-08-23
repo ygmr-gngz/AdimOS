@@ -636,7 +636,9 @@ def render_question_scene(
     f_q   = _f(30, bold=True)
     f_opt = _f(26)
     f_lbl = _f(20, bold=True)
-    opt_h = 72    # option bar height
+    option_count = min(len(options), 5)
+    opt_h = 60 if option_count == 5 else 72
+    option_labels = "ABCDE"
 
     q_lines = _wrap(question_text, f_q, W - PAD * 2 - 16)
     qband_h = len(q_lines) * (_th(f_q) + 10) + 36
@@ -661,7 +663,7 @@ def render_question_scene(
 
         # Options — full-width bars
         opt_y = 80 + qband_h + 16
-        for i, opt in enumerate(options[:4]):
+        for i, opt in enumerate(options[:5]):
             ts = 1.00 + i * 0.35
             op = _p(t, ts, 0.34)
             xo = _slide_offset(t, ts, 0.34, 44)
@@ -673,13 +675,13 @@ def render_question_scene(
             badge_d = opt_h - 16
             _box(d, [(PAD + 12 + xo, oy + 8), (PAD + 12 + badge_d + xo, oy + 8 + badge_d)],
                  OG, op, radius=badge_d // 2)
-            lbl = "ABCD"[i]
+            lbl = option_labels[i]
             _txt(d, lbl, PAD + 12 + (badge_d - _tw(lbl, f_lbl)) // 2 + xo,
                  oy + 8 + (badge_d - _th(f_lbl)) // 2, f_lbl, WH, op)
 
             # Option text
             tx = PAD + 12 + badge_d + 16
-            opt_txt = str(opt).lstrip("ABCD)").strip()
+            opt_txt = str(opt).lstrip("ABCDE)").strip()
             opt_txt = opt_txt.lstrip(") ").strip()
             wl = _wrap(opt_txt, f_opt, W - tx - PAD - xo - 16)
             for wi, wline in enumerate(wl[:2]):
@@ -703,9 +705,11 @@ def render_option_analysis_scene(
     f_opt = _f(24)
     f_lbl = _f(19, bold=True)
     f_exp = _f(22)
-    opt_h = 66
+    option_count = min(len(options), 5)
+    opt_h = 54 if option_count == 5 else 66
+    option_labels = "ABCDE"
 
-    correct_idx = max(0, "ABCD".find(correct_option.upper()[:1]))
+    correct_idx = max(0, option_labels.find(correct_option.upper()[:1]))
     if duration is None:
         duration = max(9.0, min(5.5 + len(options) * 0.8 + len(analysis_lines) * 0.7, 20.0))
 
@@ -722,7 +726,7 @@ def render_option_analysis_scene(
 
         # Options
         opt_y = 96
-        for i, opt in enumerate(options[:4]):
+        for i, opt in enumerate(options[:5]):
             ts = 0.28 + i * 0.28
             op = _p(t, ts, 0.34)
             oy = opt_y + i * (opt_h + 8)
@@ -738,7 +742,7 @@ def render_option_analysis_scene(
             lbl_bg = GR if is_c else RD
             _box(d, [(PAD + 8, oy + 8), (PAD + 8 + badge_d, oy + 8 + badge_d)],
                  lbl_bg, op, radius=badge_d // 2)
-            lbl = "ABCD"[i]
+            lbl = option_labels[i]
             _txt(d, lbl, PAD + 8 + (badge_d - _tw(lbl, f_lbl)) // 2,
                  oy + 8 + (badge_d - _th(f_lbl)) // 2, f_lbl, WH, op)
 
@@ -747,12 +751,12 @@ def render_option_analysis_scene(
                  GR if is_c else RD, op)
 
             txt_col = WH if is_c else (190, 150, 150)
-            opt_txt = str(opt).lstrip("ABCD)").strip().lstrip(") ").strip()
+            opt_txt = str(opt).lstrip("ABCDE)").strip().lstrip(") ").strip()
             tx = PAD + 8 + badge_d + 46
             _txt(d, opt_txt[:64], tx, oy + (opt_h - _th(f_opt)) // 2, f_opt, txt_col, op)
 
         # Analysis lines
-        cy = opt_y + len(options[:4]) * (opt_h + 8) + 14
+        cy = opt_y + option_count * (opt_h + 8) + 14
         for i, line in enumerate(analysis_lines[:3]):
             lp = _p(t, 1.50 + i * 0.28, 0.34)
             wl = _wrap(line, f_exp, W - PAD * 2 - 16)
@@ -776,9 +780,11 @@ def render_answer_scene(
     f_opt = _f(26)
     f_exp = _f(24)
     f_lbl = _f(19, bold=True)
-    opt_h = 72
+    option_count = min(len(options), 5)
+    opt_h = 60 if option_count == 5 else 72
+    option_labels = "ABCDE"
 
-    correct_idx = max(0, "ABCD".find(correct_option.upper()[:1]))
+    correct_idx = max(0, option_labels.find(correct_option.upper()[:1]))
     exp_lines = _wrap(explanation, f_exp, W - PAD * 2 - 16) if explanation else []
     if duration is None:
         duration = max(6.0, min(5.0 + len(exp_lines) * 0.8, 16.0))
@@ -794,7 +800,7 @@ def render_answer_scene(
         _txt(d, header, _cx(header, f_hdr), 58, f_hdr, WH, hp)
 
         # All options — full-width
-        for i, opt in enumerate(options[:4]):
+        for i, opt in enumerate(options[:5]):
             op = _p(t, 0.26 + i * 0.10, 0.38)
             oy = 100 + i * (opt_h + 8)
             is_c = (i == correct_idx)
@@ -811,19 +817,19 @@ def render_answer_scene(
             lbl_bg = GR if is_c else DG
             _box(d, [(PAD + 8, oy + 8), (PAD + 8 + badge_d, oy + 8 + badge_d)],
                  lbl_bg, op, radius=badge_d // 2)
-            lbl = "ABCD"[i]
+            lbl = option_labels[i]
             _txt(d, lbl, PAD + 8 + (badge_d - _tw(lbl, f_lbl)) // 2,
                  oy + 8 + (badge_d - _th(f_lbl)) // 2, f_lbl, WH, op)
 
             prefix = "✓  " if is_c else ""
             txt_col = WH if is_c else MG
-            opt_txt = str(opt).lstrip("ABCD)").strip().lstrip(") ").strip()
+            opt_txt = str(opt).lstrip("ABCDE)").strip().lstrip(") ").strip()
             tx = PAD + 8 + badge_d + 16
             _txt(d, f"{prefix}{opt_txt}"[:68], tx, oy + (opt_h - _th(f_opt)) // 2, f_opt, txt_col, op)
 
         # Explanation — full-width card at bottom
         if exp_lines:
-            ey = 100 + len(options[:4]) * (opt_h + 8) + 12
+            ey = 100 + option_count * (opt_h + 8) + 12
             ep = _p(t, 0.90, 0.42)
             exp_h = len(exp_lines) * (_th(f_exp) + 8) + 24
             _box(d, [(0, ey), (W, ey + exp_h)], SURF, ep * 0.88)
