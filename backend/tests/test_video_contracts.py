@@ -5,6 +5,7 @@ from app.api.routes.video import (
     QuizQuestion,
     _effective_duration_tolerance,
     _questions_are_blank,
+    _resolve_motivation_topic,
     _validate_manual_questions,
 )
 from app.pipelines.registry import validate_routing
@@ -48,6 +49,21 @@ def test_long_video_tolerance_scales_with_requested_duration() -> None:
 def test_spoken_text_has_priority_for_tts() -> None:
     scene = {"spoken_text": "normalize edilmiş", "narration": "ham metin"}
     assert _voice_text(scene) == "normalize edilmiş"
+
+
+def test_blank_motivation_topic_uses_content_bank() -> None:
+    entry = {
+        "id": 14,
+        "title": "Her gün soru çözme alışkanlığı kuramıyorsun",
+        "feeling": "isteksizlik",
+        "action": "günde 10 soru, sabit saat",
+        "sgs_fact": "günde 10 soru, ayda 300 soru demek",
+    }
+    from unittest.mock import patch
+    with patch("app.core.content_bank_motivation.select_topic", return_value=entry):
+        title, prompt_topic = _resolve_motivation_topic("   ")
+    assert title == entry["title"]
+    assert "günde 10 soru" in prompt_topic
 
 
 def test_sgs_pronunciation_is_turkish_letter_names() -> None:

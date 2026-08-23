@@ -103,6 +103,14 @@ def _topic_guardrails(topic: str) -> str:
             "Normal/değişken maliyet, kapasite oranı ve yevmiye kaydı bu konunun "
             "dışındadır; kesinlikle kullanma. 4. kart miktar akış tablosu olmalı."
         )
+    if "kdv" in normalized and "ticari mal" in normalized and "alış" in normalized:
+        return (
+            "Ticari mal alış kaydında 153 Ticari Mallar ve 191 İndirilecek KDV "
+            "BORÇ, 320 Satıcılar toplam tutar kadar ALACAK çalışır; borç ve alacak "
+            "eşit olmalı. Toplam tutara 'borç kaydı' deme. Vergi oranını güncel genel "
+            "kural gibi sunma; kaynakta örnek oran varsa 'örnekte verilen oran' de. "
+            "Hata kartında doğru yaklaşım 'KDV'yi verilen oranla hesaplamak' olmalı."
+        )
     return "Hedef konunun tanım, uygulama ve sınav mantığından ayrılma."
 
 
@@ -178,7 +186,7 @@ def _card_prompt(topic: str, card: dict[str, Any], index: int) -> str:
         "hook": "Strong cover with one central metaphor and generous negative space.",
         "overview": "Hand-drawn systems overview with a central machine, labeled inputs and outputs, curved arrows.",
         "worked_example": "Worked example shown as three clear panels: given, calculation, result.",
-        "account_application": "A physical quantity-flow reconciliation table with exactly two filled columns. Left column GİRDİLER contains DBYM 10.000 and Başlanan 15.000, total 25.000. Right column ÇIKTILAR contains Tamamlanan 20.000 and DSYM 5.000, total 25.000. Never place output items in the left column. No arrows between individual rows. Never use debit, credit, borç, alacak, debet or kredi because this is not a journal entry.",
+        "account_application": "A clean application card or table chosen only from the supplied exact lines. Do not reuse facts, numbers, account labels or abbreviations from any other subject. If the supplied lines describe steps, show a numbered process; if they describe a journal entry, show balanced debit and credit columns; otherwise use a neutral two-column application table.",
         "common_mistake": "Split comparison: muted red wrong side and calm green correct side. Use only the supplied wrong/right sentences; do not invent captions inside illustrations.",
         "exam_tip": "Memorable exam tip with a small lightbulb, mnemonic ribbon and save reminder.",
     }[card["kind"]]

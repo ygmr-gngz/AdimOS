@@ -81,3 +81,17 @@ def test_image_prompt_enforces_reference_style_and_exact_text() -> None:
     assert "hand-drawn black ink" in prompt
     assert "EXACT TITLE: Kart 2" in prompt
     assert "no dark navy background" in prompt
+
+
+def test_application_prompt_cannot_leak_previous_topic_facts() -> None:
+    from app.modules.content.illustrated_carousel import _card_prompt
+    card = {
+        "kind": "account_application",
+        "title": "KDV Uygulama Tablosu",
+        "subtitle": "KDV hesaplamasında adımlar",
+        "bullets": ["Alış KDV'sini belirle", "Satış KDV'sini hesapla"],
+    }
+    prompt = _card_prompt("İndirilecek ve Hesaplanan KDV Farkı", card, 4)
+    assert "DBYM" not in prompt
+    assert "DSYM" not in prompt
+    assert "only from the supplied exact lines" in prompt

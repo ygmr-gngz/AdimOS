@@ -659,7 +659,7 @@ const WIZARD_TYPES: { type: VideoType; label: string; desc: string }[] = [
   { type: 'konu_anlatimi', label: 'Konu Anlatımı', desc: 'Bir konuyu baştan sona anlatan eğitim videosu' },
   { type: 'soru_cozum',    label: 'Soru Çözümü',   desc: 'SGS soruları ile adım adım çözüm videosu' },
   { type: 'reels_short',   label: 'Kısa İçerik',   desc: 'Instagram Reels / YouTube Shorts (≤60 sn)' },
-  { type: 'motivasyon',    label: 'Motivasyon',     desc: '15-30 saniye motivasyon klibi, dikey format' },
+  { type: 'motivasyon',    label: 'Motivasyon',     desc: '30-90 saniye motivasyon klibi, dikey format' },
   { type: 'gorsel_post',   label: 'Görsel Post',    desc: 'Anında oluşturulan statik infografik — Remotion gerekmez' },
 ]
 
@@ -895,7 +895,7 @@ function CreateVideoModal({ onClose, onCreated }: { onClose: () => void; onCreat
             placeholder="Boş bırak — SGS içerik bankasından, son 60 günde kullanılmayan bir konu seçilir"
             style={INP} />
           <p style={{ margin: '6px 0 0', fontSize: 12, color: '#94a3b8' }}>
-            15-30 saniye, dikey format (9:16), kinetik tipografi
+            30-90 saniye, dikey format (9:16), beyaz editoryal tasarım
           </p>
         </div>
       )}

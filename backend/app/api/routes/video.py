@@ -80,6 +80,19 @@ def _effective_duration_tolerance(content_type: str, requested: int, supplied: i
     ratio = ratios.get(content_type)
     return max(supplied, round(requested * ratio)) if ratio else supplied
 
+
+def _resolve_motivation_topic(raw_topic: str | None) -> tuple[str, str]:
+    """Boş/yalnız boşluk motivasyon konusunu bankadan güvenli biçimde doldurur.
+
+    Döner: (job'a kaydedilecek yalın başlık, LLM'e verilecek zengin bağlam).
+    """
+    clean = (raw_topic or "").strip()
+    if clean:
+        return clean, clean
+    from app.core.content_bank_motivation import select_topic, format_topic_for_prompt
+    entry = select_topic()
+    return entry["title"], format_topic_for_prompt(entry)
+
 class CreateVideoPayload(BaseModel):
     type: str                              # quiz | lesson | shorts | motivation | infographic | reel
     title: str
@@ -1268,22 +1281,18 @@ def _run_pipeline_inner(
                     )
         elif content_type == "motivasyon":
             from app.modules.content.motivation_generator import generate_motivation_storyboard
-            if payload.topic:
-                topic_text = payload.topic
-            else:
+            selected_title, topic_text = _resolve_motivation_topic(payload.topic)
+            if not (payload.topic or "").strip():
                 # B.6.3 — kullanıcı konu girmedi: bankadan, son 60 günde
                 # kullanılmayan bir konu seçilir. payload.topic'e YALIN başlık
                 # yazılır (regen turlarında aynı konu tekrar kullanılsın VE
                 # content_history dedup eşleşmesi banka title'ıyla birebir
                 # tutsun diye) — zenginleştirilmiş bağlam yalnızca bu ilk
                 # üretim çağrısına, ayrı bir değişkenle geçirilir.
-                from app.core.content_bank_motivation import select_topic, format_topic_for_prompt
-                _bank_entry = select_topic()
-                payload.topic = _bank_entry["title"]
-                topic_text = format_topic_for_prompt(_bank_entry)
+                payload.topic = selected_title
                 logger.info(
-                    "[sgs-content] %s konu girilmedi, bankadan seçildi: #%s %s",
-                    job_id[:8], _bank_entry["id"], _bank_entry["title"],
+                    "[sgs-content] %s konu girilmedi, bankadan seçildi: %s",
+                    job_id[:8], selected_title,
                 )
             # requested_duration_seconds Pydantic validator ile int garantili
             from app.core.content_constants import TYPE_DURATIONS

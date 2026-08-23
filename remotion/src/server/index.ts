@@ -673,7 +673,10 @@ function _toleranceCheck(
   // sceneCount × TRANSITION_SECONDS daha uzun. Kapı, ham ölçüm yerine bu
   // beklenen render süresiyle karşılaştırır (aynı formül estimateTotalFrames'te).
   const expectedSec = totalSec + sceneCount * TRANSITION_SECONDS
-  if (expectedSec < lo || expectedSec > hi) {
+  // ffprobe yüzdelik saniye, Remotion ise kare bazında yuvarlar. Örn. 53.02s,
+  // 53.00s üst sınırını yalnızca tek kareden az aştığı için reddedilmemeli.
+  const frameEpsilon = 1 / FPS
+  if (expectedSec < lo - frameEpsilon || expectedSec > hi + frameEpsilon) {
     const msg = `${compositionId}: istek=${requested}s ±${tolerance}s ölçülen=${totalSec.toFixed(2)}s` +
       ` beklenen=${expectedSec.toFixed(2)}s izin=${lo.toFixed(0)}–${hi.toFixed(0)}s`
     console.error(`[${prefix}] HARD FAIL duration_validation_failed: ${msg}`)

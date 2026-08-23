@@ -40,7 +40,7 @@ export function BrandWatermark({
     // Şeffaf PNG artık gerçek alfa kanalına sahip (RGBA, doğrulandı) ama koyu
     // zeminde düz opaklık "üste yapıştırılmış" görünüyordu — karışım modu
     // filigranı zemine gömüyor.
-    mixBlendMode: 'soft-light' as const,
+    mixBlendMode: (theme === 'light' ? 'multiply' : 'soft-light') as const,
     filter: 'grayscale(1)',
   }
 

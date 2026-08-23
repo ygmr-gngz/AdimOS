@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 import uuid
 from app.db.supabase import get_supabase_client
 
@@ -26,11 +27,32 @@ def ensure_bucket(bucket: str, public: bool = True) -> None:
 def upload_bytes(data: bytes, bucket: str, remote_path: str, content_type: str) -> str:
     """Bellekteki bytes'ı doğrudan Supabase Storage'a yükler (local dosya gerekmez)."""
     ensure_bucket(bucket)
-    supabase = get_supabase_client()
-    supabase.storage.from_(bucket).upload(
-        remote_path, data, {"content-type": content_type}
-    )
-    return supabase.storage.from_(bucket).get_public_url(remote_path)
+    last_error: Exception | None = None
+    for attempt, delay in enumerate((0, 2, 5), 1):
+        if delay:
+            time.sleep(delay)
+        try:
+            # Her denemede storage bucket nesnesini yeniden oluştur. storage3
+            # 0.9.0 bağlantı kurulmadan hata aldığında kendi içindeki `response`
+            # değişkenine erişip asıl HTTP hatasını gizleyebiliyor.
+            supabase = get_supabase_client()
+            storage = supabase.storage.from_(bucket)
+            storage.upload(
+                remote_path,
+                data,
+                {"content-type": content_type, "upsert": "true"},
+            )
+            return storage.get_public_url(remote_path)
+        except Exception as exc:
+            last_error = exc
+            logger.warning(
+                "[storage] byte upload başarısız path=%s deneme=%d/3 hata=%s: %s",
+                remote_path, attempt, type(exc).__name__, exc,
+            )
+    raise RuntimeError(
+        f"storage_upload_failed: {remote_path} 3 denemede yüklenemedi "
+        f"({type(last_error).__name__}: {last_error})"
+    ) from last_error
 
 
 def upload_video(local_path: str) -> str:

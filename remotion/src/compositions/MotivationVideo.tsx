@@ -8,13 +8,7 @@ import { StoryboardJSON } from '../types'
 import { BrandOverlay } from '../components/BrandOverlay'
 import { BrandWatermark } from '../components/BrandWatermark'
 import { CaptionOverlay } from '../components/CaptionOverlay'
-import { MotivationScene } from '../scenes/MotivationScene'
-import { MotivationHookScene }    from '../scenes/MotivationHookScene'
-import { MotivationProblemScene } from '../scenes/MotivationProblemScene'
-import { MotivationEmpathyScene } from '../scenes/MotivationEmpathyScene'
-import { MotivationStepScene }    from '../scenes/MotivationStepScene'
-import { MotivationFocusScene }   from '../scenes/MotivationFocusScene'
-import { MotivationOutroScene }   from '../scenes/MotivationOutroScene'
+import { MotivationEditorialScene } from '../scenes/MotivationEditorialScene'
 import { FPS } from '../brand'
 import { TRANSITION_FRAMES } from '../utils'
 
@@ -29,21 +23,9 @@ function MotivationSceneDispatcher({
   scene: Record<string, unknown>
   brand: unknown
 }) {
-  const comp = scene.component as string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const p = { scene: scene as unknown as any, brand: brand as any }
-
-  switch (comp) {
-    case 'MotivationHookScene':    return <MotivationHookScene    {...p} />
-    case 'MotivationProblemScene': return <MotivationProblemScene {...p} />
-    case 'MotivationEmpathyScene': return <MotivationEmpathyScene {...p} />
-    case 'MotivationStepScene':    return <MotivationStepScene    {...p} />
-    case 'MotivationFocusScene':   return <MotivationFocusScene   {...p} />
-    case 'MotivationOutroScene':   return <MotivationOutroScene   {...p} />
-    case 'MotivationScene':
-    default:
-      return <MotivationScene {...p} />
-  }
+  return <MotivationEditorialScene {...p} />
 }
 
 export function MotivationVideo({ storyboard }: Props) {
@@ -62,17 +44,13 @@ export function MotivationVideo({ storyboard }: Props) {
   })
 
   return (
-    <AbsoluteFill style={{ background: '#0B2545', overflow: 'hidden' }}>
+    <AbsoluteFill style={{ background: '#FFFEFB', overflow: 'hidden' }}>
       {timings.map(({ scene, start, durationFrames }) => (
         <Sequence key={scene.id} from={start} durationInFrames={durationFrames}>
           <AbsoluteFill>
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
             <MotivationSceneDispatcher scene={scene as unknown as Record<string, unknown>} brand={brand} />
-            {/* Filigran yalnızca fotoğrafsız sahnelerde — fotoğraf üzerinde
-                mixBlendMode parlak dikdörtgene dönüşüp metni okunmaz kılıyordu. */}
-            {scene.visual_source !== 'photo' && (
-              <BrandWatermark theme="dark" opacity={0.10} logoUrl={brand?.logo_url} />
-            )}
+            <BrandWatermark theme="light" opacity={0.085} rotate={-8} logoUrl={brand?.logo_url} />
           </AbsoluteFill>
         </Sequence>
       ))}
@@ -99,7 +77,7 @@ export function MotivationVideo({ storyboard }: Props) {
       })}
 
       {/* Logo sağ üst + footer — filigran per-sahne yukarıda (fotoğrafsız sahnelerde) */}
-      <BrandOverlay brand={brand} theme="dark" logoSize={140} showFooter showWatermark={false} />
+      <BrandOverlay brand={brand} theme="light" logoSize={150} showFooter showWatermark={false} />
     </AbsoluteFill>
   )
 }
