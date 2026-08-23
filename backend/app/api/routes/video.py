@@ -81,6 +81,15 @@ def _effective_duration_tolerance(content_type: str, requested: int, supplied: i
     return max(supplied, round(requested * ratio)) if ratio else supplied
 
 
+# Remotion TRANSITION_FRAMES=15 ve FPS=30: composition her sahneye 0,5 sn
+# ekler. Süre kapısı ham TTS toplamını değil gerçek render beklentisini ölçer.
+_REMOTION_TRANSITION_SECONDS = 0.5
+
+
+def _expected_render_duration(tts_seconds: float, scene_count: int) -> float:
+    return tts_seconds + max(0, scene_count) * _REMOTION_TRANSITION_SECONDS
+
+
 def _resolve_motivation_topic(raw_topic: str | None) -> tuple[str, str]:
     """Boş/yalnız boşluk motivasyon konusunu bankadan güvenli biçimde doldurur.
 
@@ -1894,14 +1903,17 @@ def _run_pipeline_inner(
                 tts_total_sec = sum(
                     s.get("duration_seconds") or 0 for s in storyboard.get("scenes", [])
                 )
+                render_total_sec = _expected_render_duration(
+                    tts_total_sec, len(storyboard.get("scenes", [])),
+                )
                 req = payload.requested_duration_seconds
                 post_tolerance = _dur_tolerance_sec
                 lo = req - post_tolerance
                 hi = req + post_tolerance
-                if tts_total_sec > 0 and not (lo <= tts_total_sec <= hi):
-                    deviation = tts_total_sec - req
+                if render_total_sec > 0 and not (lo <= render_total_sec <= hi):
+                    deviation = render_total_sec - req
                     pct = abs(deviation / req) * 100
-                    ratio = req / tts_total_sec if tts_total_sec > 0 else 1.0
+                    ratio = req / render_total_sec if render_total_sec > 0 else 1.0
                     # Sönümlü düzeltme: tam orantılı (ratio) yerine %40'ı uygulanır —
                     # aksi halde sistem hedefin üstünden altına salınıyordu (105s→38.6s
                     # ölçüldü, katsayı %60 iken). Taban "mevcut" = bu turu üretmek için
@@ -1920,7 +1932,7 @@ def _run_pipeline_inner(
                     logger.warning(
                         "[duration-loop] job=%s tur=%d ölçülen=%.1fs hedef=%ds ratio=%.3f "
                         "sönümlü_hedef=%.1fs gerçek_sps=%.2f",
-                        job_id[:8], _dur_turn, tts_total_sec, req, ratio,
+                        job_id[:8], _dur_turn, render_total_sec, req, ratio,
                         _damped_corrected, gercek_sps,
                     )
                     if _dur_turn < 2:
@@ -1937,7 +1949,7 @@ def _run_pipeline_inner(
                         else:
                             _hint_suffix = ""
                         _dur_correction_hint = (
-                            f"ÖNEMLİ DÜZELTME: Önceki storyboard ölçülen süre {tts_total_sec:.1f}s, "
+                            f"ÖNEMLİ DÜZELTME: Önceki storyboard beklenen render süresi {render_total_sec:.1f}s, "
                             f"hedef {req:.0f}s. voice_text içeriklerini %{pct:.0f} oranında {direction}."
                             f"{_hint_suffix}"
                         )
@@ -1948,7 +1960,7 @@ def _run_pipeline_inner(
                             "error_code": "duration_validation_failed",
                             "error_message": (
                                 f"{req:.0f} saniye istendi ancak 2 turdan sonra "
-                                f"hâlâ {tts_total_sec:.1f}s üretiliyor "
+                                f"hâlâ {render_total_sec:.1f}s render süresi üretiyor "
                                 f"(izin verilen aralık {lo:.0f}–{hi:.0f}s)."
                             ),
                         })

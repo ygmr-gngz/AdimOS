@@ -4,6 +4,7 @@ from app.api.routes.video import (
     QuizOption,
     QuizQuestion,
     _effective_duration_tolerance,
+    _expected_render_duration,
     _questions_are_blank,
     _resolve_motivation_topic,
     _validate_manual_questions,
@@ -44,6 +45,10 @@ def test_long_video_tolerance_scales_with_requested_duration() -> None:
     assert _effective_duration_tolerance("konu_anlatimi", 720, 8) == 180
     assert _effective_duration_tolerance("soru_cozum", 600, 8) == 150
     assert _effective_duration_tolerance("reels_short", 60, 8) == 8
+
+
+def test_render_duration_includes_scene_transition_frames() -> None:
+    assert _expected_render_duration(52.78, 13) == pytest.approx(59.28)
 
 
 def test_spoken_text_has_priority_for_tts() -> None:
