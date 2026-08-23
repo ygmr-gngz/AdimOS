@@ -22,7 +22,7 @@ FLOWS = [
         "keywords": ["1", "randevu", "randevu almak istiyorum", "randevu al", "randevu istiyorum"],
         "crm_status": "appointment_requested",
         "crm_interest": "randevu",
-        "response": "Elbette 🌿 Randevu oluşturabilmemiz için adınızı, telefon numaranızı ve görüşmek istediğiniz konuyu yazabilir misiniz?",
+        "response": "Elbette 🌿 Randevu talebiniz için adınızı, e-posta adresinizi ve görüşmek istediğiniz konuyu yazabilir misiniz?",
     },
     {
         "keywords": ["2", "bilgi", "eğitim", "bilgi almak istiyorum", "bilgi istiyorum", "eğitim hakkında"],
