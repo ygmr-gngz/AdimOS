@@ -1,5 +1,6 @@
 from app.db.supabase import get_supabase_client
 from app.schemas.document import DocumentStatus
+from app.core.config import settings
 
 
 def create_document(
@@ -20,6 +21,7 @@ def create_document(
         "mime_type": mime_type,
         "source_module": source_module,
         "exclude_from_sgs": exclude_from_sgs,
+        "workspace_id": settings.CONTENT_WORKSPACE_ID,
     }
     if sgs_analysis_id:
         payload["sgs_analysis_id"] = sgs_analysis_id

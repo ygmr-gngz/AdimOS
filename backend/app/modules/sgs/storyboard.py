@@ -8,6 +8,7 @@ Her soru için ONE ChalkboardSolutionScene sahnesi üretilir.
 Çıktı doğrudan Remotion-hazır JSON'dur (component isimleri Remotion bileşen adlarıyla eşleşir).
 """
 import json
+import hashlib
 import logging
 import unicodedata
 from openai import OpenAI
@@ -221,7 +222,10 @@ SAHNE {q_count + 2} — OutroScene:
 
 Sadece JSON döndür. Başka hiçbir metin yok."""
 
-    logger.info(f"[sgs-storyboard] {q_count} soru için ChalkboardSolutionScene storyboard üretiliyor, konu={topic}")
+    logger.info(
+        "[sgs-storyboard] %d soru için storyboard üretiliyor topic_hash=%s",
+        q_count, hashlib.sha256(topic.casefold().encode("utf-8")).hexdigest()[:12],
+    )
     try:
         r = _client.chat.completions.create(
             model="gpt-4o",

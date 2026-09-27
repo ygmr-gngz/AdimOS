@@ -7,6 +7,7 @@ Sahne tipleri: LessonTitleScene → LessonConceptScene → LessonCardScene → L
 Çıktı doğrudan Remotion-hazır JSON'dur (id alanı eklenmemiştir).
 """
 import json
+import hashlib
 import logging
 import unicodedata
 from openai import OpenAI
@@ -339,7 +340,12 @@ Sadece JSON döndür. Başka hiçbir metin yok."""
     def _unknown_components(scenes: list) -> list[str]:
         return sorted({s.get("component", "") for s in scenes if s.get("component") not in _VALID_COMPONENTS})
 
-    logger.info(f"[lesson-storyboard] '{topic}' konu anlatımı üretiliyor, hedef={target_minutes}dk, ders={subject}")
+    logger.info(
+        "[lesson-storyboard] topic_hash=%s hedef=%sdk subject_hash=%s",
+        hashlib.sha256(topic.casefold().encode("utf-8")).hexdigest()[:12],
+        target_minutes,
+        hashlib.sha256(subject.casefold().encode("utf-8")).hexdigest()[:12],
+    )
     try:
         raw_resp = _client.chat.completions.create(
             model="gpt-4o",

@@ -14,6 +14,7 @@ Her sahne EducationalReelScene component'ine yüklenecek.
 İçerik serisi (content_series) başlık şablonunu belirler.
 """
 import json
+import hashlib
 import logging
 import re
 import unicodedata
@@ -550,7 +551,10 @@ Video başlığı: {title}
             "prompt_uzunluk=%d karakter",
             budget_seconds, _sc, _sc_min, _sc_max, target_chars, len(prompt),
         )
-        logger.debug("[reel-prompt] tam metin:\n%s", prompt)
+        logger.debug(
+            "[reel-prompt] metadata hash=%s uzunluk=%d",
+            hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12], len(prompt),
+        )
         try:
             raw = _client.chat.completions.create(
                 model="gpt-4o",

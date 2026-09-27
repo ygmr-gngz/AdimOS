@@ -2,20 +2,23 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
+import json
 import logging
+import re
 import time
 import uuid
 from typing import Any
 
 from openai import OpenAI
-from PIL import Image
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.core.config import settings
 from app.core.llm_client import chat_json as llm_json
 from app.core.visual_manifest import PROD_MODEL, PROD_QUALITY
 from app.modules.content.storage import IMAGE_BUCKET, upload_bytes
-from app.modules.knowledge.retriever import retrieve
+from app.modules.content.context_isolation import ContextBundle, retrieve_isolated_context
 
 logger = logging.getLogger(__name__)
 
@@ -43,12 +46,12 @@ Tam olarak şu JSON şemasını doldur:
 {{
   "topic": "kısa konu adı",
   "cards": [
-    {{"kind":"hook", "title":"çarpıcı ama doğru soru", "subtitle":"tek cümle vaat", "bullets":[]}},
-    {{"kind":"overview", "title":"konunun özeti", "subtitle":"girdi-işlem-çıktı veya kavram haritası", "bullets":["en çok 4 kısa madde"]}},
-    {{"kind":"worked_example", "title":"Çözümlü Örnek", "subtitle":"kısa senaryo", "bullets":["Verilen", "İşlem", "Sonuç"]}},
-    {{"kind":"account_application", "title":"Muhasebe Kaydı / Uygulama", "subtitle":"konuya uygunsa borç-alacak kaydı, değilse uygulama tablosu", "bullets":["en çok 4 satır"]}},
-    {{"kind":"common_mistake", "title":"Sık Yapılan Hata", "subtitle":"yanlış ve doğru yaklaşım", "bullets":["Yanlış: ...", "Doğru: ..."]}},
-    {{"kind":"exam_tip", "title":"Sınav İpucu", "subtitle":"tek cümle hafıza kancası", "bullets":["Kaydet • Tekrar et"]}}
+    {{"kind":"hook", "title":"çarpıcı ama doğru soru", "subtitle":"tek cümle vaat", "bullets":[], "visual_intent":{{"semantic_focus":"tek özgül kavram", "visual_concept":"kapak metaforu", "subjects":["ana nesne"], "action":"görsel eylem", "environment":"özgül ortam", "symbols":["özgül sembol"], "search_query":"konuya özel benzersiz görsel sorgu", "avoid":["diğer kartların ana metaforları"]}}}},
+    {{"kind":"overview", "title":"konunun özeti", "subtitle":"girdi-işlem-çıktı veya kavram haritası", "bullets":["en çok 4 kısa madde"], "visual_intent":{{"semantic_focus":"...", "visual_concept":"...", "subjects":["..."], "action":"...", "environment":"...", "symbols":["..."], "search_query":"...", "avoid":["..."]}}}},
+    {{"kind":"worked_example", "title":"Çözümlü Örnek", "subtitle":"kısa senaryo", "bullets":["Verilen", "İşlem", "Sonuç"], "visual_intent":{{"semantic_focus":"...", "visual_concept":"...", "subjects":["..."], "action":"...", "environment":"...", "symbols":["..."], "search_query":"...", "avoid":["..."]}}}},
+    {{"kind":"account_application", "title":"Muhasebe Kaydı / Uygulama", "subtitle":"konuya uygunsa borç-alacak kaydı, değilse uygulama tablosu", "bullets":["en çok 4 satır"], "visual_intent":{{"semantic_focus":"...", "visual_concept":"...", "subjects":["..."], "action":"...", "environment":"...", "symbols":["..."], "search_query":"...", "avoid":["..."]}}}},
+    {{"kind":"common_mistake", "title":"Sık Yapılan Hata", "subtitle":"yanlış ve doğru yaklaşım", "bullets":["Yanlış: ...", "Doğru: ..."], "visual_intent":{{"semantic_focus":"...", "visual_concept":"...", "subjects":["..."], "action":"...", "environment":"...", "symbols":["..."], "search_query":"...", "avoid":["..."]}}}},
+    {{"kind":"exam_tip", "title":"Sınav İpucu", "subtitle":"tek cümle hafıza kancası", "bullets":["Kaydet • Tekrar et"], "visual_intent":{{"semantic_focus":"...", "visual_concept":"...", "subjects":["..."], "action":"...", "environment":"...", "symbols":["..."], "search_query":"...", "avoid":["..."]}}}}
   ]
 }}
 
@@ -90,6 +93,20 @@ _MODE_LABELS = {
 }
 
 _KINDS = ["hook", "overview", "worked_example", "account_application", "common_mistake", "exam_tip"]
+_INTENT_JACCARD_LIMIT = 0.72
+_DHASH_MIN_DISTANCE = 8
+_MAX_IMAGE_ATTEMPTS_PER_SLIDE = 3
+_VISUAL_FAMILIES = {
+    "computer_workspace": {
+        "laptop", "computer", "bilgisayar", "developer", "engineer", "coding", "code",
+        "editor", "desk", "masa", "workstation",
+    },
+    "factory_line": {"factory", "fabrika", "production", "üretim", "line", "hat", "conveyor"},
+    "sewing_detail": {"needle", "iğne", "sewing", "dikiş"},
+    "fabric_inspection": {"fabric", "kumaş", "textile", "tekstil", "defect", "kusur"},
+    "logistics": {"shipping", "container", "konteyner", "cargo", "lojistik", "sevkiyat"},
+    "retail": {"retail", "mağaza", "clothing", "giysi", "rack", "askı", "raf"},
+}
 
 
 def _topic_guardrails(topic: str) -> str:
@@ -115,18 +132,47 @@ def _topic_guardrails(topic: str) -> str:
 
 
 def _context(topic: str, max_chars: int = 3200) -> str:
-    chunks = retrieve(topic, match_count=8, match_threshold=0.25)
-    if not chunks:
-        return f"{topic} için kurum içi kaynak bulunamadı; yalnızca yerleşik temel bilgiyi kullan."
-    result: list[str] = []
-    used = 0
-    for chunk in chunks:
-        text = str(chunk.get("content") or chunk.get("chunk_data") or "")[:700]
-        if used + len(text) > max_chars:
-            break
-        result.append(text)
-        used += len(text)
-    return "\n\n".join(result)
+    return _context_bundle(topic, max_chars=max_chars).text
+
+
+def _context_bundle(
+    topic: str, max_chars: int = 3200, generation_id: str = "",
+    required_grounding: bool = False,
+) -> ContextBundle:
+    return retrieve_isolated_context(
+        topic, max_chars=max_chars, per_chunk_chars=700,
+        generation_id=generation_id,
+        required_grounding=required_grounding,
+    )
+
+
+def _words(value: str) -> set[str]:
+    return set(re.findall(r"[a-zçğıöşü0-9]+", value.casefold()))
+
+
+def _similarity(left: str, right: str) -> float:
+    a, b = _words(left), _words(right)
+    return len(a & b) / len(a | b) if a and b else 0.0
+
+
+def _visual_families(value: str) -> set[str]:
+    words = _words(value)
+    return {name for name, vocabulary in _VISUAL_FAMILIES.items() if words & vocabulary}
+
+
+def _intent_text(card: dict[str, Any]) -> str:
+    intent = card.get("visual_intent") or {}
+    return " ".join(str(intent.get(key) or "") for key in (
+        "semantic_focus", "visual_concept", "action", "environment", "search_query",
+    ))
+
+
+def _family_text(card: dict[str, Any]) -> str:
+    """Central depiction only; exclude topic-bearing focus/query boilerplate."""
+    intent = card.get("visual_intent") or {}
+    return " ".join(str(intent.get(key) or "") for key in (
+        "visual_concept", "action", "environment",
+    ))
 
 
 def validate_carousel_plan(plan: dict[str, Any]) -> None:
@@ -139,12 +185,39 @@ def validate_carousel_plan(plan: dict[str, Any]) -> None:
         bullets = card.get("bullets") or []
         if not isinstance(bullets, list) or len(bullets) > 4:
             raise RuntimeError(f"carousel_plan_invalid: kart {index} madde sayısı hatalı")
+        intent = card.get("visual_intent") or {}
+        required = ("semantic_focus", "visual_concept", "action", "environment", "search_query")
+        if any(not str(intent.get(field) or "").strip() for field in required):
+            raise RuntimeError(f"carousel_plan_invalid: kart {index} visual_intent eksik")
+    intents = [_intent_text(card) for card in cards]
+    family_texts = [_family_text(card) for card in cards]
+    family_counts: dict[str, int] = {}
+    for index, current in enumerate(intents):
+        for previous in intents[:index]:
+            if _similarity(current, previous) >= _INTENT_JACCARD_LIMIT:
+                raise RuntimeError(
+                    f"carousel_plan_invalid: kart {index + 1} görsel niyeti önceki kartla fazla benzer"
+                )
+        for family in _visual_families(family_texts[index]):
+            family_counts[family] = family_counts.get(family, 0) + 1
+            # Laptop/desk imagery is the proven generic collapse. Broad domain
+            # families (e.g. several textile process cards) are not a duplicate
+            # by themselves; Jaccard + rendered dHash handle those cases.
+            if family == "computer_workspace" and family_counts[family] > 1:
+                raise RuntimeError(
+                    f"carousel_plan_invalid: kart {index + 1} görsel ailesi fazla tekrarlandı"
+                )
 
 
-def generate_carousel_plan(topic: str, mode: str) -> dict[str, Any]:
+def generate_carousel_plan(
+    topic: str, mode: str, *, generation_id: str = "", required_grounding: bool = False,
+) -> dict[str, Any]:
     if mode not in CAROUSEL_MODES:
         raise ValueError(f"Desteklenmeyen premium carousel modu: {mode}")
-    context = _context(topic)
+    context_bundle = _context_bundle(
+        topic, generation_id=generation_id, required_grounding=required_grounding,
+    )
+    context = context_bundle.text
     plan = llm_json(
         messages=[
             {"role": "system", "content": _PLAN_SYSTEM},
@@ -168,7 +241,7 @@ def generate_carousel_plan(topic: str, mode: str) -> dict[str, Any]:
                 topic=topic,
                 guardrails=_topic_guardrails(topic),
                 context=context,
-                plan=__import__("json").dumps(plan, ensure_ascii=False),
+                plan=json.dumps(plan, ensure_ascii=False),
             )},
         ],
         model="gpt-4o",
@@ -177,10 +250,32 @@ def generate_carousel_plan(topic: str, mode: str) -> dict[str, Any]:
         caller="illustrated_carousel/audit",
     )
     validate_carousel_plan(audited)
+    # The request is the source of truth; never trust the model to rename it.
+    audited["topic"] = topic
+    audited["generation_debug"] = {
+        "generation_id": generation_id,
+        "topic_hash": hashlib.sha256(topic.casefold().strip().encode("utf-8")).hexdigest()[:12],
+        "context_hash": hashlib.sha256(context.encode("utf-8")).hexdigest()[:12],
+        "context_evidence_ids": list(context_bundle.evidence_ids),
+        "context_rejected_count": context_bundle.rejected_count,
+        "cache_hit": False,
+        "slides": [
+            {
+                "slide_id": f"{generation_id or 'pending'}:{index}",
+                "semantic_focus_hash": hashlib.sha256(
+                    str((card.get("visual_intent") or {}).get("semantic_focus") or "").encode("utf-8")
+                ).hexdigest()[:12],
+                "image_query_hash": hashlib.sha256(
+                    str((card.get("visual_intent") or {}).get("search_query") or "").encode("utf-8")
+                ).hexdigest()[:12],
+            }
+            for index, card in enumerate(audited["cards"], 1)
+        ],
+    }
     return audited
 
 
-def _card_prompt(topic: str, card: dict[str, Any], index: int) -> str:
+def _card_prompt(topic: str, card: dict[str, Any], index: int, diversity_note: str = "") -> str:
     bullets = "\n".join(f"- {item}" for item in card.get("bullets") or []) or "- Metin maddesi yok"
     role = {
         "hook": "Strong cover with one central metaphor and generous negative space.",
@@ -190,6 +285,7 @@ def _card_prompt(topic: str, card: dict[str, Any], index: int) -> str:
         "common_mistake": "Split comparison: muted red wrong side and calm green correct side. Use only the supplied wrong/right sentences; do not invent captions inside illustrations.",
         "exam_tip": "Memorable exam tip with a small lightbulb, mnemonic ribbon and save reminder.",
     }[card["kind"]]
+    intent = card.get("visual_intent") or {}
     return f"""Create slide {index} of 6 for a premium Turkish accounting education Instagram carousel.
 
 SUBJECT: {topic}
@@ -199,6 +295,15 @@ EXACT SHORT LINES:
 {bullets}
 
 COMPOSITION: {role}
+SLIDE PURPOSE: {intent.get('semantic_focus', '')}
+UNIQUE VISUAL CONCEPT: {intent.get('visual_concept', '')}
+SUBJECTS: {', '.join(intent.get('subjects') or [])}
+ACTION: {intent.get('action', '')}
+ENVIRONMENT: {intent.get('environment', '')}
+SYMBOLS: {', '.join(intent.get('symbols') or [])}
+VISUAL QUERY: {intent.get('search_query', '')}
+DO NOT SHOW: {', '.join(intent.get('avoid') or [])}
+GENERATION-SPECIFIC DIVERSITY NOTE: {diversity_note or 'No previous rendered card is available.'}
 
 STYLE CONTRACT: 4:5 portrait educational poster, warm ivory recycled-paper background,
 hand-drawn black ink linework, editorial sketchbook infographic, restrained pastel teal,
@@ -209,12 +314,25 @@ Use correct Turkish characters and reproduce only the supplied text. Add a tiny 
 @adimmusavir signature at the bottom. No Instagram interface, no phone mockup, no photograph,
 no 3D render, no dark navy background, no neon, no gradients, no watermark, no extra claims,
 no gibberish, no tiny paragraphs. The result must look like one consistent series with the
-other five slides."""
+other five slides, while using a clearly different central subject, action and composition."""
 
 
 def _to_instagram_4x5(source: bytes) -> bytes:
-    with Image.open(io.BytesIO(source)) as image:
-        image = image.convert("RGB")
+    try:
+        opened = Image.open(io.BytesIO(source))
+    except (UnidentifiedImageError, OSError) as exc:
+        raise RuntimeError("carousel_image_invalid: image API geçersiz görsel döndürdü") from exc
+    with opened as original:
+        original.seek(0)  # animated inputs: deterministic first frame
+        image = ImageOps.exif_transpose(original)
+        if image.width < 32 or image.height < 32:
+            raise RuntimeError("carousel_image_invalid: görsel boyutu çok küçük")
+        if image.mode in ("RGBA", "LA") or "transparency" in image.info:
+            rgba = image.convert("RGBA")
+            background = Image.new("RGBA", rgba.size, "white")
+            image = Image.alpha_composite(background, rgba).convert("RGB")
+        else:
+            image = image.convert("RGB")
         target_ratio = 4 / 5
         crop_height = round(image.width / target_ratio)
         if crop_height <= image.height:
@@ -230,6 +348,46 @@ def _to_instagram_4x5(source: bytes) -> bytes:
         return output.getvalue()
 
 
+def _difference_hash(png: bytes) -> int:
+    """Small dependency-free perceptual hash used only inside one generation."""
+    try:
+        opened = Image.open(io.BytesIO(png))
+    except (UnidentifiedImageError, OSError) as exc:
+        raise RuntimeError("carousel_image_invalid: perceptual hash hesaplanamadı") from exc
+    with opened as original:
+        original.seek(0)
+        image = ImageOps.exif_transpose(original).convert("L")
+        pixels = list(image.resize((9, 8), Image.Resampling.LANCZOS).getdata())
+    bits = 0
+    for row in range(8):
+        for column in range(8):
+            bits = (bits << 1) | int(pixels[row * 9 + column] > pixels[row * 9 + column + 1])
+    return bits
+
+
+def _hash_distance(left: int, right: int) -> int:
+    return (left ^ right).bit_count()
+
+
+def _generate_card_bytes(
+    topic: str,
+    card: dict[str, Any],
+    index: int,
+    *,
+    client: OpenAI,
+    diversity_note: str = "",
+) -> bytes:
+    response = client.images.generate(
+        model=PROD_MODEL,
+        prompt=_card_prompt(topic, card, index, diversity_note),
+        n=1,
+        size="1024x1536",
+        quality=PROD_QUALITY,
+        output_format="png",
+    )
+    return _to_instagram_4x5(base64.b64decode(response.data[0].b64_json))
+
+
 def generate_carousel_pngs(
     job_id: str,
     topic: str,
@@ -237,14 +395,73 @@ def generate_carousel_pngs(
     *,
     plan: dict[str, Any] | None = None,
     client: OpenAI | None = None,
+    required_grounding: bool = False,
 ) -> tuple[dict[str, Any], list[str]]:
     """Altı bağımsız PNG üretir, Storage'a yükler ve URL listesini döndürür."""
-    plan = plan or generate_carousel_plan(topic, mode)
+    plan = plan or generate_carousel_plan(
+        topic, mode, generation_id=job_id, required_grounding=required_grounding,
+    )
     validate_carousel_plan(plan)
     image_client = client or OpenAI(api_key=settings.OPENAI_API_KEY, timeout=180.0)
     urls: list[str] = []
+    hashes: list[int] = []
+    used_concepts: list[str] = []
     for index, card in enumerate(plan["cards"], 1):
-        urls.append(generate_carousel_card_png(job_id, topic, card, index, client=image_client))
+        started = time.monotonic()
+        png = b""
+        card_hash = 0
+        best: tuple[int, bytes, int] | None = None  # nearest distance, png, hash
+        dedup_exhausted = False
+        attempts_used = 0
+        for attempt in range(_MAX_IMAGE_ATTEMPTS_PER_SLIDE):
+            attempts_used = attempt + 1
+            note = ""
+            if used_concepts:
+                note = (
+                    "Previous cards already used these concepts: "
+                    + " | ".join(used_concepts)
+                    + ". Do not repeat their central object, silhouette, spatial layout or metaphor."
+                )
+            png = _generate_card_bytes(topic, card, index, client=image_client, diversity_note=note)
+            card_hash = _difference_hash(png)
+            nearest = min((_hash_distance(card_hash, old) for old in hashes), default=64)
+            if best is None or nearest > best[0]:
+                best = (nearest, png, card_hash)
+            if nearest >= _DHASH_MIN_DISTANCE:
+                break
+            logger.warning(
+                "[carousel] generation=%s card=%d perceptual_duplicate distance=%d retry=%d",
+                job_id[:12], index, nearest, attempt + 1,
+            )
+        else:
+            # Quality control must not turn into an availability outage. Keep
+            # the least-similar bounded attempt and make the residual risk visible.
+            assert best is not None
+            dedup_exhausted = True
+            nearest, png, card_hash = best
+            logger.error(
+                "[carousel] generation=%s card=%d dedup_exhausted best_distance=%d attempts=%d",
+                job_id[:12], index, nearest, _MAX_IMAGE_ATTEMPTS_PER_SLIDE,
+            )
+        remote_path = f"carousel/{job_id}/{index:02d}-{uuid.uuid4().hex[:8]}.png"
+        urls.append(upload_bytes(png, IMAGE_BUCKET, remote_path, "image/png"))
+        hashes.append(card_hash)
+        used_concepts.append(str((card.get("visual_intent") or {}).get("visual_concept") or card["title"]))
+        debug_slides = (plan.get("generation_debug") or {}).get("slides") or []
+        if len(debug_slides) >= index:
+            debug_slides[index - 1].update({
+                "selected_asset_id": remote_path,
+                "perceptual_hash": f"{card_hash:016x}",
+                "image_attempts": attempts_used,
+                "retry_count": attempts_used - 1,
+                "dedup_exhausted": dedup_exhausted,
+            })
+        logger.info(
+            "[carousel] generation=%s card=%d/6 concept_hash=%s image_dhash=%016x %.1fs",
+            job_id[:12], index,
+            hashlib.sha256(used_concepts[-1].encode("utf-8")).hexdigest()[:10],
+            card_hash, time.monotonic() - started,
+        )
     return plan, urls
 
 
@@ -261,16 +478,7 @@ def generate_carousel_card_png(
         raise ValueError("Geçersiz carousel kartı veya sırası")
     image_client = client or OpenAI(api_key=settings.OPENAI_API_KEY, timeout=180.0)
     started = time.monotonic()
-    response = image_client.images.generate(
-        model=PROD_MODEL,
-        prompt=_card_prompt(topic, card, index),
-        n=1,
-        size="1024x1536",
-        quality=PROD_QUALITY,
-        output_format="png",
-    )
-    raw = base64.b64decode(response.data[0].b64_json)
-    png = _to_instagram_4x5(raw)
+    png = _generate_card_bytes(topic, card, index, client=image_client)
     remote_path = f"carousel/{job_id}/{index:02d}-{uuid.uuid4().hex[:8]}.png"
     url = upload_bytes(png, IMAGE_BUCKET, remote_path, "image/png")
     logger.info("[carousel] %s kart=%d/6 %.1fs", job_id[:8], index, time.monotonic() - started)

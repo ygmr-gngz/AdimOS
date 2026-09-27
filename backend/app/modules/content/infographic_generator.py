@@ -2,7 +2,7 @@
 import logging
 from app.core.llm_client import chat_json as llm_json
 from app.core.account_catalog import prompt_catalog, validate_account_identity
-from app.modules.knowledge.retriever import retrieve
+from app.modules.content.context_isolation import retrieve_isolated_context
 
 logger = logging.getLogger(__name__)
 
@@ -163,18 +163,11 @@ _CAROUSEL_MODE_INSTRUCTIONS = {
 }
 
 
-def _rag_context(topic: str, max_chars: int = 2500) -> str:
-    chunks = retrieve(topic, match_count=8, match_threshold=0.25)
-    if not chunks:
-        return f"['{topic}' için önceden yüklenmiş belge bulunamadı — genel bilgi kullanılacak]"
-    parts, total = [], 0
-    for chunk in chunks:
-        text = (chunk.get("content") or chunk.get("chunk_data", ""))[:600]
-        if total + len(text) > max_chars:
-            break
-        parts.append(text)
-        total += len(text)
-    return "\n\n".join(parts)
+def _rag_context(topic: str, max_chars: int = 2500, *, required_grounding: bool = False) -> str:
+    return retrieve_isolated_context(
+        topic, max_chars=max_chars, per_chunk_chars=600,
+        required_grounding=required_grounding,
+    ).text
 
 
 def generate_infographic_storyboard(
@@ -183,6 +176,7 @@ def generate_infographic_storyboard(
     card_count: int = 6,
     step_count: int = 5,
     format: str = "9:16",
+    required_grounding: bool = False,
 ) -> dict:
     """
     Bilgi Merkezi RAG + LLM ile infografik sahnesi üret.
@@ -195,7 +189,7 @@ def generate_infographic_storyboard(
             "illustrated_carousel raster hattını kullanın."
         )
 
-    context = _rag_context(topic)
+    context = _rag_context(topic, required_grounding=required_grounding)
     component = _TEMPLATE_TO_COMPONENT.get(template, "InfographicCardGridScene")
 
     if template == "comparison":

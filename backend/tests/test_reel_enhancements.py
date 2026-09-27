@@ -6,6 +6,7 @@ import pytest
 from PIL import Image
 
 from app.modules.content.reel_enhancements import (
+    _scene_visual_intent,
     add_animated_illustrations,
     build_single_question_reel,
     build_viral_title_reel,
@@ -75,6 +76,24 @@ def test_animated_illustrations_enrich_only_three_scenes(monkeypatch):
     assert [s["animation_preset"] for s in illustrated] == [
         "draw_reveal", "parallax_parts", "focus_pulse", "draw_reveal", "parallax_parts",
     ]
+    assert len({s["visual_intent"]["scene_purpose"] for s in illustrated}) == 5
+
+
+@pytest.mark.parametrize(
+    ("topic", "required_terms"),
+    [
+        ("Python'da list comprehension", ("Python", "list comprehension")),
+        ("Tekstil fabrikasında kalite kontrol", ("Tekstil", "kalite kontrol")),
+        ("Kahve çekirdeği kavurma süreci", ("Kahve", "kavurma")),
+    ],
+)
+def test_video_scene_visual_intent_is_topic_specific(topic, required_terms):
+    intent = _scene_visual_intent(
+        topic, {"id": 1, "title": "Süreç ayrıntısı", "voice_text": "Açıklama"}, 3,
+    )
+    assert all(term.casefold() in intent["search_query"].casefold() for term in required_terms)
+    assert intent["scene_purpose"] == "process_detail"
+    assert "çalışma masası" not in intent["search_query"].casefold()
 
 
 def test_animated_mode_keeps_structured_table_as_real_table(monkeypatch):

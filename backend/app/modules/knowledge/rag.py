@@ -1,4 +1,5 @@
 import re
+import hashlib
 import logging
 from datetime import datetime, timedelta
 from openai import OpenAI
@@ -275,7 +276,10 @@ def _summarize_route(
     Soru-cevap RAG yolundan tamamen bağımsız.
     Log etiketi: [rag:ÖZETLEME]
     """
-    logger.info(f"[rag:ÖZETLEME] başladı — user={user_id}, mesaj='{user_message[:60]}'")
+    logger.info(
+        "[rag:ÖZETLEME] başladı user=%s message_hash=%s length=%d",
+        user_id, hashlib.sha256(user_message.encode("utf-8")).hexdigest()[:12], len(user_message),
+    )
 
     doc = resolve_document(user_message)
     if not doc:
@@ -373,7 +377,10 @@ def query(
         keyword_query = _keywords(user_message)
         if keyword_query and keyword_query != user_message:
             second_chunks = retrieve(keyword_query, match_count=8, match_threshold=SIMILARITY_THRESHOLD)
-            logger.info(f"[rag] 2. arama (keywords): {len(second_chunks)} chunk — '{keyword_query}'")
+            logger.info(
+                "[rag] 2. arama keywords: %d chunk query_hash=%s",
+                len(second_chunks), hashlib.sha256(keyword_query.encode("utf-8")).hexdigest()[:12],
+            )
             # Benzersiz chunk'ları birleştir (id'ye göre deduplicate)
             seen_ids: set[str] = {c.get("id", "") for c in chunks}
             for c in second_chunks:

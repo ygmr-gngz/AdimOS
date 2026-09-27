@@ -128,6 +128,7 @@ class CreateVideoPayload(BaseModel):
     # TÜRMOB uyum kapısını bu alandan tetikler — sessiz "ogrenci" varsayımı bu
     # kapıyı görünmeden atlatabiliyordu. Eksik/geçersiz değer → 422 (Pydantic).
     content_track: Literal["ogrenci", "danisan"]
+    grounding_mode: Literal["optional", "required"] = "optional"
 
     @field_validator("requested_duration_seconds", "duration_tolerance_seconds", mode="before")
     @classmethod
@@ -643,8 +644,10 @@ def _regen_storyboard_for_duration(
         # AYNI storyboard üzerinde art arda çalışıyor — biri diğerinin düzeltmesini
         # bozabiliyor mu, bunu görmek için ikisi de ayrı ayrı loglanıyor.
         logger.info(
-            "[motivation-retry] tur=%d hint_var=%s hint_metni=%r hedef_hece=%s sahne=%s",
-            turn, bool(correction_hint), correction_hint, _target_total_syl, _target_sc,
+            "[motivation-retry] tur=%d hint_var=%s hint_hash=%s hedef_hece=%s sahne=%s",
+            turn, bool(correction_hint),
+            __import__("hashlib").sha256((correction_hint or "").encode("utf-8")).hexdigest()[:12],
+            _target_total_syl, _target_sc,
         )
     sb_new = _generate_storyboard_for_regen(content_type, payload, brand, corrected_seconds, correction_hint, job_id)
     if sb_new is None:
@@ -675,8 +678,10 @@ def _regen_storyboard_for_duration(
             feedback = detail or feedback
             if content_type == "motivasyon":
                 logger.info(
-                    "[motivation-retry] tur=%d hint_var=%s hint_metni=%r hedef_hece=%s sahne=%s (ic-deneme=2/2)",
-                    turn, bool(feedback), feedback, _target_total_syl, _target_sc,
+                    "[motivation-retry] tur=%d hint_var=%s hint_hash=%s hedef_hece=%s sahne=%s (ic-deneme=2/2)",
+                    turn, bool(feedback),
+                    __import__("hashlib").sha256((feedback or "").encode("utf-8")).hexdigest()[:12],
+                    _target_total_syl, _target_sc,
                 )
             sb_new = _generate_storyboard_for_regen(content_type, payload, brand, corrected_seconds, feedback, job_id)
             if sb_new is None:
@@ -1113,6 +1118,13 @@ def _run_pipeline_inner(
         })
         return
     logger.info(f"[video] {job_id[:8]} content_type={content_type!r} raw={payload.type!r}")
+    logger.info(
+        "[generation-provenance] generation=%s type=%s topic_hash=%s payload_source=current_request",
+        job_id[:12], content_type,
+        __import__("hashlib").sha256(
+            (payload.topic or payload.title or "").casefold().strip().encode("utf-8")
+        ).hexdigest()[:12],
+    )
 
     try:
         # ── -1. İçerik tekrar kontrolü (Section 2) ─────────────────
@@ -1148,13 +1160,17 @@ def _run_pipeline_inner(
                 generate_carousel_pngs,
             )
             if template in CAROUSEL_MODES:
-                plan, still_urls = generate_carousel_pngs(job_id, topic, template)
+                plan, still_urls = generate_carousel_pngs(
+                    job_id, topic, template,
+                    required_grounding=payload.grounding_mode == "required",
+                )
                 storyboard = {
                     "video_type": "gorsel_post",
                     "title": topic,
                     "format": "4:5",
                     "language": "tr",
                     "render_mode": "raster_carousel",
+                    "generation_debug": plan.get("generation_debug", {}),
                     "scenes": [
                         {"id": index, "component": "RasterCarouselCard", **card}
                         for index, card in enumerate(plan["cards"], 1)
@@ -1186,8 +1202,13 @@ def _run_pipeline_inner(
                 # gerçek PNG still'leri oluşmadan ready_for_review verilmez.
                 storyboard = generate_infographic_storyboard(
                     topic, template=template, card_count=3,
+                    required_grounding=payload.grounding_mode == "required",
                 )
-                logger.info(f"[video] {job_id[:8]} infografik storyboard üretildi topic='{topic}'")
+                logger.info(
+                    "[video] %s infografik storyboard üretildi topic_hash=%s",
+                    job_id[:8],
+                    __import__("hashlib").sha256(topic.casefold().encode("utf-8")).hexdigest()[:12],
+                )
             from app.modules.content.infographic_generator import validate_account_card_storyboard
             is_account_card_post = bool(storyboard.get("scenes")) and all(
                 scene.get("component") == "AccountCardScene"

@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     WEBHOOK_SECRET: str = ""
     ADIMOS_WIDGET_PUBLIC_KEY: str = ""
 
+    # Content-generation retrieval. Current deployment is single-workspace;
+    # keeping the scope explicit prevents future tenants sharing one vector pool.
+    CONTENT_WORKSPACE_ID: str = "default"
+    CONTENT_RAG_MIN_SIMILARITY: float = 0.50
+    CONTENT_RAG_HIGH_CONFIDENCE: float = 0.78
+
     # YouTube
     YOUTUBE_CLIENT_ID: str = ""
     YOUTUBE_CLIENT_SECRET: str = ""

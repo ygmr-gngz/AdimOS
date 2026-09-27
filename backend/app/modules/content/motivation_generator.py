@@ -335,10 +335,11 @@ GÜLÜMSETEN MOTİVASYON BİÇİMİ (ZORUNLU):
     # (2) correction_hint HER ZAMAN TAM logланır (kesilmez — kritik olan tam olarak bunlar,
     # sırayla/çelişerek mi gidiyorlar görmek için), (3) promptun geri kalanından yalnızca
     # ilk 1500 karakterlik önizleme.
-    logger.info("[motivation-prompt] hece_butcesi_bolumu:\n%s", budget_note)
-    if correction_hint:
-        logger.info("[motivation-prompt] correction_hint_tam:\n%s", correction_hint)
-    logger.info("[motivation-prompt] onizleme_ilk_1500:\n%s", user_msg[:1500])
+    logger.info(
+        "[motivation-prompt] prompt_hash=%s prompt_len=%d budget_len=%d correction=%s",
+        hashlib.sha256(user_msg.encode("utf-8")).hexdigest()[:12],
+        len(user_msg), len(budget_note), bool(correction_hint),
+    )
 
     result: dict = {}
     scenes: list[dict] = []

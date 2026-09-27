@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import hashlib
 import uuid
 from typing import Any
 
@@ -70,12 +71,50 @@ def _to_reel_portrait(source: bytes) -> bytes:
         return output.getvalue()
 
 
-def _illustration_prompt(topic: str, scene: dict[str, Any]) -> str:
+_VIDEO_VISUAL_ROLES = (
+    ("establishing_context", "wide contextual overview", "domain-specific environment"),
+    ("person_action", "subject actively performing the scene action", "working environment"),
+    ("process_detail", "close detail of the mechanism or process", "process area"),
+    ("data_object", "important object, diagram or measurable detail", "clean neutral context"),
+    ("result_environment", "visible outcome and its real-world context", "result environment"),
+)
+
+
+def _scene_visual_intent(topic: str, scene: dict[str, Any], order: int) -> dict[str, Any]:
+    purpose, action, environment = _VIDEO_VISUAL_ROLES[(order - 1) % len(_VIDEO_VISUAL_ROLES)]
+    focus = str(
+        scene.get("title") or scene.get("exam_tip") or scene.get("common_mistake")
+        or scene.get("voice_text") or topic
+    ).strip()[:180]
+    return {
+        "scene_id": str(scene.get("id") or order),
+        "scene_purpose": purpose,
+        "semantic_focus": focus,
+        "subject": topic,
+        "action": action,
+        "environment": environment,
+        "visual_type": "hand_drawn_educational_illustration",
+        "search_query": f"{topic} {focus} {action} {environment}"[:360],
+        "avoid": [],
+    }
+
+
+def _illustration_prompt(
+    topic: str, scene: dict[str, Any], intent: dict[str, Any] | None = None,
+) -> str:
     facts = "\n".join(str(x) for x in (scene.get("bullet_points") or []))
-    return f"""Create one premium vertical educational illustration for a Turkish accounting Reel.
+    intent = intent or _scene_visual_intent(topic, scene, 1)
+    return f"""Create one premium vertical educational illustration for a Turkish educational Reel.
 SUBJECT: {topic}
 SCENE TITLE: {scene.get('title') or scene.get('hook_text') or topic}
 FACTS TO VISUALIZE: {facts or scene.get('voice_text', '')[:500]}
+SCENE PURPOSE: {intent['scene_purpose']}
+SEMANTIC FOCUS: {intent['semantic_focus']}
+PRIMARY SUBJECT: {intent['subject']}
+ACTION: {intent['action']}
+ENVIRONMENT: {intent['environment']}
+VISUAL QUERY: {intent['search_query']}
+AVOID PREVIOUS SCENE CONCEPTS: {', '.join(intent.get('avoid') or []) or 'none'}
 
 Match this art direction: warm white graph-paper background, one blank pastel sticky-note
 shape in the center, hand-drawn black ink accounting doodles and curved arrows arranged around
@@ -101,9 +140,12 @@ def add_animated_illustrations(
         }
     ][:limit]
     image_client = client or OpenAI(api_key=settings.OPENAI_API_KEY, timeout=180.0)
+    used_concepts: list[str] = []
     for order, scene in enumerate(candidates, 1):
+        intent = _scene_visual_intent(topic, scene, order)
+        intent["avoid"] = used_concepts[-3:]
         response = image_client.images.generate(
-            model=PROD_MODEL, prompt=_illustration_prompt(topic, scene), n=1,
+            model=PROD_MODEL, prompt=_illustration_prompt(topic, scene, intent), n=1,
             size="1024x1536", quality=PROD_QUALITY, output_format="png",
         )
         png = _to_reel_portrait(base64.b64decode(response.data[0].b64_json))
@@ -121,7 +163,14 @@ def add_animated_illustrations(
         )
         scene["key_takeaway"] = str(takeaway).strip()[:120]
         scene["save_label"] = "HIZLI BİLGİ • KAYDET"
-        logger.info("[reel-illustration] job=%s scene=%s preset=%s", job_id[:8], scene.get("id"), scene["animation_preset"])
+        scene["visual_intent"] = intent
+        used_concepts.append(f"{intent['scene_purpose']}: {intent['semantic_focus']}")
+        logger.info(
+            "[reel-illustration] job=%s scene=%s preset=%s intent_hash=%s query_hash=%s",
+            job_id[:8], scene.get("id"), scene["animation_preset"],
+            hashlib.sha256(intent["semantic_focus"].encode("utf-8")).hexdigest()[:10],
+            hashlib.sha256(intent["search_query"].encode("utf-8")).hexdigest()[:10],
+        )
     storyboard["reel_mode"] = "animated_illustration"
     return storyboard
 def build_viral_title_reel(*, title: str, topic: str, brand: dict) -> dict:
